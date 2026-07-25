@@ -1,0 +1,66 @@
+schema_version: rationale/0.1
+
+id: constraint.no-global-admin-for-staff
+project_id: rationale-fixture-vertical-slice
+kind: constraint
+title: Staff accounts must not receive global super-admin
+severity: critical
+scope: project
+
+subject:
+  id: authorization.entity-scoped-staff-access
+  type: system-behavior
+  title: Entity-scoped staff authorization
+
+statement: >
+  Staff users must never receive global super_admin.
+
+constraint_expression:
+  subject: authorization.staff
+  predicate: must_not_have
+  object: role.global_super_admin
+
+rationale: >
+  Access to multiple entities must not imply global administration.
+
+provenance:
+  created_by:
+    type: human
+    actor: user:fixture
+  created_at: 2026-07-23T18:20:00Z
+
+approvals:
+  - actor: user:security-owner
+    authority: security-owner
+    domain: authorization
+    status: approved
+    approved_at: 2026-07-23T19:00:00Z
+
+binding_declarations:
+  - id: binding.authorization.resolve-entity-role
+    type: symbol
+    provider: codebase-memory
+    structural_id: function:typescript:auth.resolveEntityRole
+    path_hint: src/auth/authorization.ts
+    scope: project
+
+# bound_revision: la revisión de Git en la que este binding fue declarado
+# válido — generada de forma determinista por fixtures/vertical-slice/setup.sh.
+# Reproducir: bash fixtures/vertical-slice/setup.sh
+bound_revision: cb878c9d598e54a2a9aa3993395513f7ccfff325
+
+context_policy:
+  priority: critical
+  always_include:
+    - constraint.no-global-admin-for-staff
+  max_default_tokens: 250
+
+sensitivity:
+  classification: internal
+  visibility: repository
+
+# Nota: este es un Record de FIXTURE para pruebas end-to-end de la vertical
+# slice (Fase D), no una decisión real del proyecto Rationale. `approvals`
+# está poblado deliberadamente (a diferencia del Record real en la raíz de
+# `.rationale/records/`) para ejercitar el camino "authority: approved" del
+# pipeline, que el Record real todavía no cubre por sí solo.

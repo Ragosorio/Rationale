@@ -20,6 +20,10 @@ spikes/language/go/rationale-spike
 spikes/language/go/rationale-spike-release
 spikes/language/*/*.sqlite3
 
+# Fixture de la vertical slice: repo/ es 100% regenerable de forma
+# determinista vía fixtures/vertical-slice/setup.sh — no se versiona.
+fixtures/vertical-slice/repo/
+
 # Logs
 *.log
 

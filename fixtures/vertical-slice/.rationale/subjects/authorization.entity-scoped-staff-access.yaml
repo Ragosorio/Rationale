@@ -1,0 +1,14 @@
+schema_version: rationale/0.1
+
+id: authorization.entity-scoped-staff-access
+type: system-behavior
+title: Entity-scoped staff authorization
+scope: project
+aliases:
+  - auth.staff-per-entity
+applies_to:
+  - project
+
+# Caso canónico usado en Rationale_v0.5.md §2, §9, §27 — reutilizado aquí
+# como fixture determinista para la vertical slice (Fase D2), no como dato
+# de un proyecto real.
