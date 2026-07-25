@@ -30,6 +30,8 @@ pub struct CodebaseMemoryClient {
     rx: Receiver<Value>,
     next_id: u64,
     binary: String,
+    init_deadline: Duration,
+    call_deadline: Duration,
 }
 
 impl CodebaseMemoryClient {
@@ -37,7 +39,20 @@ impl CodebaseMemoryClient {
     /// Busca `codebase-memory-mcp` en PATH (el binario que un usuario real
     /// tendría instalado) — no asume una versión ni una ruta específica.
     pub fn spawn() -> std::io::Result<Self> {
-        let binary = "codebase-memory-mcp".to_string();
+        Self::spawn_with("codebase-memory-mcp", INITIALIZE_DEADLINE, CALL_DEADLINE)
+    }
+
+    /// Variante con binario y deadlines inyectables — usada en producción
+    /// solo indirectamente vía `spawn()`; existe para poder probar
+    /// `Unavailable` (binario inexistente) y timeout de llamada (deadline
+    /// corto contra un mock) sin depender de un binario real ni esperar
+    /// segundos reales en cada corrida de tests (`docs/rust/testing-guide.md`).
+    pub fn spawn_with(
+        binary: &str,
+        init_deadline: Duration,
+        call_deadline: Duration,
+    ) -> std::io::Result<Self> {
+        let binary = binary.to_string();
         let mut child = Command::new(&binary)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -67,6 +82,8 @@ impl CodebaseMemoryClient {
             rx,
             next_id: 1,
             binary,
+            init_deadline,
+            call_deadline,
         };
 
         client.initialize()?;
@@ -85,7 +102,7 @@ impl CodebaseMemoryClient {
                 "clientInfo": {"name": "rationale", "version": env!("CARGO_PKG_VERSION")}
             }
         }))?;
-        self.recv_with_deadline(INITIALIZE_DEADLINE);
+        self.recv_with_deadline(self.init_deadline);
         self.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}))?;
         Ok(())
     }
@@ -130,7 +147,7 @@ impl CodebaseMemoryClient {
         {
             return None;
         }
-        self.recv_with_deadline(CALL_DEADLINE)
+        self.recv_with_deadline(self.call_deadline)
     }
 
     /// Extrae el contenido de texto de una respuesta `tools/call` y lo
@@ -298,4 +315,63 @@ fn read_mcp_message(reader: &mut dyn Read) -> Option<Value> {
     let mut body = vec![0u8; length];
     reader.read_exact(&mut body).ok()?;
     serde_json::from_slice(&body).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn mock_slow_server_path() -> String {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/mock-mcp/slow_server.sh")
+            .to_string_lossy()
+            .to_string()
+    }
+
+    /// D5 — "provider unavailable": un binario inexistente debe fallar al
+    /// spawnearse, nunca colgar ni entrar en un estado ambiguo.
+    #[test]
+    fn provider_unavailable_when_binary_does_not_exist() {
+        let result = CodebaseMemoryClient::spawn_with(
+            "this-binary-definitely-does-not-exist-rationale-test",
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        assert!(
+            result.is_err(),
+            "spawnear un binario inexistente debe fallar"
+        );
+    }
+
+    /// D5 — "provider timeout": un proveedor que responde initialize pero
+    /// nunca responde a una llamada posterior debe reportarse Unavailable
+    /// dentro del deadline configurado, y el proceso debe quedar matado
+    /// (fail open, Arquitectura §13.5) — nunca colgar la operación llamante.
+    #[test]
+    fn provider_timeout_reports_unavailable_and_kills_process() {
+        let mut client = CodebaseMemoryClient::spawn_with(
+            &mock_slow_server_path(),
+            Duration::from_secs(2),     // initialize: el mock responde rápido
+            Duration::from_millis(300), // tools/call: el mock nunca responde
+        )
+        .expect("el mock server debe arrancar e inicializar correctamente");
+
+        let started = std::time::Instant::now();
+        let result = client.health("/tmp/does-not-matter");
+        let elapsed = started.elapsed();
+
+        assert!(matches!(result.status, ProviderStatus::Unavailable));
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "debe respetar el deadline corto (300ms), no colgarse: tardó {elapsed:?}"
+        );
+
+        // Fail open verificado: el proceso fue matado, no abandonado vivo.
+        let wait_result = client.child.try_wait();
+        assert!(
+            matches!(wait_result, Ok(Some(_))),
+            "el proceso del proveedor debe estar terminado tras el timeout"
+        );
+    }
 }

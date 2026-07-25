@@ -80,3 +80,96 @@ pub fn compile_packet(
         warnings: provider_warnings,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::{Approval, BindingDeclaration, Record};
+
+    fn fixed_record(approved: bool) -> Record {
+        Record {
+            id: "constraint.golden-test".to_string(),
+            kind: "constraint".to_string(),
+            severity: "critical".to_string(),
+            statement: "Golden packet statement.".to_string(),
+            approvals: if approved {
+                vec![Approval {
+                    actor: "user:security-owner".to_string(),
+                    authority: "security-owner".to_string(),
+                    status: "approved".to_string(),
+                }]
+            } else {
+                vec![]
+            },
+            binding_declarations: vec![BindingDeclaration {
+                id: "binding.golden".to_string(),
+                kind: "symbol".to_string(),
+                provider: Some("codebase-memory".to_string()),
+                structural_id: Some("function:typescript:golden".to_string()),
+                path_hint: Some("src/golden.ts".to_string()),
+            }],
+            bound_revision: Some("abc123fixed".to_string()),
+        }
+    }
+
+    /// D5 — "golden packet": mismos inputs fijos deben producir SIEMPRE el
+    /// mismo JSON, byte a byte. Si este test empieza a fallar sin que nadie
+    /// haya cambiado el formato deliberadamente, algo dejó de ser
+    /// determinista (Arquitectura §19.4).
+    #[test]
+    fn golden_packet_is_byte_for_byte_deterministic() {
+        let record = fixed_record(true);
+        let packet = compile_packet(
+            Some("abc123fixed".to_string()),
+            Consistency::Exact,
+            ProviderStatus::Successful,
+            Coverage::Complete,
+            &record,
+            Some("golden.qualifiedName".to_string()),
+            vec![],
+        );
+
+        let json = serde_json::to_string(&packet).unwrap();
+        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","authority":"approved"}],"resolved_target":"golden.qualifiedName","warnings":[]}"#;
+        assert_eq!(json, expected);
+    }
+
+    /// D5 — "token budget respetado": esta vertical slice compila
+    /// exactamente UNA constraint por diseño (no un paquete de N
+    /// prioridades, eso es Fase E) — verificar que ese invariante se
+    /// mantiene sin importar el estado de aprobación del Record.
+    #[test]
+    fn budget_never_exceeds_one_constraint() {
+        for approved in [true, false] {
+            let record = fixed_record(approved);
+            let packet = compile_packet(
+                None,
+                Consistency::Unresolved,
+                ProviderStatus::Unavailable,
+                Coverage::Unknown,
+                &record,
+                None,
+                vec![],
+            );
+            assert_eq!(packet.critical_constraints.len(), 1);
+        }
+    }
+
+    /// Una constraint sin approval nunca debe disfrazarse de aprobada
+    /// (Rationale_v0.5.md §10.7) — verificado a nivel de packet expuesto,
+    /// no solo de storage::has_approved_authority.
+    #[test]
+    fn unapproved_record_is_never_exposed_as_approved() {
+        let record = fixed_record(false);
+        let packet = compile_packet(
+            None,
+            Consistency::Unresolved,
+            ProviderStatus::Unavailable,
+            Coverage::Unknown,
+            &record,
+            None,
+            vec![],
+        );
+        assert_eq!(packet.critical_constraints[0].authority, "unreviewed");
+    }
+}
