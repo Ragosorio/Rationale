@@ -1,0 +1,115 @@
+schema_version: rationale/0.1
+
+id: constraint.no-provider-internal-access
+project_id: rationale
+kind: constraint
+title: Rationale must never read a structural provider's internal storage directly
+severity: critical
+scope: project
+
+subject:
+  id: architecture.provider-boundary
+  type: system-behavior
+  title: Structural provider boundary and adapter contract
+
+statement: >
+  Rationale must not read Codebase Memory's (or any future structural
+  provider's) internal SQLite storage, private headers, or undocumented
+  node IDs directly. Integration happens exclusively through a public,
+  versioned interface (MCP or documented CLI) with explicit capability
+  negotiation.
+
+constraint_expression:
+  subject: rationale.core
+  predicate: must_not_access
+  object: provider.internal_storage
+  conditions:
+    - provider_type: structural
+
+rationale: >
+  A structural provider's internal format is not a stable contract. Reading
+  it directly couples Rationale to implementation details that can change
+  without notice, and violates the adapter boundary that lets Rationale
+  support future providers beyond Codebase Memory.
+
+problem:
+  statement: >
+    During the Codebase Memory integration research (Fase B), it would have
+    been technically possible — and tempting for convenience — to read
+    Codebase Memory's SQLite cache files directly instead of going through
+    MCP/CLI, since their location and per-project naming convention were
+    fully characterized.
+
+  symptoms:
+    - "Direct SQLite reads would bypass capability negotiation entirely."
+    - "Three inconsistent version identifiers were found for the same binary (--version, git describe, daemon status hash) — none is safe to use for inferring what an internal schema looks like at a given moment."
+    - "A documented capability (cross-package import resolution) was found to silently fail to produce results despite being active and applicable — internal storage would not have revealed this any more reliably than the public contract did."
+
+intent:
+  primary: >
+    Keep Rationale's provider adapter behind a versioned public interface,
+    never coupled to a specific provider's private storage format.
+
+  non_goals:
+    - Prohibit Rationale from reading Codebase Memory's own source code for
+      research purposes (already done extensively in Fase B research notes).
+    - Prevent future providers other than Codebase Memory.
+
+risks:
+  - id: risk.silent-coupling-to-unstable-schema
+    statement: >
+      If bypassed even once for convenience, future refactors of the
+      provider's internal storage would silently break Rationale without
+      any contract violation being visible from the provider's side.
+    epistemic_status: corroborated
+
+provenance:
+  created_by:
+    type: agent
+    name: claude-code
+  created_at: 2026-07-25T00:00:00Z
+
+approvals: []
+# Sin aprobación todavía. authority = unreviewed hasta revisión humana o de
+# otro agente (evaluation.no-self-certification, Proceso §21: "Sus Records
+# deben ser revisados. No se autoaprobarán.").
+
+binding_declarations: []
+# Vacío intencionalmente: el módulo `providers` que implementará este
+# límite todavía no existe (se construye en Fase D3-D4). El binding se
+# añadirá aquí cuando exista el símbolo real que lo haga cumplir — no se
+# inventa un binding a código que no existe (Rationale_v0.5.md §4.4, §9).
+
+evidence:
+  - type: research-note
+    path: docs/research/codebase-memory/07-storage-and-cache.md
+    verified: true
+  - type: research-note
+    path: docs/research/codebase-memory/12-integration-recommendation.md
+    verified: true
+  - type: research-note
+    path: docs/research/codebase-memory/00-source-lock.md
+    verified: true
+
+applicability_policy:
+  superseded_by: null
+  review_conditions:
+    - Codebase Memory publishes a stable, versioned schema for its internal
+      storage with an explicit compatibility guarantee.
+    - Rationale adopts a provider whose only integration path is direct
+      storage access.
+
+binding_policy:
+  structural_refactors: repair-silently
+  behavioral_changes: revalidate
+  conceptual_conflicts: advisory-unless-exact
+
+context_policy:
+  priority: critical
+  always_include:
+    - constraint.no-provider-internal-access
+  max_default_tokens: 200
+
+sensitivity:
+  classification: internal
+  visibility: repository
