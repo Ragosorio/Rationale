@@ -6,9 +6,9 @@ Síntesis de `00` a `11`. Este documento no introduce evidencia nueva — consol
 
 ### Alto impacto arquitectónico
 
-1. **Revisión y cobertura no son confiables desde el proveedor sin verificación independiente** (`05`). `detect_changes` devolvió resultados vacíos ante 200 archivos realmente modificados. **Decisión:** el Revision Coordinator de Rationale debe derivar su propia verdad de revisión desde Git directamente, tratando cualquier señal de revisión/cambio del proveedor como un dato adicional de baja confianza, nunca como fuente autoritativa. Esto no es una novedad conceptual (ya estaba en `v0.5 §4.16`) — esta epic lo convierte de principio preventivo en necesidad demostrada empíricamente.
-2. **La resolución cross-package no puede asumirse** (`08`). Cero relaciones `IMPORTS` cruzan paquetes en un monorepo real de 8 paquetes npm. **Decisión:** el "camino de relevancia" cross-workspace que `v0.5 §19.3, §32.0` promete no puede construirse únicamente sobre edges del proveedor en la v1. Debe apoyarse en bindings manuales/contractuales declarados por el equipo como fallback, hasta que una investigación de seguimiento sobre `pass_pkgmap.c` aclare si existe una vía de resolución no explorada.
-3. **Latencia de CLI incompatible con el fast path baseline** (`04`, `11`). 2.2s–6.8s por invocación, dos órdenes de magnitud por encima del presupuesto de 150-250ms de `v0.5 §20.5.2`. **Decisión:** el fast path baseline de Rationale nunca debe invocar Codebase Memory (ni CLI ni una sesión MCP fría) en cada lectura; debe depender exclusivamente de bindings ya resueltos localmente por Rationale.
+1. **Revisión y cobertura no son confiables desde el proveedor sin verificación independiente** (`05`). `detect_changes` devolvió resultados vacíos ante 200 archivos realmente modificados. **Decisión:** el Revision Coordinator de Rationale debe derivar su propia verdad de revisión desde Git directamente, tratando cualquier señal de revisión/cambio del proveedor como un dato adicional de baja confianza, nunca como fuente autoritativa. Esto no es una novedad conceptual (ya estaba en `v0.5 §4.16`) — esta epic lo convierte de principio preventivo en necesidad demostrada empíricamente. *(Nota: B1.3 sí resolvió que el campo de cobertura `parse_partial`/`skipped`/`not_indexed` funciona correctamente vía MCP en versiones posteriores a 0.8.1 — el problema de `detect_changes` es independiente y sigue sin explicación.)*
+2. **La resolución cross-package no puede asumirse — ni siquiera cuando el proveedor la soporta** (`08`, refinado en B1.2). Cero relaciones `IMPORTS` cruzan paquetes en un monorepo real de 8 paquetes npm, **pese a que `pass_pkgmap.c` está diseñado exactamente para resolver ese patrón** (`@repo/pkg`), fue introducido 3 meses antes de la indexación, y los manifiestos/imports reales del Monorepo cumplen las condiciones documentadas para que funcione. **Decisión:** el "camino de relevancia" cross-workspace que `v0.5 §19.3, §32.0` promete no puede construirse únicamente sobre edges del proveedor en la v1 — los bindings manuales/contractuales declarados por el equipo deben ser la vía primaria para relaciones cross-package, no un fallback de última instancia.
+3. **Latencia de CLI y de arranque de MCP incompatible con el fast path baseline** (`04`, `11`, medido formalmente en B1.1). CLI: 2.2s–6.8s por invocación. MCP: el handshake `initialize` cuesta ~6.8s (igual que la CLI fría — es el mismo costo de arranque, no un problema de transporte), pero **una vez completado, cada llamada subsecuente en la misma sesión cuesta 15-30ms**, dentro del presupuesto de `v0.5 §20.5.2`. **Decisión:** el fast path baseline nunca debe lanzar un proceso/sesión nuevo por operación; debe depender de bindings ya resueltos localmente. Para el modo intent-aware, una **sesión MCP persistente de larga duración** (un solo `initialize` por vida del proceso de Rationale) es viable y preferible a subprocesos CLI repetidos — a favor de ADR-0002.
 
 ### Impacto medio
 
@@ -66,11 +66,15 @@ Proveedor no encuentra proyecto/símbolo → adaptador propaga el hint accionabl
 Proveedor tarda more que el deadline  → fail open, degradar, nunca bloquear (ya en v0.5 §20.5.2)
 ```
 
-## Próximos research items antes de ADR-0002 (transporte MCP vs CLI)
+## Research items resueltos (B1, previos a Fase C)
 
-1. Medición formal de latencia MCP fría/tibia con instrumentación propia (pendiente, `11`).
-2. Lectura de `src/pipeline/pass_pkgmap.c` para entender qué sí resuelve de identidad de paquete (pendiente, `08`).
-3. Confirmar si el hallazgo de cobertura parcial (`parse_partial`/`skipped`/`not_indexed`) visto vía CLI en HEAD (`04`) también aparece vía una sesión MCP contra el mismo build HEAD — determinaría si el vacío de `05` es de versión o de transporte.
+Los tres pendientes que quedaron abiertos al cerrar esta epic ya se resolvieron con evidencia directa:
+
+1. **Latencia MCP formal (B1.1) — resuelto.** Cliente stdio propio contra el binario HEAD: `initialize` cuesta ~6.8s (una vez, igual que el costo de arranque de la CLI fría), pero cada `tools/call` subsecuente en la misma sesión cuesta 15-30ms. Ver `11-performance-observations.md`. **A favor de ADR-0002: sesión MCP persistente sobre subprocesos CLI repetidos.**
+2. **Lectura de `pass_pkgmap.c` (B1.2) — resuelto, con severidad revisada al alza.** El módulo sí resuelve exactamente el patrón `@org/pkg`, existe desde 3 meses antes de la indexación del Monorepo, y las condiciones para que funcione (manifiestos, imports reales) están presentes — y aun así no produjo ninguna relación cross-package. Ver `08-workspaces-and-monorepos.md`. **El gap no es "capability ausente" sino "capability presente que falla silenciosamente" — refuerza que los bindings manuales sean la vía primaria, no el fallback, para relaciones cross-package en la v1.**
+3. **Cobertura: ¿versión o transporte? (B1.3) — resuelto: es versión.** El mismo build HEAD, invocado vía MCP real (no CLI), devolvió los mismos campos de cobertura (`parse_partial`/`skipped`/`not_indexed`) vistos por CLI. El protocolo MCP no es el cuello de botella; el release 0.8.1 simplemente no los implementaba todavía. Ver `05-revision-and-coverage.md`.
+
+Ningún research item queda pendiente antes de proceder a Fase C (spike de lenguaje).
 
 ## Conclusión
 
