@@ -5,8 +5,11 @@
 # alternativas consideradas, CVEs conocidas, si puede vendorizarse, si
 # requiere runtime, y si agrega llamadas externas.
 #
-# Vacío intencionalmente: el lenguaje del núcleo no está decidido (ADR-0001
-# pendiente). No se listan dependencias del núcleo hasta que exista lenguaje.
+# ADR-0001 propone Rust (estado "proposed", pendiente de revisión cruzada y
+# aprobación humana). Las dependencias de core_dependencies abajo son las
+# validadas en el spike de lenguaje (docs/research/language/), disponibles
+# como punto de partida para Fase D — no son todavía una decisión final de
+# arquitectura de producto, esa vive en Fase E.
 #
 # Dependencias externas ya presentes en el entorno de desarrollo (no del
 # runtime de Rationale) se documentan como research/tooling, no como
@@ -15,7 +18,34 @@
 #   - Git
 
 schema_version: 1
-core_dependencies: []
+core_dependencies:
+  - name: rusqlite
+    version: "0.31 (feature: bundled)"
+    license: "MIT"
+    purpose: "SQLite embebido para el índice/capa derivada local"
+    runtime_dependency: true
+    requires_network: false
+    vendorable: true
+    notes: "bundled vendoriza su propio SQLite en C; evita dependencia del sistema. Validado en spikes/language/rust/."
+  - name: serde
+    version: "1"
+    license: "MIT OR Apache-2.0"
+    purpose: "Framework de (de)serialización"
+    runtime_dependency: true
+    requires_network: false
+  - name: serde_json
+    version: "1"
+    license: "MIT OR Apache-2.0"
+    purpose: "Serialización de Context Packets y respuestas MCP"
+    runtime_dependency: true
+    requires_network: false
+  - name: serde_yaml
+    version: "0.9"
+    license: "MIT OR Apache-2.0"
+    purpose: "Parseo de Records/Subjects YAML en .rationale/"
+    runtime_dependency: true
+    requires_network: false
+    known_risk: "Marcado '+deprecated' upstream (mantenimiento reducido, confirmado en el spike). Evaluar serde_yml o yaml-rust2 antes de comprometerse en Fase D."
 tooling_dependencies:
   - name: codebase-memory-mcp
     purpose: "Proveedor estructural inicial, consumido vía MCP/CLI, nunca enlazado"

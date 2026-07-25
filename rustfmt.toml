@@ -1,0 +1,7 @@
+# Configuración de formato para todo código Rust del repositorio
+# (spikes/language/rust/ hoy; el núcleo de Fase D en adelante).
+# Solo opciones estables — evitar features nightly-only para no atar el
+# formatter a un toolchain no-stable (ADR-0001 eligió stable).
+edition = "2021"
+max_width = 100
+use_small_heuristics = "Default"

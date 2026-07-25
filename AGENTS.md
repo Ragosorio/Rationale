@@ -4,7 +4,7 @@ Instrucciones operativas para cualquier agente (Claude Code, Codex u otro) que t
 
 ## Qué es esto y en qué fase está
 
-Rationale está en **Fase A/B**: bootstrap del repositorio y análisis de Codebase Memory. No existe núcleo, no hay lenguaje elegido, no hay producto distribuible. Ver estado real en `docs/work-items/EPIC-CBM-ANALYSIS.md`.
+Rationale completó Fase A (bootstrap) y Fase B (análisis de Codebase Memory) — ver `docs/work-items/EPIC-CBM-ANALYSIS.md`. Está en **Fase C/D**: el spike de lenguaje ya se ejecutó (`docs/research/language/`) y propuso **Rust** en `docs/adr/ADR-0001-core-language.md` (estado `proposed`, pendiente de revisión cruzada y aprobación humana antes de `accepted`). Aún no existe núcleo de producto — solo el spike en `spikes/language/`, que es código de investigación desechable, no el punto de partida del núcleo real (Fase D construye la vertical slice desde cero, informada por el spike, no encima de él).
 
 ## Ruta de lectura por tipo de tarea
 
@@ -17,7 +17,8 @@ No leas los tres documentos fundacionales completos para una tarea trivial. Lee 
 | Decidir o tocar fronteras técnicas, componentes, integración con proveedores | `Rationale_Arquitectura_Conceptual_v0.1.md` |
 | Coordinar trabajo entre agentes, roles, revisión cruzada, work items | `Rationale_Proceso_Construccion_Agentes_v0.1.md` |
 | Investigar Codebase Memory | `docs/research/codebase-memory/` + `Rationale_Arquitectura_Conceptual_v0.1.md §6-7` |
-| Evaluar o elegir lenguaje del núcleo | `docs/research/language/spike-protocol.md` + `Rationale_Arquitectura_Conceptual_v0.1.md §8` — **no elegir sin ADR-0001 aprobado** |
+| Reabrir o cuestionar la elección de lenguaje | `docs/adr/ADR-0001-core-language.md` + `docs/research/language/` — **el ADR está `proposed`, no `accepted`; no lo autoapruebes** |
+| Escribir código Rust del núcleo | `docs/rust/style-guide.md`, `testing-guide.md`, `security-guide.md` |
 | Crear o revisar un Record/Subject de Rationale | `Rationale_v0.5.md §5, §9, §10` + `.rationale/` |
 | Diseñar el experimento de validación | `Rationale_v0.5.md §30.1` |
 
@@ -37,6 +38,17 @@ Luego: lee este archivo, identifica la ruta de lectura de tu tarea, revisa `docs
 ## Codebase Memory
 
 Codebase Memory ya está indexando este repo y otros (`Monorepo`, el propio clon de `codebase-memory-mcp`) mediante las herramientas `mcp__codebase-memory-mcp__*`. Úsalo antes de tocar varios módulos, contratos, almacenamiento, MCP, revisión, providers, seguridad, packaging o un Subject crítico (`Proceso §7.2`). Nunca trates su salida como verdad absoluta: toda respuesta debe declarar cobertura, revisión y warnings (`Proceso §7.4`).
+
+## Rust (lenguaje propuesto del núcleo, ADR-0001)
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"   # necesario en shells no interactivos — ver docs/environment/
+cargo fmt --check                       # antes de cualquier commit con código Rust
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+Guías completas: [`docs/rust/style-guide.md`](docs/rust/style-guide.md), [`docs/rust/testing-guide.md`](docs/rust/testing-guide.md), [`docs/rust/security-guide.md`](docs/rust/security-guide.md). El código en `spikes/language/rust/` es investigación desechable (spike), no el punto de partida del núcleo real.
 
 ## Jerarquía de fuentes
 

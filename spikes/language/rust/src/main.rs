@@ -153,8 +153,11 @@ fn op5_rank_constraints(record: &Record) -> RankedConstraint {
             statement: "Staff access must be assigned independently per entity.".to_string(),
         },
     ];
-    candidates.sort_by(|a, b| b.severity_weight.cmp(&a.severity_weight));
-    candidates.into_iter().next().expect("al menos un candidato")
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.severity_weight));
+    candidates
+        .into_iter()
+        .next()
+        .expect("al menos un candidato")
 }
 
 // --- File locking: lock advisorio sobre un archivo de estado ---
@@ -164,7 +167,9 @@ fn demo_file_lock(path: &Path) -> io::Result<()> {
     use std::os::unix::io::AsRawFd;
     let file = File::create(path)?;
     let fd = file.as_raw_fd();
-    let rc = unsafe { libc_flock(fd, 2 /* LOCK_EX */ | 4 /* LOCK_NB */) };
+    let rc = unsafe {
+        libc_flock(fd, 2 /* LOCK_EX */ | 4 /* LOCK_NB */)
+    };
     if rc != 0 {
         return Err(io::Error::last_os_error());
     }
@@ -325,7 +330,10 @@ fn main() {
             let lock_path = work_dir.join("spike.lock");
             match demo_file_lock(&lock_path) {
                 Ok(()) => println!("{}", serde_json::json!({"lock": "acquired"})),
-                Err(e) => println!("{}", serde_json::json!({"lock": "failed", "error": e.to_string()})),
+                Err(e) => println!(
+                    "{}",
+                    serde_json::json!({"lock": "failed", "error": e.to_string()})
+                ),
             }
         }
         return;
@@ -374,7 +382,10 @@ mod tests {
         let ordered = ["low", "medium", "high", "critical"];
         let weights: Vec<i64> = ordered.iter().map(|s| severity_weight(s)).collect();
         for w in weights.windows(2) {
-            assert!(w[0] < w[1], "severity_weight debe ser estrictamente creciente");
+            assert!(
+                w[0] < w[1],
+                "severity_weight debe ser estrictamente creciente"
+            );
         }
     }
 
