@@ -5,11 +5,12 @@
 # alternativas consideradas, CVEs conocidas, si puede vendorizarse, si
 # requiere runtime, y si agrega llamadas externas.
 #
-# ADR-0001 propone Rust (estado "proposed", pendiente de revisión cruzada y
-# aprobación humana). Las dependencias de core_dependencies abajo son las
-# validadas en el spike de lenguaje (docs/research/language/), disponibles
-# como punto de partida para Fase D — no son todavía una decisión final de
-# arquitectura de producto, esa vive en Fase E.
+# ADR-0001 (Rust, estado "proposed") ya está implementado en el Cargo.toml
+# raíz. Las dependencias abajo reflejan el estado REAL del crate `rationale`
+# (Fase D completa), no el spike (spikes/language/rust/ tiene su propio
+# Cargo.toml y dependencias separadas, incluyendo rusqlite — validado ahí
+# pero todavía NO añadido al core real; se añade en Fase E3 cuando exista
+# la capa derivada, ver ADR-0004).
 #
 # Dependencias externas ya presentes en el entorno de desarrollo (no del
 # runtime de Rationale) se documentan como research/tooling, no como
@@ -19,14 +20,6 @@
 
 schema_version: 1
 core_dependencies:
-  - name: rusqlite
-    version: "0.31 (feature: bundled)"
-    license: "MIT"
-    purpose: "SQLite embebido para el índice/capa derivada local"
-    runtime_dependency: true
-    requires_network: false
-    vendorable: true
-    notes: "bundled vendoriza su propio SQLite en C; evita dependencia del sistema. Validado en spikes/language/rust/."
   - name: serde
     version: "1"
     license: "MIT OR Apache-2.0"
@@ -45,7 +38,23 @@ core_dependencies:
     purpose: "Parseo de Records/Subjects YAML en .rationale/"
     runtime_dependency: true
     requires_network: false
-    known_risk: "Marcado '+deprecated' upstream (mantenimiento reducido, confirmado en el spike). Evaluar serde_yml o yaml-rust2 antes de comprometerse en Fase D."
+    known_risk: >
+      Marcado "+deprecated" upstream desde mediados de 2026 (mantenimiento
+      descontinuado por el autor original). Fase E multiplica el parseo
+      YAML (Subjects, Evidence, Assessments) — migrar después de eso
+      cuesta mucho más que ahora. Decisión de reemplazo en ADR-0003.
+      Candidato evaluado: yaml_serde 0.10.4 (github.com/yaml/yaml-serde,
+      mantenido por "The YAML Organization", MIT OR Apache-2.0, mismo
+      rango de licencia).
+planned_core_dependencies:
+  - name: rusqlite
+    version: "0.31 (feature: bundled)"
+    license: "MIT"
+    purpose: "SQLite embebido para la capa derivada (assessments, FTS, cache) — Fase E3"
+    runtime_dependency: true
+    requires_network: false
+    vendorable: true
+    notes: "Ya validado end-to-end en spikes/language/rust/ (build, tests, roundtrip). Pendiente: cargo audit antes de añadirlo al core real (ver known_risk de seguridad abajo)."
 tooling_dependencies:
   - name: codebase-memory-mcp
     purpose: "Proveedor estructural inicial, consumido vía MCP/CLI, nunca enlazado"
@@ -57,3 +66,21 @@ tooling_dependencies:
     runtime_dependency: true
     requires_network: false
     license: "GPL-2.0 (herramienta externa, no vinculada)"
+
+# Gates de seguridad declarados pero no ejecutados todavía — registrados
+# explícitamente en vez de omitidos en silencio (docs/rust/security-guide.md).
+known_gaps:
+  - id: cargo-audit-not-installed
+    description: >
+      cargo-audit no está instalado ni corre en CI. Antes de Fase E3 (que
+      añade rusqlite al core real) debe ejecutarse al menos una vez sobre
+      el Cargo.lock completo.
+      severity: medium
+  - id: windows-file-locking-unexercised
+    description: >
+      El candidato Rust del spike usó una ruta de file locking POSIX-only
+      (flock vía FFI) por simplicidad. std::fs::File::lock (portable desde
+      Rust 1.89) existe pero no se ejerció. Riesgo conocido para Fase D5/E3,
+      no bloqueante hasta que exista un caso real de concurrencia entre
+      procesos en Windows. Ver docs/research/language/compatibility-matrix.md.
+      severity: low

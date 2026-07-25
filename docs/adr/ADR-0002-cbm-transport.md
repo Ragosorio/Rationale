@@ -38,10 +38,20 @@ Mediciones formales (`04-cli-contracts.md`, `11-performance-observations.md`, cl
 - El primer `prepare_change`/`explain_target` de una sesión de Rationale pagará inevitablemente el costo de ~6.8s de arranque de Codebase Memory — debe comunicarse honestamente al usuario/agente como "warm-up", no ocultarse ni presentarse como parte del presupuesto de baseline.
 - El **fast path baseline** (`Rationale_v0.5.md §20.5.1`) sigue sin poder depender de esta sesión MCP para su primera invocación en frío — debe depender exclusivamente de bindings ya resueltos localmente por Rationale, tal como ya concluía `12-integration-recommendation.md`. Esta decisión de transporte resuelve el modo intent-aware, no el baseline.
 
+### Corrección post-revisión adversarial (`docs/work-items/adversarial-review-adr-0001-0002-0006.md`)
+
+**La implementación de Fase D (`src/main.rs`) NO logra todavía la amortización que este ADR describe.** `cmd_health`/`cmd_prepare` llaman `CodebaseMemoryClient::spawn()` al inicio de cada invocación y el binario `rationale` termina al final de `main()` — cada ejecución de la CLI es un proceso del sistema operativo nuevo que paga el handshake completo de ~6.8s. La ventaja de 15-30ms por llamada, medida y real, solo se materializa **dentro** de una única invocación (entre las varias llamadas MCP que una misma ejecución de `prepare` hace internamente), nunca **entre** invocaciones sucesivas de la CLI desde una terminal.
+
+Esto no invalida la decisión de transporte (MCP sobre CLI subprocess sigue siendo superior en cualquier escenario), pero sí significa que **la amortización prometida depende de una decisión arquitectónica todavía no tomada**: si Rationale mismo es un proceso de un solo uso (CLI) o un proceso de larga duración (daemon/servidor). Esa pregunta ya estaba marcada como abierta en `Arquitectura_Conceptual_v0.1.md §28` ("¿Un proceso por sesión o daemon compartido?").
+
+**Fase E5 (superficie MCP) es precisamente la resolución de este gap**: un servidor MCP es, por construcción, un proceso de larga duración que atiende múltiples `tools/call` sin terminar entre ellos — la sesión hacia Codebase Memory se abre una vez por vida del *servidor* de Rationale, no por invocación de CLI. La CLI (`rationale prepare` desde una terminal) seguirá pagando el costo completo cada vez hasta que exista un daemon propio de Rationale (fuera de alcance de este ADR — pertenece a ADR-0009, Baseline integration surfaces).
+
 ## Risks
 
-- Un proceso hijo de larga duración puede quedar huérfano o zombi si Rationale termina de forma anormal — mitigación: manejo de señales explícito y verificación de salud (`health`) al inicio de cada sesión de Rationale.
+- Un proceso hijo de larga duración puede quedar huérfano o zombi si Rationale termina de forma anormal — mitigación: manejo de señales explícito y verificación de salud (`health`) al inicio de cada sesión de Rationale. **Nota de la revisión adversarial: esta mitigación está descrita pero no implementada todavía** (no hay `ctrlc`/`signal-hook` en el código); el único mecanismo actual es un `Drop` que no se ejecuta ante una señal no manejada. Riesgo práctico bajo hoy porque cada invocación de CLI ya es de corta vida, pero debe implementarse antes de que Fase E5 introduzca un servidor de larga duración real.
 - Si Codebase Memory actualiza su binario mientras la sesión MCP está viva, el adaptador podría quedar hablando con una versión obsoleta — mitigación: negociación de capacidades (`capabilities()`) al reconectar, no asumir que una sesión larga es siempre válida.
+- **Sin correlación de `id` de respuesta:** el cliente actual asume llamadas estrictamente secuenciales (documentado en comentario, `src/providers/codebase_memory.rs`) y atribuye cualquier mensaje entrante a la última petición enviada, sin verificar el `id`. Si Fase E5 necesita atender llamadas concurrentes de múltiples agentes, este supuesto deja de sostenerse y debe corregirse antes.
+- **Contención de SQLite entre procesos concurrentes de Rationale:** no evaluada. Si Fase E5 mantiene el patrón actual de un hijo de CBM por proceso de Rationale, dos sesiones concurrentes sobre el mismo repo abrirían dos hijos de CBM compitiendo por el mismo caché SQLite del proyecto.
 
 ## Validation
 
