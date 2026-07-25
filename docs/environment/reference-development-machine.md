@@ -17,6 +17,10 @@ Deliberadamente **no** se registran aquí: número de serie, hardware UUID, prov
 | Git | 2.50.1 |
 | Clang | Apple clang 21.0.0 |
 | Xcode Command Line Tools | instaladas |
+| Rust | rustc 1.97.1, cargo 1.97.1 (vía rustup, stable) — instalado para el spike de lenguaje (Fase C) |
+| Go | go1.26.5 darwin/arm64 (vía Homebrew) — instalado para el spike de lenguaje (Fase C) |
+
+**Nota de PATH:** `rustc`/`cargo` viven en `~/.cargo/bin`. `.zshenv` ya lo agrega al `PATH` para shells interactivos normales, pero algunos invocadores de shell no interactivos no lo leen — en ese caso, anteponer explícitamente `PATH="$HOME/.cargo/bin:$PATH"` al comando. `scripts/dev/collect-environment.sh` ya lo hace internamente.
 
 ## Implicaciones de diseño (`Rationale_Arquitectura_Conceptual_v0.1.md §5.2`)
 

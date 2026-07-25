@@ -34,6 +34,12 @@ UNAME_M="$(uname -m)"
 GIT_VERSION="$(git --version 2>/dev/null || echo "not found")"
 DISK_FREE="$(df -h / 2>/dev/null | tail -n +2 | tr -s ' ')"
 
+# rustc/cargo viven en ~/.cargo/bin, que puede no estar en PATH según cómo
+# se invoque el shell (no sourcing de .zshenv en shells no interactivos).
+RUSTC_VERSION="$(PATH="$HOME/.cargo/bin:$PATH" rustc --version 2>/dev/null || echo "not found")"
+CARGO_VERSION="$(PATH="$HOME/.cargo/bin:$PATH" cargo --version 2>/dev/null || echo "not found")"
+GO_VERSION="$(go version 2>/dev/null || echo "not found")"
+
 MODEL_NAME=""
 CHIP=""
 CORES=""
@@ -86,6 +92,9 @@ jq -n \
   --arg git_version "${GIT_VERSION}" \
   --arg clang_version "${CLANG_VERSION}" \
   --arg xcode_select_path "${XCODE_SELECT_PATH}" \
+  --arg rustc_version "${RUSTC_VERSION}" \
+  --arg cargo_version "${CARGO_VERSION}" \
+  --arg go_version "${GO_VERSION}" \
   --arg disk_free "${DISK_FREE}" \
   '{
     captured_at: $captured_at,
@@ -107,7 +116,10 @@ jq -n \
     toolchain: {
       git_version: $git_version,
       clang_version: $clang_version,
-      xcode_select_path: $xcode_select_path
+      xcode_select_path: $xcode_select_path,
+      rustc_version: $rustc_version,
+      cargo_version: $cargo_version,
+      go_version: $go_version
     },
     disk_free_root: $disk_free
   }' > "${OUT_FILE}"
