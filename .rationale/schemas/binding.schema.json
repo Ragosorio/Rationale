@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rationale.dev/schemas/binding.schema.json",
+  "title": "BindingDeclaration",
+  "description": "Rationale_v0.5.md §5.3 — declaración portable de un ancla de implementación. Corresponde a src/storage.rs::BindingDeclaration. La resolución local (revisión resuelta, coverage) es derivada, no canónica (v0.5 §5.3, §26.4) y no vive en este schema.",
+  "type": "object",
+  "required": ["id", "type"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Identificador estable del binding, ej. 'binding.authorization.resolve-entity-role'."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["symbol", "database-table", "route", "migration", "test", "commit"]
+    },
+    "provider": {
+      "type": "string",
+      "description": "Proveedor estructural que resuelve este binding, ej. 'codebase-memory', o 'rationale-self' cuando el propio código de Rationale es la implementación (ver constraint.no-provider-internal-access)."
+    },
+    "structural_id": {
+      "type": "string",
+      "description": "Identificador estructural, ej. 'function:typescript:auth.resolveEntityRole'."
+    },
+    "path_hint": {
+      "type": "string",
+      "description": "Ruta relativa de referencia — un hint, no la fuente de verdad de resolución."
+    },
+    "scope": {
+      "type": "string",
+      "description": "ProjectScope jerárquico (v0.5 §5.7), ej. 'package:npm:@boost/api'."
+    }
+  }
+}

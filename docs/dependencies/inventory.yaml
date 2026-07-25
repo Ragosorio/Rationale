@@ -32,20 +32,19 @@ core_dependencies:
     purpose: "Serialización de Context Packets y respuestas MCP"
     runtime_dependency: true
     requires_network: false
-  - name: serde_yaml
-    version: "0.9"
+  - name: yaml_serde
+    version: "0.10.4"
     license: "MIT OR Apache-2.0"
-    purpose: "Parseo de Records/Subjects YAML en .rationale/"
+    purpose: "Parseo de Records/Subjects/Evidence/Assessments YAML en .rationale/"
     runtime_dependency: true
     requires_network: false
-    known_risk: >
-      Marcado "+deprecated" upstream desde mediados de 2026 (mantenimiento
-      descontinuado por el autor original). Fase E multiplica el parseo
-      YAML (Subjects, Evidence, Assessments) — migrar después de eso
-      cuesta mucho más que ahora. Decisión de reemplazo en ADR-0003.
-      Candidato evaluado: yaml_serde 0.10.4 (github.com/yaml/yaml-serde,
-      mantenido por "The YAML Organization", MIT OR Apache-2.0, mismo
-      rango de licencia).
+    notes: >
+      Reemplazó a serde_yaml (0.9, "+deprecated" upstream) en ADR-0003.
+      Mantenido por "The YAML Organization" (github.com/yaml/yaml-serde).
+      Probado con roundtrip real contra un Subject del repo antes de migrar.
+      Trae una dependencia transitiva nueva: libyaml-rs 0.3.0 (libyaml
+      transpilado a Rust puro vía c2rust, MIT, mismo org github.com/yaml)
+      — no reintroduce un toolchain C, confirmado por `cargo info`.
 planned_core_dependencies:
   - name: rusqlite
     version: "0.31 (feature: bundled)"

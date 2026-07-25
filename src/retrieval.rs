@@ -84,7 +84,7 @@ pub fn compile_packet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{Approval, BindingDeclaration, Record};
+    use crate::storage::{Approval, BindingDeclaration, EpistemicStatus, Record};
 
     fn fixed_record(approved: bool) -> Record {
         Record {
@@ -92,6 +92,8 @@ mod tests {
             kind: "constraint".to_string(),
             severity: "critical".to_string(),
             statement: "Golden packet statement.".to_string(),
+            epistemic_status: EpistemicStatus::Stated,
+            evidence: vec![],
             approvals: if approved {
                 vec![Approval {
                     actor: "user:security-owner".to_string(),
@@ -109,6 +111,7 @@ mod tests {
                 path_hint: Some("src/golden.ts".to_string()),
             }],
             bound_revision: Some("abc123fixed".to_string()),
+            subject: None,
         }
     }
 

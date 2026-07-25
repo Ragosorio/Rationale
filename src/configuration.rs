@@ -69,7 +69,7 @@ pub fn load(start: &Path) -> Result<ResolvedConfig, ConfigError> {
     let project_id = if config_path.exists() {
         let content = std::fs::read_to_string(&config_path).map_err(ConfigError::Io)?;
         let parsed: ProjectConfig =
-            serde_yaml::from_str(&content).map_err(|e| ConfigError::Parse(e.to_string()))?;
+            yaml_serde::from_str(&content).map_err(|e| ConfigError::Parse(e.to_string()))?;
         parsed
             .project
             .id

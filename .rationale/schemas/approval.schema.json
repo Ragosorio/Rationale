@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rationale.dev/schemas/approval.schema.json",
+  "title": "Approval",
+  "description": "Rationale_v0.5.md §5.5 — quién aprobó una afirmación normativa y con qué autoridad. Corresponde a src/storage.rs::Approval.",
+  "type": "object",
+  "required": ["actor", "authority", "status"],
+  "additionalProperties": true,
+  "properties": {
+    "actor": {
+      "type": "string",
+      "description": "Quién aprobó, ej. 'user:security-owner'."
+    },
+    "authority": {
+      "type": "string",
+      "enum": [
+        "contributor",
+        "domain-maintainer",
+        "domain-owner",
+        "security-owner",
+        "product-owner",
+        "architecture-owner",
+        "repository-policy"
+      ],
+      "description": "Rol de autoridad, Rationale_v0.5.md §10.6."
+    },
+    "domain": {
+      "type": "string",
+      "description": "Dominio sobre el que aplica la autoridad, ej. 'authorization'."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["approved", "disputed", "revoked"]
+    },
+    "approved_at": { "type": "string", "format": "date-time" },
+    "policy": {
+      "type": "string",
+      "description": "Política que habilitó la aprobación, ej. 'codeowners'."
+    }
+  }
+}

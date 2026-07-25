@@ -7,6 +7,7 @@
 //! No más que esto — el resto (FTS, budget multi-constraint, capture,
 //! assessments persistidos) pertenece a Fase E/F.
 
+mod assessment;
 mod configuration;
 mod evaluation;
 mod project;
@@ -14,6 +15,7 @@ mod providers;
 mod retrieval;
 mod revision;
 mod storage;
+mod subjects;
 
 use providers::{CodeIntelligenceProvider, ProviderStatus};
 use std::path::{Path, PathBuf};
@@ -151,6 +153,30 @@ fn cmd_prepare(args: &[String]) {
         .or_else(|| records.first())
         .expect("no hay Records en .rationale/records/");
 
+    // Resolver el Subject referenciado por el Record contra el canon real
+    // (Rationale_v0.5.md §9.1, orden 1-2: ID exacto y alias). Una
+    // referencia colgante (Subject inexistente) se reporta, no se oculta.
+    if let Some(subject_ref) = &record.subject {
+        let subjects_dir = config.rationale_dir.join("subjects");
+        match subjects::list_subjects(&subjects_dir) {
+            Ok(subjects) => match subjects::resolve_by_id_or_alias(&subjects, &subject_ref.id) {
+                Some(subject) => eprintln!(
+                    "subject: {} [{}] (scope={}, applies_to={} entradas)",
+                    subject.title,
+                    subject.subject_type,
+                    subject.scope,
+                    subject.applies_to.len()
+                ),
+                None => eprintln!(
+                    "advertencia: el Record referencia el Subject '{}' pero no existe en {}",
+                    subject_ref.id,
+                    subjects_dir.display()
+                ),
+            },
+            Err(e) => eprintln!("advertencia: no se pudieron leer Subjects: {e}"),
+        }
+    }
+
     // 3. Consultar Codebase Memory — sesión MCP persistente real (ADR-0002).
     let (provider_status, provider_coverage, resolved_target, provider_warnings) =
         match providers::codebase_memory::CodebaseMemoryClient::spawn() {
@@ -181,6 +207,23 @@ fn cmd_prepare(args: &[String]) {
     let snap = revision::snapshot(&repo_path);
     let bound_revision = record.bound_revision.clone().unwrap_or_default();
     let consistency = revision::check_consistency(&snap, &bound_revision);
+
+    // Assessment (Rationale_v0.5.md §5.6): lo que Rationale puede afirmar
+    // HOY sobre la vigencia del Record, separado del Record mismo. Nunca
+    // se autoaprueba autoridad ni se sirve una revisión no verificada.
+    let computed_assessment = assessment::compute(
+        record,
+        &snap,
+        provider_status.clone(),
+        provider_coverage.clone(),
+    );
+    eprintln!(
+        "assessment: applicability={:?} linkage={:?} authority={:?} — {}",
+        computed_assessment.state.applicability,
+        computed_assessment.state.linkage,
+        computed_assessment.state.authority,
+        computed_assessment.assessment_reason
+    );
 
     // 5. + 6. Compilar y emitir el packet compacto.
     let packet = retrieval::compile_packet(

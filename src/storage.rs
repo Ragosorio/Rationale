@@ -31,6 +31,47 @@ pub struct Approval {
     pub status: String,
 }
 
+/// Evidence — Rationale_v0.5.md §5.4. Describe evidencia verificable o
+/// referenciada; nunca el contenido íntegro (v0.5 §4.11, minimización).
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct Evidence {
+    #[serde(rename = "type")]
+    pub evidence_type: String,
+    pub path: Option<String>,
+    pub revision: Option<String>,
+    #[serde(default)]
+    pub verified: bool,
+    pub content_hash: Option<String>,
+    pub visibility: Option<String>,
+}
+
+/// Estado epistemológico de una afirmación (Rationale_v0.5.md §10, §12.1).
+/// Un Record nuevo sin este campo se asume `Stated` (afirmación humana
+/// explícita) — es el caso más común de captura manual; nunca se asume
+/// `Observed` por defecto, porque eso implicaría verificación mecánica que
+/// no ocurrió.
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, serde::Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum EpistemicStatus {
+    Observed,
+    #[default]
+    Stated,
+    Corroborated,
+    Inferred,
+    Disputed,
+    Unknown,
+}
+
+/// Referencia embebida al Subject dentro del Record (Rationale_v0.5.md
+/// §27: el Record incluye una copia de `id`/`type`/`title` por comodidad y
+/// portabilidad). `subjects::resolve_by_id_or_alias` valida esta referencia
+/// contra el canon real en `.rationale/subjects/`.
+#[derive(Debug, Deserialize, Clone)]
+pub struct RecordSubjectRef {
+    pub id: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Record {
     pub id: String,
@@ -39,10 +80,16 @@ pub struct Record {
     pub severity: String,
     pub statement: String,
     #[serde(default)]
+    pub epistemic_status: EpistemicStatus,
+    #[serde(default)]
     pub approvals: Vec<Approval>,
     #[serde(default)]
     pub binding_declarations: Vec<BindingDeclaration>,
+    #[serde(default)]
+    #[allow(dead_code)] // consumido por Trust Evaluator en Fase F (minimización, v0.5 §4.11)
+    pub evidence: Vec<Evidence>,
     pub bound_revision: Option<String>,
+    pub subject: Option<RecordSubjectRef>,
 }
 
 #[derive(Debug)]
@@ -69,7 +116,7 @@ impl std::fmt::Display for StorageError {
 pub fn read_record(path: &Path) -> Result<Record, StorageError> {
     let content = std::fs::read_to_string(path).map_err(StorageError::Io)?;
     let record: Record =
-        serde_yaml::from_str(&content).map_err(|e| StorageError::Parse(e.to_string()))?;
+        yaml_serde::from_str(&content).map_err(|e| StorageError::Parse(e.to_string()))?;
 
     if record.id.is_empty() {
         return Err(StorageError::MissingRequiredField("id"));

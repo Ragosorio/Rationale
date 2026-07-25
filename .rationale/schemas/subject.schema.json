@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rationale.dev/schemas/subject.schema.json",
+  "title": "Subject",
+  "description": "Rationale_v0.5.md §5.1 — identidad conceptual estable de un comportamiento gobernado. Corresponde a src/subjects.rs::Subject.",
+  "type": "object",
+  "required": ["id", "type", "title"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "type": "string" },
+    "id": {
+      "type": "string",
+      "description": "Identificador conceptual estable, ej. 'architecture.provider-boundary'.",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "type": {
+      "type": "string",
+      "description": "Naturaleza del Subject, ej. 'system-behavior'."
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "scope": {
+      "type": "string",
+      "enum": ["project", "workspace", "package", "service", "domain", "target"],
+      "default": "project"
+    },
+    "aliases": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "applies_to": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "description": { "type": "string" },
+    "source": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Referencias a documentos que justifican este Subject (research notes, ADRs)."
+    },
+    "review": {
+      "type": "object",
+      "description": "Estado de revisión del Subject en sí (distinto de la autoridad de los Records que lo referencian).",
+      "properties": {
+        "status": { "type": "string", "enum": ["unreviewed", "approved"] },
+        "proposed_by": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["agent", "human"] },
+            "name": { "type": "string" }
+          }
+        },
+        "proposed_at": { "type": "string", "format": "date-time" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}
