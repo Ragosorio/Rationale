@@ -1,0 +1,6 @@
+id: constraint.no-global-admin-for-staff
+kind: constraint
+severity: critical
+statement: Staff users must never receive global super_admin.
+subject: authorization.entity-scoped-staff-access
+bound_revision: def456abc0000000000000000000000000000000

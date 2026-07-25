@@ -12,6 +12,14 @@
 /dist/
 node_modules/
 
+# Language spike build artifacts (docs/research/language/) — el código
+# fuente de los candidatos se versiona; sus binarios y caches, no.
+spikes/language/rust/target/
+spikes/language/go/spike-work/
+spikes/language/go/rationale-spike
+spikes/language/go/rationale-spike-release
+spikes/language/*/*.sqlite3
+
 # Logs
 *.log
 
