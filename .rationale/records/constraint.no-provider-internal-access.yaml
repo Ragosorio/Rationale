@@ -74,11 +74,19 @@ approvals: []
 # otro agente (evaluation.no-self-certification, Proceso §21: "Sus Records
 # deben ser revisados. No se autoaprobarán.").
 
-binding_declarations: []
-# Vacío intencionalmente: el módulo `providers` que implementará este
-# límite todavía no existe (se construye en Fase D3-D4). El binding se
-# añadirá aquí cuando exista el símbolo real que lo haga cumplir — no se
-# inventa un binding a código que no existe (Rationale_v0.5.md §4.4, §9).
+binding_declarations:
+  - id: binding.providers.codebase-memory-client
+    type: symbol
+    provider: rationale-self
+    structural_id: rust:src/providers/codebase_memory.rs::CodebaseMemoryClient
+    path_hint: src/providers/codebase_memory.rs
+    scope: project
+# Añadido en Fase D3-D4: el módulo `providers::codebase_memory` implementa
+# este límite en la práctica — su único punto de contacto con Codebase
+# Memory es el protocolo MCP (spawn + JSON-RPC framed), nunca lectura
+# directa de ~/.cache/codebase-memory-mcp/*.db. `provider: rationale-self`
+# indica que este binding lo resuelve el propio código de Rationale, no
+# Codebase Memory (que no puede saber nada sobre su propio cliente).
 
 evidence:
   - type: research-note
