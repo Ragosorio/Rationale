@@ -1,0 +1,29 @@
+# Registro de la revisión de Codebase Memory analizada.
+# Rationale_Arquitectura_Conceptual_v0.1.md §6.1
+
+repository: DeusData/codebase-memory-mcp
+clone_path_local: "~/Desktop/codebase-memory-mcp"   # ruta local, no un path de máquina sensible
+branch: main
+commit: 97ce23f9827177fff3858831156e9795c6832b18
+commit_date: "2026-07-23T20:06:31+02:00"
+commit_subject: "Merge pull request #1230 from DeusData/fix/dry-run-determinism"
+git_describe: v0.9.0-338-g97ce23f9
+nearest_tag: v0.9.0
+commits_ahead_of_nearest_tag: 338
+analyzed_at: 2026-07-25
+
+installed_binary:
+  path: "~/.local/bin/codebase-memory-mcp"
+  version: 0.8.1
+  installed_via: install.sh (downloads from GitHub "releases/latest")
+
+discrepancy:
+  observed: >
+    The installed binary (0.8.1) is one full release behind the analyzed
+    source clone (v0.9.0, plus 338 additional unreleased commits on main).
+  implication: >
+    Any MCP tool call made in this environment through the installed binary
+    reflects v0.8.1 behavior, NOT the code visible in the clone at HEAD.
+    Findings from `mcp__codebase-memory-mcp__*` tool calls and findings from
+    reading the clone's source must be labeled separately and never merged
+    as if they describe the same build.

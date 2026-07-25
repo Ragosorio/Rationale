@@ -22,18 +22,20 @@ Codebase Memory: `97ce23f9827177fff3858831156e9795c6832b18` (`DeusData/codebase-
 
 | Tarea | Descripción | Estado | Notas |
 |---|---|---|---|
-| CBM-001 | Clone and lock revision | Clon ✅ · lock doc pendiente | Clon ya existe en `~/Desktop/codebase-memory-mcp`; falta `00-source-lock.md` |
-| CBM-002 | Build on MacBook Air M4 | Pendiente | Fuente completa en el clon; build no ejecutado (no hay `build/`, `bin/`, `out/`). El binario en `~/.local/bin/` viene de `install.sh`, no de build local |
-| CBM-003 | Run tests | Pendiente | Depende de CBM-002 |
-| CBM-004 | Index itself | ✅ hecho | 20.747 nodos / 77.956 edges, vía MCP en esta sesión |
-| CBM-005 | Map modules | Pendiente | Usar `get_architecture` sobre el propio índice + lectura de código |
-| CBM-006 | Inspect MCP | Pendiente | Contratos de herramientas expuestas |
-| CBM-007 | Inspect CLI | Pendiente | Comandos, salida estructurada |
-| CBM-008 | Inspect revision and coverage | **Pendiente — prioridad máxima** | Ver pregunta gobernante abajo |
-| CBM-009 | Inspect daemon and watcher | Pendiente | |
-| CBM-010 | Inspect workspace support | Pendiente | Fixture real disponible: `~/Desktop/Monorepo` ya indexado (12.367 nodos / 23.331 edges) |
-| CBM-011 | Measure CLI vs MCP | Pendiente | Decide transporte del adaptador (ADR-0002) |
-| CBM-012 | Recommend adapter boundary | Pendiente | Entregable final; depende de CBM-001 a CBM-011 |
+| CBM-001 | Clone and lock revision | ✅ hecho | `00-source-lock.md` + `source-lock.yaml`. Halló discrepancia de versión: binario instalado 0.8.1 vs clon 338 commits por delante de v0.9.0 |
+| CBM-002 | Build on MacBook Air M4 | ✅ hecho | `01-build-and-test.md`. Build exitoso, 2m49s, binario 296MB, reporta versión `dev` |
+| CBM-003 | Run tests | ✅ hecho (parcial) | `01-build-and-test.md`. `test-foundation` falla en link (símbolos `_suite_*`); suite completa no ejecutada por costo — documentado como limitación conocida, no responsabilidad de Rationale |
+| CBM-004 | Index itself | ✅ hecho | `02-module-map.md`. 20.747 nodos / 77.956 edges |
+| CBM-005 | Map modules | ✅ hecho | `02-module-map.md`. Hallazgo: `packages` en clusters no distingue módulos reales |
+| CBM-006 | Inspect MCP | ✅ hecho | `03-mcp-contracts.md`. 14 herramientas documentadas; ADR de CBM es documento único, no log de decisiones |
+| CBM-007 | Inspect CLI | ✅ hecho | `04-cli-contracts.md`. Latencia medida: 6.8s fría, 2.2s con daemon caliente |
+| CBM-008 | Inspect revision and coverage | ✅ hecho | `05-revision-and-coverage.md`. **Hallazgo crítico:** `detect_changes` devolvió vacío ante 200 archivos realmente modificados |
+| CBM-009 | Inspect daemon and watcher | ✅ hecho | `06-daemon-and-watcher.md`. `hook_augment.c` confirma el patrón no-bloqueante de `v0.5 §20.7` con evidencia de código |
+| CBM-010 | Inspect workspace support | ✅ hecho | `08-workspaces-and-monorepos.md`. **Hallazgo crítico:** cero relaciones `IMPORTS` cruzan paquetes en el Monorepo real (8 paquetes npm) |
+| CBM-011 | Measure CLI vs MCP | ✅ hecho (parcial) | `11-performance-observations.md`. CLI medido formalmente; MCP solo cualitativo — medición formal queda como research item antes de ADR-0002 |
+| CBM-012 | Recommend adapter boundary | ✅ hecho | `12-integration-recommendation.md`. Síntesis y recomendación de frontera de adaptador |
+
+Documentos adicionales completados fuera de la lista original de subtareas: `07-storage-and-cache.md`, `09-installation-and-agents.md`, `10-failure-modes.md` (consolidado transversal).
 
 ## La pregunta que gobierna toda la arquitectura (CBM-008)
 
@@ -61,3 +63,10 @@ Los 13 archivos en `docs/research/codebase-memory/00-source-lock.md` … `12-int
 ## Criterio de éxito
 
 Los 13 documentos existen, con comandos reproducibles, secciones completas, y CBM-008 respondido explícitamente con evidencia — incluso si la respuesta es "no lo expone".
+
+**Estado: completo.** Los 13 documentos (`00`–`12`) más `source-lock.yaml` están escritos con evidencia reproducible. Dos hallazgos críticos con impacto arquitectónico directo:
+
+1. `detect_changes` no detectó 200 archivos realmente modificados (CBM-008) → el Revision Coordinator de Rationale debe derivar su propia verdad de revisión desde Git, nunca confiar en la señal del proveedor.
+2. Cero relaciones `IMPORTS` cruzan paquetes en un monorepo real de 8 paquetes npm (CBM-010) → la recuperación cross-workspace de Rationale no puede depender únicamente de edges del proveedor; necesita bindings manuales/contractuales como fallback.
+
+Research items abiertos para antes de ADR-0002: medición formal de latencia MCP, lectura de `pass_pkgmap.c`, y confirmar si el hallazgo de cobertura vía CLI en HEAD también aparece vía MCP. Ver `12-integration-recommendation.md §Próximos research items`.
