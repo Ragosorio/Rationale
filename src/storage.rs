@@ -63,6 +63,20 @@ pub enum EpistemicStatus {
     Unknown,
 }
 
+impl std::fmt::Display for EpistemicStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            EpistemicStatus::Observed => "observed",
+            EpistemicStatus::Stated => "stated",
+            EpistemicStatus::Corroborated => "corroborated",
+            EpistemicStatus::Inferred => "inferred",
+            EpistemicStatus::Disputed => "disputed",
+            EpistemicStatus::Unknown => "unknown",
+        };
+        write!(f, "{s}")
+    }
+}
+
 /// Referencia embebida al Subject dentro del Record (Rationale_v0.5.md
 /// §27: el Record incluye una copia de `id`/`type`/`title` por comodidad y
 /// portabilidad). `subjects::resolve_by_id_or_alias` valida esta referencia

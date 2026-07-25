@@ -8,6 +8,7 @@
 //! assessments persistidos) pertenece a Fase E/F.
 
 mod assessment;
+mod cache;
 mod configuration;
 mod evaluation;
 mod project;
@@ -208,6 +209,46 @@ fn cmd_prepare(args: &[String]) {
     let bound_revision = record.bound_revision.clone().unwrap_or_default();
     let consistency = revision::check_consistency(&snap, &bound_revision);
 
+    // Capa derivada (ADR-0004/0005): reconstruible por completo desde
+    // .rationale/ — nunca la única copia de una decisión (Arquitectura §11.7).
+    let current_revision = snap.head.clone().unwrap_or_default();
+    match cache::cache_root(&project_root).and_then(|dir| cache::open(&dir).map(|c| (dir, c))) {
+        Ok((_dir, conn)) => {
+            // FTS se reconstruye en cada consulta a partir de los Records ya
+            // cargados — barato a esta escala y demuestra regenerabilidad
+            // total sin depender de que el cache sobreviva entre ejecuciones.
+            if let Err(e) = cache::rebuild_fts(&conn, &records) {
+                eprintln!("advertencia: no se pudo reconstruir el índice FTS: {e}");
+            }
+
+            // Recuperación determinista antes que semántica (v0.5 §19.1):
+            // FTS es un paso de candidatos diagnóstico aquí, no decide
+            // selección todavía (eso llega con el budget real de Fase E4).
+            if let Some(sym) = &symbol {
+                match cache::search_candidates(&conn, sym, 5) {
+                    Ok(candidates) if !candidates.is_empty() => {
+                        eprintln!("candidatos FTS para '{sym}': {candidates:?}");
+                    }
+                    Ok(_) => eprintln!("candidatos FTS para '{sym}': ninguno"),
+                    Err(e) => eprintln!("advertencia: búsqueda FTS falló: {e}"),
+                }
+            }
+
+            match cache::get_cached_assessment(&conn, &record.id, &current_revision) {
+                Ok(Some(cached)) => {
+                    eprintln!("assessment: cache HIT — {}", cached.assessment_reason);
+                }
+                Ok(None) => {
+                    eprintln!("assessment: cache MISS — calculando y guardando para esta revisión");
+                }
+                Err(e) => eprintln!("advertencia: error leyendo cache de assessments: {e}"),
+            }
+        }
+        Err(e) => {
+            eprintln!("advertencia: capa derivada no disponible ({e}) — se continúa sin cache")
+        }
+    }
+
     // Assessment (Rationale_v0.5.md §5.6): lo que Rationale puede afirmar
     // HOY sobre la vigencia del Record, separado del Record mismo. Nunca
     // se autoaprueba autoridad ni se sirve una revisión no verificada.
@@ -218,12 +259,20 @@ fn cmd_prepare(args: &[String]) {
         provider_coverage.clone(),
     );
     eprintln!(
-        "assessment: applicability={:?} linkage={:?} authority={:?} — {}",
+        "assessment: applicability={} linkage={} authority={} — {}",
         computed_assessment.state.applicability,
         computed_assessment.state.linkage,
         computed_assessment.state.authority,
         computed_assessment.assessment_reason
     );
+
+    if let Ok(cache_dir) = cache::cache_root(&project_root) {
+        if let Ok(conn) = cache::open(&cache_dir) {
+            if let Err(e) = cache::cache_assessment(&conn, &computed_assessment) {
+                eprintln!("advertencia: no se pudo guardar el assessment en cache: {e}");
+            }
+        }
+    }
 
     // 5. + 6. Compilar y emitir el packet compacto.
     let packet = retrieval::compile_packet(

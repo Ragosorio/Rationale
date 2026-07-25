@@ -49,6 +49,40 @@ pub enum Linkage {
     Unresolved,
 }
 
+impl std::fmt::Display for AuthorityStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            AuthorityStatus::Unreviewed => "unreviewed",
+            AuthorityStatus::Approved => "approved",
+            AuthorityStatus::Policy => "policy",
+            AuthorityStatus::Revoked => "revoked",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl std::fmt::Display for Applicability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Applicability::Active => "active",
+            Applicability::Superseded => "superseded",
+            Applicability::Unknown => "unknown",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl std::fmt::Display for Linkage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Linkage::Current => "current",
+            Linkage::Stale => "stale",
+            Linkage::Unresolved => "unresolved",
+        };
+        write!(f, "{s}")
+    }
+}
+
 /// Los cuatro estados juntos, tal como aparecen en el ejemplo `state:` de
 /// Rationale_v0.5.md §27.
 #[derive(Debug, Clone, Serialize)]
