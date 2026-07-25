@@ -1,0 +1,34 @@
+schema_version: rationale/0.1
+
+id: architecture.revision-consistency
+type: system-behavior
+title: Coherent revision snapshot across Git, provider and assessments
+scope: project
+aliases:
+  - architecture.revision-gate
+applies_to:
+  - project
+
+description: >
+  No response may be built by mixing an inconsistent Git HEAD, structural
+  provider revision, and Rationale assessment revision. Every package must
+  declare the revision of each layer and a consistency status (exact,
+  working-tree-overlay, structural-index-behind, assessment-behind,
+  unresolved). If layers disagree, the response must degrade or be
+  rejected rather than served as current. This check happens at query
+  time and does not depend on hooks or a daemon to be correct.
+
+source:
+  - Rationale_v0.5.md §4.8, §12.5, §15.7, §23.5
+  - Rationale_Arquitectura_Conceptual_v0.1.md §11.4, §13.4
+
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: claude-code
+  proposed_at: 2026-07-25T00:00:00Z
+  note: >
+    Subject fundacional propuesto durante el bootstrap del repositorio.
+    No se autoaprueba; requiere revisión humana antes de adquirir
+    autoridad normativa (Proceso §21).

@@ -1,0 +1,33 @@
+schema_version: rationale/0.1
+
+id: architecture.provider-boundary
+type: system-behavior
+title: Structural provider boundary and adapter contract
+scope: project
+aliases:
+  - architecture.codebase-memory-boundary
+applies_to:
+  - project
+
+description: >
+  Rationale never reads a structural provider's internal storage, private
+  headers, or undocumented node IDs directly. It consumes Codebase Memory
+  (and any future provider) exclusively through a public, versioned
+  interface (MCP or documented CLI) with explicit capability negotiation.
+  Every provider response must declare provider name, version, indexed
+  revision, generation, coverage and warnings.
+
+source:
+  - Rationale_v0.5.md §7.9, §20.4, §21
+  - Rationale_Arquitectura_Conceptual_v0.1.md §7.2, §11.5
+
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: claude-code
+  proposed_at: 2026-07-25T00:00:00Z
+  note: >
+    Subject fundacional propuesto durante el bootstrap del repositorio.
+    No se autoaprueba; requiere revisión humana antes de adquirir
+    autoridad normativa (Proceso §21).

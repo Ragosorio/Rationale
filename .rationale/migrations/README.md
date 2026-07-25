@@ -1,0 +1,1 @@
+Vacío intencionalmente. Las migraciones de schema canónico (`schema_version`) empiezan a existir cuando exista un primer schema versionado que migrar desde. Hoy `schema_version: rationale/0.1` es la única versión declarada en los Subjects fundacionales; no hay migración previa que registrar.

@@ -1,0 +1,30 @@
+# Configuración canónica del proyecto Rationale.
+#
+# Esta carpeta es la capa canónica compartida (Rationale_v0.5.md §26,
+# Rationale_Arquitectura_Conceptual_v0.1.md §10.1): versionada en Git,
+# revisable en PR, sin cache, sin embeddings, sin paths absolutos de una
+# máquina, sin tokens ni secretos.
+
+schema_version: rationale/0.1
+
+project:
+  id: rationale
+  # El repositorio Git raíz es la unidad de proyecto en la v1
+  # (Rationale_v0.5.md §4.15). No hay federación multi-repo todavía.
+
+providers:
+  structural:
+    - name: codebase-memory
+      status: primary
+      # Integración únicamente vía MCP/CLI público, nunca acoplamiento
+      # interno (Rationale_v0.5.md §20.4, §7.9).
+
+policy:
+  # Ninguna regla puede bloquear todavía: no existen Records aprobados.
+  blocking_enabled: false
+  embeddings_enabled: false
+  llm_required: false
+
+sensitivity:
+  default_visibility: repository
+  default_classification: internal

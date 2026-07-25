@@ -1,0 +1,35 @@
+schema_version: rationale/0.1
+
+id: retrieval.context-budget
+type: system-behavior
+title: Context packets are bounded and prioritized, not exhaustive
+scope: project
+aliases:
+  - retrieval.progressive-disclosure
+applies_to:
+  - project
+
+description: >
+  Every retrieval query carries an explicit token/count budget. The
+  context compiler must prioritize critical approved constraints, then
+  conflicts with stated intent, then the primary decision, then directly
+  relevant risks, then evidence quality, then structural connections —
+  and stop within budget rather than maximizing volume. The rest of the
+  history remains available via explicit expansion (progressive
+  disclosure), never dumped by default. The goal is maximizing
+  context_utility_density per token, not the number of records returned.
+
+source:
+  - Rationale_v0.5.md §4.6, §18, §19
+  - Rationale_Arquitectura_Conceptual_v0.1.md §11.11
+
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: claude-code
+  proposed_at: 2026-07-25T00:00:00Z
+  note: >
+    Subject fundacional propuesto durante el bootstrap del repositorio.
+    No se autoaprueba; requiere revisión humana antes de adquirir
+    autoridad normativa (Proceso §21).

@@ -1,0 +1,35 @@
+schema_version: rationale/0.1
+
+id: policy.no-inferred-blocks
+type: system-behavior
+title: Only approved, active, exact-revision critical constraints may block
+scope: project
+aliases:
+  - policy.critical-blocking-predicate
+applies_to:
+  - project
+
+description: >
+  An inference produced by an agent, a semantic similarity signal, a stale
+  binding, unknown structural coverage, or an LLM-generated summary must
+  never block a change. A change can only be blocked when a constraint is
+  simultaneously: kind=constraint, severity=critical, authority in
+  {approved, policy}, applicability=active, linkage=current,
+  revision_consistency=exact, and the contradiction is concrete and
+  deterministic. Any failing condition downgrades the response to
+  informative or advisory, never blocking.
+
+source:
+  - Rationale_v0.5.md §10.7, §14.1
+  - Rationale_Arquitectura_Conceptual_v0.1.md §11.10
+
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: claude-code
+  proposed_at: 2026-07-25T00:00:00Z
+  note: >
+    Subject fundacional propuesto durante el bootstrap del repositorio.
+    No se autoaprueba; requiere revisión humana antes de adquirir
+    autoridad normativa (Proceso §21).

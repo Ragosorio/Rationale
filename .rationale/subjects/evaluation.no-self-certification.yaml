@@ -1,0 +1,35 @@
+schema_version: rationale/0.1
+
+id: evaluation.no-self-certification
+type: system-behavior
+title: The agent that implements a change cannot be the sole judge of it
+scope: project
+aliases:
+  - evaluation.independent-review-required
+applies_to:
+  - project
+
+description: >
+  Neither Rationale's own metrics (e.g. context_utility_density) nor an
+  implementing agent's self-review are sufficient proof of success.
+  Conclusions about product value or code quality must rely on a
+  combination of deterministic tests, a pre-registered ground truth,
+  paired comparisons across conditions, bootstrap confidence intervals,
+  and independent review (another agent, another model, or a human).
+  A high internal score never compensates for an incorrect task outcome.
+
+source:
+  - Rationale_v0.5.md §30.1.13, §30.1.17
+  - Rationale_Arquitectura_Conceptual_v0.1.md §20.4
+  - Rationale_Proceso_Construccion_Agentes_v0.1.md §15.5
+
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: claude-code
+  proposed_at: 2026-07-25T00:00:00Z
+  note: >
+    Subject fundacional propuesto durante el bootstrap del repositorio.
+    No se autoaprueba; requiere revisión humana antes de adquirir
+    autoridad normativa (Proceso §21).

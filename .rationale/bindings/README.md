@@ -1,0 +1,1 @@
+Vacío intencionalmente. Un Binding relaciona un Subject con una implementación conocida (`Rationale_v0.5.md §5.3`) — símbolo, tabla, ruta, migración o test. No existen todavía anclas estructurales porque no hay núcleo implementado; los Subjects fundacionales de `.rationale/subjects/` aún no tienen bindings de código.

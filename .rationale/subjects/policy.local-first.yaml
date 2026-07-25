@@ -1,0 +1,33 @@
+schema_version: rationale/0.1
+
+id: policy.local-first
+type: system-behavior
+title: Core runs locally without mandatory paid or remote infrastructure
+scope: project
+aliases:
+  - policy.no-mandatory-cloud
+applies_to:
+  - project
+
+description: >
+  The Rationale core must be able to run entirely locally. It must not
+  require, as a hard dependency, a proprietary API, remote server, managed
+  database, embeddings service, Rationale account, Docker, cluster, or
+  paid license. External agent costs (Claude Code, Codex subscriptions,
+  API tokens) are the developer's own tooling costs, not a dependency of
+  the Rationale runtime itself. Mandatory core infrastructure cost target
+  is $0.
+
+source:
+  - Rationale_Arquitectura_Conceptual_v0.1.md §4.1, §18.1
+
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: claude-code
+  proposed_at: 2026-07-25T00:00:00Z
+  note: >
+    Subject fundacional propuesto durante el bootstrap del repositorio.
+    No se autoaprueba; requiere revisión humana antes de adquirir
+    autoridad normativa (Proceso §21).

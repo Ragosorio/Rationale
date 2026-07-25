@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Rationale local-only state (derived, ephemeral, run logs, machine-specific)
+.rationale-local/
+
+# Build artifacts (language not yet decided; placeholder patterns)
+/target/
+/build/
+/bin/
+/out/
+/dist/
+node_modules/
+
+# Logs
+*.log
+
+# Editor
+.vscode/
+.idea/

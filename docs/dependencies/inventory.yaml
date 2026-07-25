@@ -1,0 +1,29 @@
+# Inventario de dependencias — legible por máquina.
+#
+# Política (Rationale_Arquitectura_Conceptual_v0.1.md §18.4, Proceso §19):
+# cada dependencia debe registrar licencia, versión, tamaño, riesgo, motivo,
+# alternativas consideradas, CVEs conocidas, si puede vendorizarse, si
+# requiere runtime, y si agrega llamadas externas.
+#
+# Vacío intencionalmente: el lenguaje del núcleo no está decidido (ADR-0001
+# pendiente). No se listan dependencias del núcleo hasta que exista lenguaje.
+#
+# Dependencias externas ya presentes en el entorno de desarrollo (no del
+# runtime de Rationale) se documentan como research/tooling, no como
+# dependencias del producto:
+#   - Codebase Memory (proveedor estructural inicial, proceso externo vía MCP/CLI)
+#   - Git
+
+schema_version: 1
+core_dependencies: []
+tooling_dependencies:
+  - name: codebase-memory-mcp
+    purpose: "Proveedor estructural inicial, consumido vía MCP/CLI, nunca enlazado"
+    runtime_dependency: false
+    requires_network: false
+    license: "por verificar en docs/research/codebase-memory/"
+  - name: git
+    purpose: "Fuente de verdad de revisión, historial y colaboración"
+    runtime_dependency: true
+    requires_network: false
+    license: "GPL-2.0 (herramienta externa, no vinculada)"
