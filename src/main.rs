@@ -206,8 +206,8 @@ fn cmd_prepare(args: &[String]) {
             latency_ms: t0.elapsed().as_millis(),
             git_revision: snap.head,
             consistency: consistency.to_string(),
-            provider_status: format!("{:?}", packet.snapshot.provider_status),
-            provider_coverage: format!("{:?}", packet.snapshot.provider_coverage),
+            provider_status: packet.snapshot.provider_status.clone(),
+            provider_coverage: packet.snapshot.provider_coverage.clone(),
             packet_bytes: packet_json.len(),
         },
     );
