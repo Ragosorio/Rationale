@@ -8,4 +8,6 @@ Principios obligatorios desde la primera línea de código (`Rationale_Arquitect
 - Secrets: nunca indexar deliberadamente `.env`, tokens, private keys, credenciales, dumps o datos personales; respetar `.gitignore`.
 - Toda skill externa debe revisarse, fijarse a versión/commit, verificar licencia e inspeccionarse antes de ejecutar.
 
-Este directorio se llenará con el security baseline formal (criterio de salida de arquitectura 0.1, `Rationale_Arquitectura_Conceptual_v0.1.md §26`) antes del piloto en monorepo real.
+El baseline formal y sus límites están en [`baseline.md`](baseline.md). No
+declara seguridad general: registra propiedades mínimas, evidencia disponible y
+hallazgos abiertos antes de promover una Release.

@@ -1,7 +1,7 @@
 # Release runbook
 
-La Release dogfood vigente es `v0.0.0-dogfood.6`; los tags `dogfood.1` a
-`dogfood.5` quedan como iteraciones históricas de hardening de CI y no deben
+La Release dogfood vigente es `v0.0.0-dogfood.7`; los tags `dogfood.1` a
+`dogfood.6` quedan como iteraciones históricas de hardening de CI y no deben
 usarse para instalar. La alfa pública prevista es `v0.1.0-alpha.1`.
 
 ## Antes del tag
@@ -18,8 +18,8 @@ usarse para instalar. La alfa pública prevista es `v0.1.0-alpha.1`.
 ## Tag y publicación
 
 ```bash
-git tag -a v0.0.0-dogfood.6 -m "Rationale dogfood 6"
-git push origin v0.0.0-dogfood.6
+git tag -a v0.1.0-alpha.1 -m "Rationale alpha 1"
+git push origin v0.1.0-alpha.1
 ```
 
 La workflow [`release.yml`](../../.github/workflows/release.yml) construye los
