@@ -6,9 +6,9 @@ Rationale es un compilador local de contexto causal y una capa de procedencia, a
 
 ## Estado real del proyecto
 
-**Pre-1.0, núcleo funcional.** El lenguaje del núcleo está decidido (Rust, `docs/adr/ADR-0001-core-language.md`) y ya existe un binario real en `src/` que implementa el modelo canónico completo (`Subject`, `Evidence`, `Assessment`, `Record`), una capa derivada local (SQLite + FTS, invalidada por revisión de Git), un Context Compiler con niveles de prioridad y presupuesto explícito, y una superficie MCP que expone `prepare_change`, `explain_target` y `health` a cualquier agente compatible.
+**Pre-1.0, núcleo funcional con ciclo de captura completo.** El lenguaje del núcleo está decidido (Rust, `docs/adr/ADR-0001-core-language.md`) y ya existe un binario real en `src/` que implementa el modelo canónico completo (`Subject`, `Evidence`, `Assessment`, `Record`), una capa derivada local (SQLite + FTS, invalidada por revisión de Git), un Context Compiler con niveles de prioridad y presupuesto explícito, y una superficie MCP con cuatro herramientas: `prepare_change`, `explain_target`, `health` y `finalize_change`. `finalize_change` captura mecánicamente un cambio (diff, señales de alto valor, Subject candidato) y escribe una propuesta **pendiente** — nunca aprobada automáticamente; `rationale review` en la CLI es la única vía que la promueve a decisión real, con confirmación humana explícita.
 
-**Ningún ADR está `accepted` todavía** — los 8 existentes siguen `proposed`, pendientes de revisión cruzada y aprobación humana (`docs/adr/index.md`, Subject `evaluation.no-self-certification`). No hay empaquetado ni distribución; se corre desde el código fuente con `cargo`.
+**Ningún ADR está `accepted` todavía** — los 9 existentes siguen `proposed`, pendientes de revisión cruzada y aprobación humana (`docs/adr/index.md`, Subject `evaluation.no-self-certification`). No hay empaquetado ni distribución; se corre desde el código fuente con `cargo`.
 
 ## Instalación y uso
 
@@ -19,7 +19,8 @@ cargo build --release
 ./target/release/rationale init                    # crea .rationale/ en el proyecto actual
 ./target/release/rationale health                   # revisión Git, proveedor, cobertura
 ./target/release/rationale prepare <path::symbol>    # packet de contexto para un target
-./target/release/rationale serve                     # servidor MCP (prepare_change/explain_target/health)
+./target/release/rationale serve                     # servidor MCP: prepare_change/explain_target/health/finalize_change
+./target/release/rationale review                    # confirma propuestas pendientes, una a la vez
 ```
 
 Para que un agente MCP (como esta misma sesión de Claude Code) pueda llamar al servidor, este repo ya trae [`.mcp.json`](.mcp.json) registrado — requiere reiniciar la sesión del agente para que lo cargue.
