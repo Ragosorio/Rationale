@@ -34,6 +34,7 @@ fn help_is_successful_and_non_mutating_for_every_command() {
         &["review-record", "--help"],
         &["install-agent", "--help"],
         &["uninstall-agent", "--help"],
+        &["update", "--help"],
     ];
 
     for args in commands {
@@ -54,6 +55,42 @@ fn help_is_successful_and_non_mutating_for_every_command() {
     assert!(!project.join("CLAUDE.md").exists());
     assert!(!project.join(".mcp.json").exists());
     assert!(!project.join(".rationale-local").exists());
+    std::fs::remove_dir_all(project).ok();
+}
+
+#[test]
+fn invalid_project_root_is_a_clean_cli_error() {
+    let project = unique_temp_project("invalid-root");
+    let cases: &[&[&str]] = &[
+        &["health", "--project-root", "/tmp"],
+        &["prepare", "src/main.rs", "--project-root", "/tmp"],
+        &["review", "--project-root", "/tmp"],
+        &["review-record", "record-id", "--project-root", "/tmp"],
+        &["install-agent", "--project-root", "/tmp"],
+        &["uninstall-agent", "--project-root", "/tmp"],
+    ];
+    for args in cases {
+        let output = run(&project, args);
+        assert!(!output.status.success(), "debe rechazar {args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("no se encontró .rationale"),
+            "stderr: {stderr}"
+        );
+        assert!(
+            !stderr.contains("panicked"),
+            "no debe hacer panic: {stderr}"
+        );
+    }
+    std::fs::remove_dir_all(project).ok();
+}
+
+#[test]
+fn version_is_available_without_a_project() {
+    let project = unique_temp_project("version");
+    let output = run(&project, &["--version"]);
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("rationale "));
     std::fs::remove_dir_all(project).ok();
 }
 

@@ -7,11 +7,11 @@
 
 ## Context
 
-Fase E5 convierte a Rationale en servidor MCP (`prepare_change`, `explain_target`, `health`), además de cliente (ya implementado en `src/providers/codebase_memory.rs` desde Fase D). Hace falta decidir si usar un SDK externo o continuar con el framing JSON-RPC 2.0 `Content-Length` escrito a mano que el cliente ya usa.
+Fase E5 convierte a Rationale en servidor MCP (`prepare_change`, `explain_target`, `health`), además de cliente (ya implementado en `src/providers/codebase_memory.rs` desde Fase D). Hace falta decidir si usar un SDK externo o continuar con codecs manuales separados para cada frontera.
 
 ## Decision
 
-1. **Continuar con la implementación manual del framing `Content-Length`** para el servidor MCP de Fase E5, reutilizando `read_mcp_message`/`write_mcp_message` de `src/providers/codebase_memory.rs` (generalizados a un módulo compartido).
+1. **Mantener codecs manuales separados por frontera**: JSON por línea para el servidor MCP stdio de Rationale y `Content-Length` únicamente para el cliente hacia Codebase Memory, cuyo contrato histórico se conserva.
 2. **Protocolo `2024-11-05`** — la misma versión que el cliente ya declara y que Codebase Memory ya acepta en producción real.
 3. **`rmcp` (SDK oficial) queda como candidato documentado para una migración futura**, no para Fase E5.
 
@@ -30,7 +30,7 @@ Fase E5 convierte a Rationale en servidor MCP (`prepare_change`, `explain_target
 
 ## Consequences
 
-- El servidor MCP de Fase E5 se implementa como una extensión del framing ya escrito: leer un mensaje `Content-Length`, despachar por `method`, escribir la respuesta — todo síncrono, sin runtime async.
+- El servidor MCP de Fase E5 implementa el transporte stdio estándar: leer una línea JSON, despachar por `method`, escribir una línea JSON — todo síncrono, sin runtime async. El codec `Content-Length` queda encapsulado en el cliente hacia Codebase Memory y no se reutiliza para Codex.
 - **Regla operativa crítica heredada de `Arquitectura §11.1`**: stdout queda reservado exclusivamente para el protocolo MCP; todo log va a stderr o archivo. Se verifica con un test explícito en Fase E6.
 - Si Rationale necesita en el futuro atender múltiples sesiones/agentes concurrentes de forma no bloqueante, la migración a `rmcp` (o a un runtime async propio) se vuelve más atractiva — pero no es una necesidad actual, es una capacidad hipotética.
 
@@ -43,7 +43,7 @@ Fase E5 convierte a Rationale en servidor MCP (`prepare_change`, `explain_target
 
 Framing verificado dos veces contra Codebase Memory real (Fase C y D). La extensión a modo servidor se valida en Fase E5/E6 con un cliente de prueba (mismo patrón Python usado en `docs/research/codebase-memory/11-performance-observations.md`) que llama `prepare_change`/`explain_target`/`health` contra el binario real de Rationale.
 
-**Este ADR está en estado `proposed`**, pendiente de revisión cruzada y aprobación humana.
+**Este ADR está en estado `proposed`**, pendiente de revisión cruzada y aprobación humana. La evidencia cleanroom de Codex reabrió la decisión original de compartir `Content-Length` entre ambas fronteras.
 
 ## Revisit trigger
 
