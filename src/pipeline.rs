@@ -34,7 +34,10 @@ pub struct PrepareRequest {
 
 pub struct PrepareOutcome {
     pub packet: retrieval::ContextPacket,
-    pub assessment: assessment::Assessment,
+    /// `None` es válido para un proyecto recién inicializado sin Records:
+    /// el packet puede informar salud/target/proveedor sin inventar una
+    /// decisión ni panicar por un canon vacío.
+    pub assessment: Option<assessment::Assessment>,
     /// Lo que antes eran `eprintln!` sueltos — cada caller decide destino.
     pub diagnostics: Vec<String>,
     pub latency_ms: u128,
@@ -76,13 +79,19 @@ pub fn prepare(req: &PrepareRequest, provider: &mut ProviderHandle) -> PrepareOu
                 })
                 .unwrap_or(true)
         })
-        .or_else(|| records.first())
-        .expect("no hay Records en .rationale/records/");
+        .or_else(|| records.first());
+
+    if record.is_none() {
+        diagnostics.push(
+            "no hay Records en .rationale/records/; se devuelve un packet sin restricciones y sin assessment"
+                .to_string(),
+        );
+    }
 
     // Resolver el Subject referenciado por el Record contra el canon real
     // (Rationale_v0.5.md §9.1, orden 1-2: ID exacto y alias). Una
     // referencia colgante (Subject inexistente) se reporta, no se oculta.
-    if let Some(subject_ref) = &record.subject {
+    if let Some(subject_ref) = record.and_then(|record| record.subject.as_ref()) {
         let subjects_dir = config.rationale_dir.join("subjects");
         match subjects::list_subjects(&subjects_dir) {
             Ok(subjects_list) => {
@@ -134,7 +143,9 @@ pub fn prepare(req: &PrepareRequest, provider: &mut ProviderHandle) -> PrepareOu
 
     // 4. Verificar revisión — SIEMPRE desde Git, nunca desde el proveedor (ADR-0006).
     let snap = revision::snapshot(&req.repo_path);
-    let bound_revision = record.bound_revision.clone().unwrap_or_default();
+    let bound_revision = record
+        .and_then(|record| record.bound_revision.clone())
+        .unwrap_or_default();
     let consistency = revision::check_consistency(&snap, &bound_revision);
 
     // Capa derivada (ADR-0004/0005): reconstruible por completo desde
@@ -164,22 +175,24 @@ pub fn prepare(req: &PrepareRequest, provider: &mut ProviderHandle) -> PrepareOu
                 }
             }
 
-            match cache::get_cached_assessment(&conn, &record.id, &current_revision) {
-                Ok(Some(cached)) => {
-                    diagnostics.push(format!(
-                        "assessment: cache HIT — {}",
-                        cached.assessment_reason
-                    ));
+            if let Some(record) = record {
+                match cache::get_cached_assessment(&conn, &record.id, &current_revision) {
+                    Ok(Some(cached)) => {
+                        diagnostics.push(format!(
+                            "assessment: cache HIT — {}",
+                            cached.assessment_reason
+                        ));
+                    }
+                    Ok(None) => {
+                        diagnostics.push(
+                            "assessment: cache MISS — calculando y guardando para esta revisión"
+                                .to_string(),
+                        );
+                    }
+                    Err(e) => diagnostics.push(format!(
+                        "advertencia: error leyendo cache de assessments: {e}"
+                    )),
                 }
-                Ok(None) => {
-                    diagnostics.push(
-                        "assessment: cache MISS — calculando y guardando para esta revisión"
-                            .to_string(),
-                    );
-                }
-                Err(e) => diagnostics.push(format!(
-                    "advertencia: error leyendo cache de assessments: {e}"
-                )),
             }
         }
         Err(e) => diagnostics.push(format!(
@@ -190,26 +203,31 @@ pub fn prepare(req: &PrepareRequest, provider: &mut ProviderHandle) -> PrepareOu
     // Assessment (Rationale_v0.5.md §5.6): lo que Rationale puede afirmar
     // HOY sobre la vigencia del Record, separado del Record mismo. Nunca
     // se autoaprueba autoridad ni se sirve una revisión no verificada.
-    let computed_assessment = assessment::compute(
-        record,
-        &snap,
-        provider_status.clone(),
-        provider_coverage.clone(),
-    );
-    diagnostics.push(format!(
-        "assessment: applicability={} linkage={} authority={} — {}",
-        computed_assessment.state.applicability,
-        computed_assessment.state.linkage,
-        computed_assessment.state.authority,
-        computed_assessment.assessment_reason
-    ));
+    let computed_assessment = record.map(|record| {
+        let assessment = assessment::compute(
+            record,
+            &snap,
+            provider_status.clone(),
+            provider_coverage.clone(),
+        );
+        diagnostics.push(format!(
+            "assessment: applicability={} linkage={} authority={} — {}",
+            assessment.state.applicability,
+            assessment.state.linkage,
+            assessment.state.authority,
+            assessment.assessment_reason
+        ));
+        assessment
+    });
 
-    if let Ok(cache_dir) = cache::cache_root(&req.project_root) {
-        if let Ok(conn) = cache::open(&cache_dir) {
-            if let Err(e) = cache::cache_assessment(&conn, &computed_assessment) {
-                diagnostics.push(format!(
-                    "advertencia: no se pudo guardar el assessment en cache: {e}"
-                ));
+    if let Some(computed_assessment) = &computed_assessment {
+        if let Ok(cache_dir) = cache::cache_root(&req.project_root) {
+            if let Ok(conn) = cache::open(&cache_dir) {
+                if let Err(e) = cache::cache_assessment(&conn, computed_assessment) {
+                    diagnostics.push(format!(
+                        "advertencia: no se pudo guardar el assessment en cache: {e}"
+                    ));
+                }
             }
         }
     }
