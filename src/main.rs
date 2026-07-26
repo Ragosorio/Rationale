@@ -9,6 +9,7 @@
 
 mod assessment;
 mod cache;
+mod capture;
 mod configuration;
 mod evaluation;
 mod mcp;
