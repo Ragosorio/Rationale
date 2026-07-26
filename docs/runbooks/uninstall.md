@@ -1,6 +1,14 @@
 # Uninstall
 
-No hay instalador de sistema todavía (sin empaquetado, Fase J pendiente) — "desinstalar" es borrar lo que se creó manualmente.
+La desinstalación de la alfa elimina el binario y, opcionalmente, la entrada
+MCP del agente. Por defecto conserva todo el canon `.rationale/`.
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-uninstall.sh | sh
+```
+
+`RATIONALE_REMOVE_AGENT_CONFIG=1` permite quitar la entrada global de Codex.
+Los datos canónicos no se eliminan nunca de forma automática.
 
 ## Lo que es seguro borrar siempre
 

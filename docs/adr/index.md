@@ -14,10 +14,11 @@ Los 12 ADRs iniciales obligatorios (`Rationale_Arquitectura_Conceptual_v0.1.md �
 | [ADR-0006](ADR-0006-revision-fingerprint.md) | Revision fingerprint | **proposed** — derivar de Git, nunca del proveedor | Fase B — CBM-008, hallazgo crítico de `detect_changes`. Revisión adversarial: sostiene |
 | [ADR-0007](ADR-0007-mcp-sdk-and-protocol-version.md) | MCP SDK and protocol version | **proposed** — framing manual, `rmcp` diferido | Fase E1 — `rmcp` compilado y evaluado, requiere runtime async |
 | [ADR-0008](ADR-0008-concurrency-and-locking.md) | Concurrency and locking | **proposed** — rename atómico basta, locking diferido | Fase F1 — bug real de nombre temporal encontrado y corregido, test de 8 hilos escribiendo concurrentemente verificado 15/15 |
-| ADR-0009 | Baseline integration surfaces | pending | Fase F+ |
-| ADR-0010 | Packaging strategy | pending | Fase J |
+| [ADR-0009](ADR-0009-integration-surfaces.md) | Baseline integration surfaces | **proposed** | Fase G — MCP consulta/prepara; CLI muta |
+| [ADR-0010](ADR-0010-packaging-strategy.md) | Packaging strategy | **proposed** | Fase G/H — GitHub Release e instaladores |
 | ADR-0011 | Licensing and dependency policy | accepted (parcial) | Licencia MIT decidida (ver nota abajo); política de dependencias pendiente |
 | [ADR-0012](ADR-0012-telemetry-and-privacy.md) | Telemetry and privacy | **proposed** — local-only, formaliza `src/evaluation.rs` | Fase E1 |
+| [ADR-0013](ADR-0013-record-lifecycle-and-authority.md) | Record lifecycle and authority | **proposed** | Fase G — `review_record` interactivo |
 
 Todos los ADRs en estado `proposed` requieren revisión cruzada de otro agente y aprobación humana antes de pasar a `accepted` (`AGENTS.md §Roles y revisión cruzada`, Subject `evaluation.no-self-certification`). ADR-0001, 0002 y 0006 ya pasaron por una revisión adversarial de una sesión independiente (`docs/work-items/adversarial-review-adr-0001-0002-0006.md`) — ninguno fue aprobado ni rechazado, la decisión final queda pendiente del dueño humano del proyecto.
 

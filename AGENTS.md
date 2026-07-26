@@ -15,10 +15,11 @@ dogfood formal; las decisiones F8 ya tienen propuestas pendientes capturadas en
 `.rationale/proposals/`, pero ninguna aprobación automática. Ver
 `docs/work-items/fase-g-dogfood.md` para la evidencia y los límites conocidos.
 
-Siguiente: revisión humana de esas propuestas y de los siete Subjects
-fundacionales; después `review_record` completo (revocar/superseder/asignar
-autoridad sobre Records ya aprobados) — ver `docs/work-items/` por el plan
-vigente.
+Siguiente: revisión humana de esas propuestas y de los nueve Subjects
+fundacionales; `review_record` ya tiene lifecycle completo (corregir,
+disputar, revocar, superseder, cambiar autoridad y añadir evidencia) por CLI
+interactiva. El siguiente gate es el dogfood instalable y el piloto H — ver
+`docs/work-items/` por el plan vigente.
 
 ## Ruta de lectura por tipo de tarea
 

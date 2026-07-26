@@ -73,8 +73,9 @@ nueve ADRs que siguen `unreviewed`/`proposed`, queda deliberadamente pendiente.
   caché local autorizado, `health` se mantuvo `successful/complete`.
 - CI para Linux y macOS está versionado en `.github/workflows/ci.yml`, pero su
   ejecución remota aún requiere GitHub.
-- No se autoaprobaron Records. `review_record`, embeddings, calibración de
-  Jaccard, Windows y el piloto de monorepo permanecen fuera de alcance.
+- No se autoaprobaron Records. El lifecycle `review_record` ya está implementado
+  por CLI interactiva y cubierto por tests; embeddings, calibración de Jaccard,
+  Windows y el piloto de monorepo permanecen como gates posteriores.
 
 ## Verificación del grafo
 

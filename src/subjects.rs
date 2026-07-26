@@ -1,8 +1,8 @@
 //! Subject — Rationale_v0.5.md §5.1, Arquitectura §11.8 (Subject Resolver).
 //!
 //! El Subject es la identidad conceptual estable de un comportamiento
-//! gobernado. Los 7 Subjects fundacionales de `.rationale/subjects/` ya
-//! existen desde Fase A.
+//! gobernado. Los 7 Subjects fundacionales de Fase A y los 2 Subjects de
+//! gobernanza de F8/Fase G viven en `.rationale/subjects/`.
 //!
 //! Fase F4 completa la resolución determinista de `v0.5 §9.1` (orden
 //! obligatorio):
@@ -532,13 +532,13 @@ mod tests {
     }
 
     #[test]
-    fn lists_all_seven_foundational_subjects() {
+    fn lists_all_nine_foundational_subjects_after_f8_governance() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(".rationale/subjects");
         let subjects = list_subjects(&dir).unwrap();
         assert_eq!(
             subjects.len(),
-            7,
-            "deben existir los 7 Subjects fundacionales de Fase A"
+            9,
+            "deben existir los 7 Subjects de Fase A más los 2 de gobernanza F8/Fase G"
         );
     }
 

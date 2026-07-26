@@ -1,19 +1,34 @@
 id: constraint.f8-roundtrip-fidelity
 kind: constraint
 severity: high
-statement: Rationale must preserve every canonical Record field when review updates an approval.
-rationale: F8 captures the round-trip invariant already implemented in storage::Record flattening.
+statement: Every canonical Record field that Rationale does not explicitly modify must survive read-modify-write review operations unchanged.
+rationale: The canonical Record uses flattened fields and atomic writes so review operations cannot silently erase fields they do not understand.
 epistemic_status: stated
 approvals: []
-binding_declarations: []
-evidence: []
+binding_declarations:
+  - id: binding.storage.write-record
+    type: symbol
+    provider: rationale-self
+    structural_id: rust:src/storage.rs::write_record
+    path_hint: src/storage.rs
+    scope: project
+evidence:
+  - type: test
+    path: src/storage.rs
+    revision: fabeb92
+    verified: true
+    visibility: repository
+  - type: work-item
+    path: docs/work-items/adversarial-review-fase-f.md
+    verified: true
+    visibility: repository
 risks:
 - id: risk.constraint.f8-roundtrip-fidelity.0
   statement: Pending proposal requires human review before becoming normative.
   epistemic_status: stated
-bound_revision: 43edae779626dbc2ab99411df5d2ca44237dd16d
+bound_revision: fabeb92
 subject:
-  id: architecture.roundtrip-fidelity
+  id: storage.canonical-vs-derived
 schema_version: rationale/0.1
 project_id: rationale
 status: pending

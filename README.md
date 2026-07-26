@@ -6,9 +6,9 @@ Rationale es un compilador local de contexto causal y una capa de procedencia, a
 
 ## Estado real del proyecto
 
-**Pre-1.0, núcleo funcional con ciclo de captura completo.** El lenguaje del núcleo está decidido (Rust, `docs/adr/ADR-0001-core-language.md`) y ya existe un binario real en `src/` que implementa el modelo canónico completo (`Subject`, `Evidence`, `Assessment`, `Record`), una capa derivada local (SQLite + FTS, invalidada por revisión de Git), un Context Compiler con niveles de prioridad y presupuesto explícito, y una superficie MCP con cuatro herramientas: `prepare_change`, `explain_target`, `health` y `finalize_change`. `finalize_change` captura mecánicamente un cambio (diff, señales de alto valor, Subject candidato) y escribe una propuesta **pendiente** — nunca aprobada automáticamente; `rationale review` en la CLI es la única vía que la promueve a decisión real, con confirmación humana explícita.
+**Pre-1.0, núcleo funcional con ciclo de captura y lifecycle de revisión.** El lenguaje del núcleo está decidido (Rust, `docs/adr/ADR-0001-core-language.md`) y ya existe un binario real en `src/` que implementa el modelo canónico completo (`Subject`, `Evidence`, `Assessment`, `Record`), una capa derivada local (SQLite + FTS, invalidada por revisión de Git), un Context Compiler con niveles de prioridad y presupuesto explícito, y una superficie MCP con cuatro herramientas: `prepare_change`, `explain_target`, `health` y `finalize_change`. `finalize_change` captura mecánicamente un cambio (diff, señales de alto valor, Subject candidato) y escribe una propuesta **pendiente** — nunca aprobada automáticamente; `rationale review` y `rationale review-record` en la CLI son las únicas vías de mutación humana, con confirmación explícita y eventos auditables.
 
-**Ningún ADR está `accepted` todavía** — los 9 existentes siguen `proposed`, pendientes de revisión cruzada y aprobación humana (`docs/adr/index.md`, Subject `evaluation.no-self-certification`). No hay empaquetado ni distribución; se corre desde el código fuente con `cargo`.
+**Ningún ADR está `accepted` todavía** — los 9 existentes siguen `proposed`, pendientes de revisión cruzada y aprobación humana (`docs/adr/index.md`, Subject `evaluation.no-self-certification`). El empaquetado de la alfa se genera para GitHub Releases; el tag interno `v0.0.0-dogfood.1` precede al tag instalable `v0.1.0-alpha.1`.
 
 ## Instalación y uso
 
@@ -21,9 +21,20 @@ cargo build --release
 ./target/release/rationale prepare <path::symbol>    # packet de contexto para un target
 ./target/release/rationale serve                     # servidor MCP: prepare_change/explain_target/health/finalize_change
 ./target/release/rationale review                    # confirma propuestas pendientes, una a la vez
+./target/release/rationale review-record <record-id> # lifecycle: corregir/disputar/revocar/superseder/autoridad/evidencia
 ```
 
-Para que un agente MCP (como esta misma sesión de Claude Code) pueda llamar al servidor, este repo ya trae [`.mcp.json`](.mcp.json) registrado — requiere reiniciar la sesión del agente para que lo cargue.
+Para que un agente MCP pueda llamar al servidor, este repo trae [`.mcp.json`](.mcp.json). Para la instalación global de Codex usa `codex mcp add rationale -- /ruta/al/rationale serve`; requiere reiniciar la sesión del agente para cargar una configuración nueva.
+
+## Instalación desde GitHub
+
+Cuando exista una Release, la instalación será:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh
+```
+
+El instalador coloca el binario en `~/.local/bin` (o `RATIONALE_INSTALL_DIR`), verifica SHA-256 y conserva `.rationale/` al actualizar o desinstalar. La configuración automática de Codex se puede desactivar con `RATIONALE_SKIP_AGENT_CONFIG=1`.
 
 ## Documentos fundacionales (leer en este orden)
 

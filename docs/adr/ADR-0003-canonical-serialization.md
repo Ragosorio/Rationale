@@ -7,7 +7,7 @@
 
 ## Context
 
-`Rationale_v0.5.md §26.1` exige que la capa canónica sea "revisable en PR" y "legible sin la herramienta". `Rationale_Arquitectura_Conceptual_v0.1.md §21` (estructura propuesta) y toda la documentación de producto (`v0.5 §5, §9, §27`) ya modelan Subjects, Records, Bindings y Approvals en YAML — no es una decisión abstracta, ya existe un corpus real de datos canónicos en YAML: 7 Subjects, 2 Records (uno real, uno de fixture) en `.rationale/` y `fixtures/vertical-slice/.rationale/`.
+`Rationale_v0.5.md §26.1` exige que la capa canónica sea "revisable en PR" y "legible sin la herramienta". `Rationale_Arquitectura_Conceptual_v0.1.md §21` (estructura propuesta) y toda la documentación de producto (`v0.5 §5, §9, §27`) ya modelan Subjects, Records, Bindings y Approvals en YAML — no es una decisión abstracta, ya existe un corpus real de datos canónicos en YAML: 9 Subjects, 2 Records (uno real, uno de fixture) en `.rationale/` y `fixtures/vertical-slice/.rationale/`.
 
 Independientemente del formato, `docs/rust/style-guide.md` ya registró un riesgo concreto: la dependencia `serde_yaml` está marcada `+deprecated` upstream (confirmado en la propia salida de `cargo build` del spike de lenguaje, Fase C). Fase E multiplica el volumen de parseo YAML (Subjects, Evidence, Assessments) — migrar la dependencia después de eso cuesta sustancialmente más que migrarla ahora, antes de que el código dependa de ella en más de tres módulos.
 
