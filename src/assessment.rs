@@ -192,8 +192,10 @@ mod tests {
             kind: "constraint".to_string(),
             severity: "critical".to_string(),
             statement: "test".to_string(),
+            rationale: None,
             epistemic_status: EpistemicStatus::Stated,
             evidence: vec![],
+            risks: vec![],
             approvals: if approved {
                 vec![Approval {
                     actor: "user:x".to_string(),

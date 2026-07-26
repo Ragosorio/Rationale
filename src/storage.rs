@@ -86,13 +86,32 @@ pub struct RecordSubjectRef {
     pub id: String,
 }
 
+/// Riesgo conocido asociado a un Record (Rationale_v0.5.md §27 ejemplo
+/// `risks:`). No es una entidad persistida independiente en v1 (§8.1) —
+/// vive embebido en el Record hasta que un caso real justifique lo contrario.
+#[derive(Debug, Deserialize, Clone)]
+pub struct Risk {
+    // `id` y `epistemic_status` reflejan el schema completo (v0.5 §27);
+    // retrieval.rs solo expone `statement` en el packet por ahora — el
+    // Trust Evaluator de Fase F usará epistemic_status para decidir cómo
+    // presentar un riesgo no corroborado frente a uno observado.
+    #[allow(dead_code)]
+    pub id: String,
+    pub statement: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub epistemic_status: EpistemicStatus,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Record {
     pub id: String,
-    #[allow(dead_code)]
     pub kind: String,
     pub severity: String,
     pub statement: String,
+    /// El motivo, separado de la afirmación normativa misma (nivel 3 de
+    /// v0.5 §18.1, "razón principal").
+    pub rationale: Option<String>,
     #[serde(default)]
     pub epistemic_status: EpistemicStatus,
     #[serde(default)]
@@ -102,6 +121,8 @@ pub struct Record {
     #[serde(default)]
     #[allow(dead_code)] // consumido por Trust Evaluator en Fase F (minimización, v0.5 §4.11)
     pub evidence: Vec<Evidence>,
+    #[serde(default)]
+    pub risks: Vec<Risk>,
     pub bound_revision: Option<String>,
     pub subject: Option<RecordSubjectRef>,
 }

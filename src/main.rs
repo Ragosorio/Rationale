@@ -35,7 +35,7 @@ fn main() {
             eprintln!("  rationale init");
             eprintln!("  rationale health [--project-root <path>]");
             eprintln!(
-                "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>]"
+                "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]"
             );
             std::process::exit(1);
         }
@@ -47,6 +47,13 @@ fn parse_flag(args: &[String], flag: &str) -> Option<PathBuf> {
         .position(|a| a == flag)
         .and_then(|i| args.get(i + 1))
         .map(PathBuf::from)
+}
+
+fn parse_string_flag(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 fn cmd_init() {
@@ -120,6 +127,7 @@ fn cmd_prepare(args: &[String]) {
         .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
         .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
     let repo_path = parse_flag(args, "--repo-path").unwrap_or_else(|| project_root.clone());
+    let intent = parse_string_flag(args, "--intent");
 
     let t0 = Instant::now();
 
@@ -274,15 +282,18 @@ fn cmd_prepare(args: &[String]) {
         }
     }
 
-    // 5. + 6. Compilar y emitir el packet compacto.
+    // 5. + 6. Compilar y emitir el packet compacto — niveles de prioridad
+    // y budget reales (Fase E4), no una sola constraint fija.
     let packet = retrieval::compile_packet(
         snap.head.clone(),
         consistency.clone(),
         provider_status,
         provider_coverage,
-        record,
+        &records,
+        intent.as_deref(),
         resolved_target,
         provider_warnings,
+        &retrieval::Budget::default(),
     );
 
     let packet_json = serde_json::to_string(&packet).expect("serialize packet");
