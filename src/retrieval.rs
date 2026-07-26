@@ -78,11 +78,7 @@ fn token_estimate(text: &str) -> usize {
 }
 
 fn authority_label(record: &Record) -> &'static str {
-    if crate::storage::has_approved_authority(record) {
-        "approved"
-    } else {
-        "unreviewed"
-    }
+    crate::storage::authority_label(record)
 }
 
 /// Recuperación determinista (v0.5 §19.1): filtra por kind/severity, ordena

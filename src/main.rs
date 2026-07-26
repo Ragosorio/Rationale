@@ -35,8 +35,9 @@ fn main() {
         "prepare" => cmd_prepare(&args[2..]),
         "serve" => mcp::server::run(),
         "review" => cmd_review(&args[2..]),
+        "review-record" => cmd_review_record(&args[2..]),
         _ => {
-            eprintln!("Uso: rationale <init|health|prepare|serve|review> [opciones]");
+            eprintln!("Uso: rationale <init|health|prepare|serve|review|review-record> [opciones]");
             eprintln!("  rationale init");
             eprintln!("  rationale health [--project-root <path>]");
             eprintln!(
@@ -47,6 +48,9 @@ fn main() {
             );
             eprintln!(
                 "  rationale review [--project-root <path>]   # confirma propuestas pendientes, una a la vez"
+            );
+            eprintln!(
+                "  rationale review-record <record-id> [--project-root <path>]   # lifecycle humano de un Record aprobado"
             );
             std::process::exit(1);
         }
@@ -320,6 +324,182 @@ fn cmd_review(args: &[String]) {
 
         let _ = review::log_decision(&rationale_local, &record_id, decision, elapsed_ms);
     }
+}
+
+/// `rationale review-record` — mutaciones humanas sobre Records ya
+/// canónicos. MCP solo consulta/prepara; esta orden exige un actor declarado
+/// por el proyecto y confirma una acción concreta antes de escribir.
+fn cmd_review_record(args: &[String]) {
+    let record_id = args
+        .iter()
+        .find(|arg| !arg.starts_with("--"))
+        .cloned()
+        .unwrap_or_else(|| {
+            eprintln!("uso: rationale review-record <record-id> [--project-root <path>]");
+            std::process::exit(1);
+        });
+    let project_root = parse_flag(args, "--project-root")
+        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
+        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
+    let config = configuration::load(&project_root).expect("cargar configuración");
+    let record_path = config
+        .rationale_dir
+        .join("records")
+        .join(format!("{record_id}.yaml"));
+    let record = match storage::read_record(&record_path) {
+        Ok(record) => record,
+        Err(error) => {
+            eprintln!("no se pudo leer el Record '{record_id}': {error}");
+            return;
+        }
+    };
+    let reviewer_actor = git_reviewer_actor(&project_root);
+    let reviewer_authority = config.authority_for_actor(&reviewer_actor);
+    if !reviewer_authority.declared {
+        eprintln!(
+            "actor {reviewer_actor} no está declarado en .rationale/config.yaml; review_record no permite autoelevar autoridad"
+        );
+        return;
+    }
+
+    println!("=== Record: {} ===", record.id);
+    println!("Afirmación: {}", record.statement);
+    println!("Tipo/severidad: {}/{}", record.kind, record.severity);
+    println!(
+        "Estado lifecycle: {}",
+        storage::lifecycle_status(&record).unwrap_or("active")
+    );
+    println!(
+        "Actor: {}\nAutoridad declarada: {}{}",
+        reviewer_actor,
+        reviewer_authority.role,
+        reviewer_authority
+            .domain
+            .as_deref()
+            .map(|domain| format!(" (dominio={domain})"))
+            .unwrap_or_default()
+    );
+    println!(
+        "Acción [c] corregir, [d] disputar, [r] revocar, [s] superseder, [a] cambiar autoridad, [e] añadir evidencia, [q] salir:"
+    );
+    let Some(action) = read_interactive_line() else {
+        println!("EOF — no se mutó el Record.");
+        return;
+    };
+
+    let mutation = match action.as_str() {
+        "c" => {
+            println!("Nuevo statement:");
+            let Some(statement) = read_interactive_line() else {
+                return;
+            };
+            println!("Motivo de la corrección:");
+            let Some(reason) = read_interactive_line() else {
+                return;
+            };
+            review::RecordMutation::Correct { statement, reason }
+        }
+        "d" => {
+            println!("Motivo de la disputa:");
+            let Some(reason) = read_interactive_line() else {
+                return;
+            };
+            review::RecordMutation::Dispute { reason }
+        }
+        "r" => {
+            println!("Motivo de la revocación:");
+            let Some(reason) = read_interactive_line() else {
+                return;
+            };
+            review::RecordMutation::Revoke { reason }
+        }
+        "s" => {
+            println!("ID del Record que lo supersede:");
+            let Some(replacement_id) = read_interactive_line() else {
+                return;
+            };
+            println!("Motivo del superseder:");
+            let Some(reason) = read_interactive_line() else {
+                return;
+            };
+            review::RecordMutation::Supersede {
+                replacement_id,
+                reason,
+            }
+        }
+        "a" => {
+            println!("Actor declarado que recibirá la autoridad:");
+            let Some(new_actor) = read_interactive_line() else {
+                return;
+            };
+            let new_authority = config.authority_for_actor(&new_actor);
+            if !new_authority.declared {
+                eprintln!("ese actor no está declarado; no se permite autoelevación");
+                return;
+            }
+            println!("Motivo del cambio de autoridad:");
+            let Some(reason) = read_interactive_line() else {
+                return;
+            };
+            review::RecordMutation::ChangeAuthority {
+                new_actor,
+                new_role: new_authority.role,
+                new_actor_declared: new_authority.declared,
+                reason,
+            }
+        }
+        "e" => {
+            println!("Ruta de la evidencia (relativa al proyecto):");
+            let Some(path) = read_interactive_line() else {
+                return;
+            };
+            println!("Motivo para añadir la evidencia:");
+            let Some(reason) = read_interactive_line() else {
+                return;
+            };
+            review::RecordMutation::AddEvidence {
+                evidence: storage::Evidence {
+                    evidence_type: "review-note".to_string(),
+                    path: Some(path),
+                    revision: None,
+                    verified: false,
+                    content_hash: None,
+                    visibility: Some("repository".to_string()),
+                    extra: yaml_serde::Mapping::new(),
+                },
+                reason,
+            }
+        }
+        _ => {
+            println!("Sin cambios.");
+            return;
+        }
+    };
+
+    println!("Confirma escribiendo APPLY; cualquier otra entrada cancela:");
+    if read_interactive_line().as_deref() != Some("APPLY") {
+        println!("Cancelado — el Record no cambió.");
+        return;
+    }
+    match review::mutate_record(
+        &config.rationale_dir,
+        &record_id,
+        mutation,
+        &reviewer_actor,
+        reviewer_authority.role,
+        reviewer_authority.declared,
+    ) {
+        Ok(path) => println!("Lifecycle actualizado atómicamente -> {}", path.display()),
+        Err(error) => eprintln!("mutación abortada: {error}"),
+    }
+}
+
+fn read_interactive_line() -> Option<String> {
+    let mut input = String::new();
+    if std::io::stdin().read_line(&mut input).ok()? == 0 {
+        return None;
+    }
+    Some(input.trim().to_string())
 }
 
 /// Identidad del revisor humano — reusa `git config user.name`/`user.email`

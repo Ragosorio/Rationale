@@ -361,11 +361,7 @@ pub fn explain(target_spec: &str, project_root: &Path, repo_path: &Path) -> Expl
             id: r.id.clone(),
             statement: r.statement.clone(),
             rationale: r.rationale.clone(),
-            authority: if storage::has_approved_authority(r) {
-                "approved".to_string()
-            } else {
-                "unreviewed".to_string()
-            },
+            authority: storage::authority_label(r).to_string(),
             epistemic_status: r.epistemic_status.to_string(),
         })
         .collect();

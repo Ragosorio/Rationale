@@ -20,7 +20,7 @@
 //!   (`log_decision`), sin asumir mala fe.
 
 use crate::storage;
-use crate::storage::{Approval, Record};
+use crate::storage::{Approval, Evidence, Record};
 use std::path::{Path, PathBuf};
 
 pub struct PendingProposal {
@@ -238,6 +238,275 @@ pub fn reject(rationale_dir: &Path, proposal: &PendingProposal) -> std::io::Resu
     let dest = rejected_dir.join(proposal.path.file_name().unwrap());
     std::fs::rename(&claimed, &dest)?;
     Ok(dest)
+}
+
+/// Mutaciones explícitas sobre un Record ya aprobado. Todas se ejecutan por
+/// la CLI interactiva; el servidor MCP no expone esta API. El evento queda
+/// dentro del Record canónico para que la historia viaje con Git.
+#[derive(Debug)]
+pub enum RecordMutation {
+    Correct {
+        statement: String,
+        reason: String,
+    },
+    Dispute {
+        reason: String,
+    },
+    Revoke {
+        reason: String,
+    },
+    Supersede {
+        replacement_id: String,
+        reason: String,
+    },
+    ChangeAuthority {
+        new_actor: String,
+        new_role: storage::AuthorityRole,
+        new_actor_declared: bool,
+        reason: String,
+    },
+    AddEvidence {
+        evidence: Evidence,
+        reason: String,
+    },
+}
+
+fn ensure_mapping<'a>(map: &'a mut yaml_serde::Mapping, key: &str) -> &'a mut yaml_serde::Mapping {
+    let key_value = yaml_serde::Value::String(key.to_string());
+    let replace = !matches!(map.get(&key_value), Some(yaml_serde::Value::Mapping(_)));
+    if replace {
+        map.insert(
+            key_value.clone(),
+            yaml_serde::Value::Mapping(yaml_serde::Mapping::new()),
+        );
+    }
+    match map.get_mut(&key_value) {
+        Some(yaml_serde::Value::Mapping(value)) => value,
+        _ => unreachable!("ensure_mapping siempre deja un mapping"),
+    }
+}
+
+fn add_lifecycle_event(
+    record: &mut Record,
+    status: Option<&str>,
+    event_type: &str,
+    actor: &str,
+    authority: storage::AuthorityRole,
+    reason: &str,
+    extra: Vec<(&str, String)>,
+) {
+    let lifecycle = ensure_mapping(&mut record.extra, "lifecycle");
+    if let Some(status) = status {
+        lifecycle.insert(
+            yaml_serde::Value::String("status".to_string()),
+            yaml_serde::Value::String(status.to_string()),
+        );
+    }
+    let mut event = yaml_serde::Mapping::new();
+    for (key, value) in [
+        ("type", event_type.to_string()),
+        ("actor", actor.to_string()),
+        ("authority", authority.to_string()),
+        ("reason", reason.to_string()),
+        ("timestamp", crate::evaluation::now_iso8601()),
+    ] {
+        event.insert(
+            yaml_serde::Value::String(key.to_string()),
+            yaml_serde::Value::String(value),
+        );
+    }
+    for (key, value) in extra {
+        event.insert(
+            yaml_serde::Value::String(key.to_string()),
+            yaml_serde::Value::String(value),
+        );
+    }
+    let events_key = yaml_serde::Value::String("events".to_string());
+    let events = match lifecycle.get_mut(&events_key) {
+        Some(yaml_serde::Value::Sequence(events)) => events,
+        _ => {
+            lifecycle.insert(events_key.clone(), yaml_serde::Value::Sequence(Vec::new()));
+            match lifecycle.get_mut(&events_key) {
+                Some(yaml_serde::Value::Sequence(events)) => events,
+                _ => unreachable!("events siempre es una secuencia"),
+            }
+        }
+    };
+    events.push(yaml_serde::Value::Mapping(event));
+}
+
+fn active_for_mutation(record: &Record) -> Result<(), storage::StorageError> {
+    match storage::lifecycle_status(record) {
+        Some("revoked") => Err(storage::StorageError::Parse(
+            "un Record revocado no puede mutarse de nuevo".to_string(),
+        )),
+        Some("superseded") => Err(storage::StorageError::Parse(
+            "un Record superseded no puede mutarse de nuevo".to_string(),
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Aplica una mutación de lifecycle con una comprobación TOCTOU adicional:
+/// si el YAML cambió entre la lectura interactiva y el write, se aborta y se
+/// conserva el archivo intacto para que el humano vuelva a revisarlo.
+pub fn mutate_record(
+    rationale_dir: &Path,
+    record_id: &str,
+    mutation: RecordMutation,
+    reviewer_actor: &str,
+    reviewer_role: storage::AuthorityRole,
+    reviewer_declared: bool,
+) -> Result<PathBuf, storage::StorageError> {
+    storage::validate_safe_id(record_id)?;
+    if !reviewer_declared {
+        return Err(storage::StorageError::Parse(
+            "la mutación de lifecycle requiere un actor declarado en .rationale/config.yaml; "
+                .to_string(),
+        ));
+    }
+    let path = rationale_dir
+        .join("records")
+        .join(format!("{record_id}.yaml"));
+    let original_content = std::fs::read_to_string(&path).map_err(storage::StorageError::Io)?;
+    let mut record = storage::read_record(&path)?;
+    active_for_mutation(&record)?;
+
+    match mutation {
+        RecordMutation::Correct { statement, reason } => {
+            if statement.trim().is_empty() {
+                return Err(storage::StorageError::MissingRequiredField("statement"));
+            }
+            record.statement = statement;
+            add_lifecycle_event(
+                &mut record,
+                None,
+                "corrected",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![],
+            );
+        }
+        RecordMutation::Dispute { reason } => {
+            record.epistemic_status = storage::EpistemicStatus::Disputed;
+            add_lifecycle_event(
+                &mut record,
+                Some("disputed"),
+                "disputed",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![],
+            );
+        }
+        RecordMutation::Revoke { reason } => {
+            add_lifecycle_event(
+                &mut record,
+                Some("revoked"),
+                "revoked",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![],
+            );
+        }
+        RecordMutation::Supersede {
+            replacement_id,
+            reason,
+        } => {
+            storage::validate_safe_id(&replacement_id)?;
+            let replacement = rationale_dir
+                .join("records")
+                .join(format!("{replacement_id}.yaml"));
+            if !replacement.is_file() {
+                return Err(storage::StorageError::Parse(format!(
+                    "el Record replacement '{}' no existe en records/",
+                    replacement_id
+                )));
+            }
+            let policy = ensure_mapping(&mut record.extra, "applicability_policy");
+            policy.insert(
+                yaml_serde::Value::String("superseded_by".to_string()),
+                yaml_serde::Value::String(replacement_id.clone()),
+            );
+            add_lifecycle_event(
+                &mut record,
+                Some("superseded"),
+                "superseded",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![("replacement_id", replacement_id)],
+            );
+        }
+        RecordMutation::ChangeAuthority {
+            new_actor,
+            new_role,
+            new_actor_declared,
+            reason,
+        } => {
+            if !new_actor_declared {
+                return Err(storage::StorageError::Parse(
+                    "la nueva autoridad debe estar declarada por el proyecto; no se permite autoelevación"
+                        .to_string(),
+                ));
+            }
+            record.approvals.push(Approval {
+                actor: new_actor.clone(),
+                authority: new_role.to_string(),
+                status: "approved".to_string(),
+                extra: {
+                    let mut extra = yaml_serde::Mapping::new();
+                    extra.insert(
+                        yaml_serde::Value::String("event".to_string()),
+                        yaml_serde::Value::String("authority-changed".to_string()),
+                    );
+                    extra
+                },
+            });
+            let lifecycle = ensure_mapping(&mut record.extra, "lifecycle");
+            lifecycle.insert(
+                yaml_serde::Value::String("authority_actor".to_string()),
+                yaml_serde::Value::String(new_actor.clone()),
+            );
+            lifecycle.insert(
+                yaml_serde::Value::String("authority_role".to_string()),
+                yaml_serde::Value::String(new_role.to_string()),
+            );
+            add_lifecycle_event(
+                &mut record,
+                None,
+                "authority-changed",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![("new_actor", new_actor), ("new_role", new_role.to_string())],
+            );
+        }
+        RecordMutation::AddEvidence { evidence, reason } => {
+            record.evidence.push(evidence);
+            add_lifecycle_event(
+                &mut record,
+                None,
+                "evidence-added",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![],
+            );
+        }
+    }
+
+    let current_content = std::fs::read_to_string(&path).map_err(storage::StorageError::Io)?;
+    if current_content != original_content {
+        return Err(storage::StorageError::Parse(format!(
+            "el Record '{}' cambió durante la revisión; no se sobrescribió",
+            record_id
+        )));
+    }
+    storage::write_record(&path, &record)?;
+    Ok(path)
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -640,6 +909,146 @@ mod tests {
         assert!(result.skipped[0].0.ends_with("broken.yaml"));
         assert!(!result.skipped[0].1.is_empty());
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn canonical_record_dir(id: &str) -> (PathBuf, PathBuf) {
+        let dir = temp_rationale_dir();
+        let mut record = proposal_record(id, "high");
+        record.approvals.push(Approval {
+            actor: "user:declared".to_string(),
+            authority: "architecture-owner".to_string(),
+            status: "approved".to_string(),
+            extra: yaml_serde::Mapping::new(),
+        });
+        let path = dir.join("records").join(format!("{id}.yaml"));
+        storage::write_record(&path, &record).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn review_record_supports_dispute_revoke_and_evidence_with_history() {
+        let (dir, path) = canonical_record_dir("constraint.lifecycle-test");
+        let reviewer = "user:declared";
+
+        mutate_record(
+            &dir,
+            "constraint.lifecycle-test",
+            RecordMutation::Dispute {
+                reason: "la evidencia necesita revisión independiente".to_string(),
+            },
+            reviewer,
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        )
+        .unwrap();
+        let disputed = storage::read_record(&path).unwrap();
+        assert_eq!(
+            disputed.epistemic_status,
+            storage::EpistemicStatus::Disputed
+        );
+        assert_eq!(storage::lifecycle_status(&disputed), Some("disputed"));
+
+        mutate_record(
+            &dir,
+            "constraint.lifecycle-test",
+            RecordMutation::AddEvidence {
+                evidence: Evidence {
+                    evidence_type: "test".to_string(),
+                    path: Some("docs/test.md".to_string()),
+                    revision: Some("abc123".to_string()),
+                    verified: true,
+                    content_hash: None,
+                    visibility: Some("repository".to_string()),
+                    extra: yaml_serde::Mapping::new(),
+                },
+                reason: "prueba reproducible añadida".to_string(),
+            },
+            reviewer,
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        )
+        .unwrap();
+        mutate_record(
+            &dir,
+            "constraint.lifecycle-test",
+            RecordMutation::Revoke {
+                reason: "la disputa no se resolvió".to_string(),
+            },
+            reviewer,
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        )
+        .unwrap();
+
+        let revoked = storage::read_record(&path).unwrap();
+        assert_eq!(storage::lifecycle_status(&revoked), Some("revoked"));
+        assert!(!storage::has_approved_authority(&revoked));
+        assert_eq!(revoked.evidence.len(), 1);
+        let lifecycle = revoked
+            .extra
+            .get(yaml_serde::Value::String("lifecycle".to_string()))
+            .unwrap();
+        let events = match lifecycle {
+            yaml_serde::Value::Mapping(map) => map
+                .get(yaml_serde::Value::String("events".to_string()))
+                .and_then(|value| value.as_sequence())
+                .unwrap(),
+            _ => panic!("lifecycle debe ser un mapping"),
+        };
+        assert_eq!(events.len(), 3);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn review_record_rejects_undeclared_authority_and_auto_elevation() {
+        let (dir, path) = canonical_record_dir("constraint.authority-lifecycle-test");
+        let result = mutate_record(
+            &dir,
+            "constraint.authority-lifecycle-test",
+            RecordMutation::ChangeAuthority {
+                new_actor: "user:invented".to_string(),
+                new_role: storage::AuthorityRole::ArchitectureOwner,
+                new_actor_declared: false,
+                reason: "attempt".to_string(),
+            },
+            "user:declared",
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        );
+        assert!(result.is_err());
+        assert_eq!(storage::read_record(&path).unwrap().approvals.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn review_record_supersede_requires_existing_replacement_and_marks_source() {
+        let (dir, path) = canonical_record_dir("constraint.superseded-source");
+        let replacement = proposal_record("constraint.superseded-replacement", "high");
+        storage::write_record(
+            &dir.join("records")
+                .join("constraint.superseded-replacement.yaml"),
+            &replacement,
+        )
+        .unwrap();
+        mutate_record(
+            &dir,
+            "constraint.superseded-source",
+            RecordMutation::Supersede {
+                replacement_id: "constraint.superseded-replacement".to_string(),
+                reason: "reemplazado por una formulación más precisa".to_string(),
+            },
+            "user:declared",
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        )
+        .unwrap();
+        let source = storage::read_record(&path).unwrap();
+        assert_eq!(
+            storage::superseded_by(&source),
+            Some("constraint.superseded-replacement")
+        );
+        assert_eq!(storage::lifecycle_status(&source), Some("superseded"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

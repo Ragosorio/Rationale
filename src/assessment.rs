@@ -103,7 +103,9 @@ pub struct Assessment {
 }
 
 fn authority_status(record: &Record) -> AuthorityStatus {
-    if has_approved_authority(record) {
+    if crate::storage::is_revoked(record) {
+        AuthorityStatus::Revoked
+    } else if has_approved_authority(record) {
         AuthorityStatus::Approved
     } else {
         AuthorityStatus::Unreviewed
@@ -115,12 +117,23 @@ fn authority_status(record: &Record) -> AuthorityStatus {
 /// `superseded` explícito (Fase F, `applicability_policy.superseded_by`)
 /// no está modelado todavía; por ahora, todo Record vigente es `active`
 /// salvo que la revisión no pueda resolverse en absoluto.
-fn applicability_and_linkage(consistency: &Consistency) -> (Applicability, Linkage) {
+fn applicability_and_linkage(
+    record: &Record,
+    consistency: &Consistency,
+) -> (Applicability, Linkage) {
+    let linkage = match consistency {
+        Consistency::Exact => Linkage::Current,
+        Consistency::WorkingTreeAhead | Consistency::StructuralIndexBehind => Linkage::Stale,
+        Consistency::Unresolved => Linkage::Unresolved,
+    };
+    if crate::storage::superseded_by(record).is_some() {
+        return (Applicability::Superseded, linkage);
+    }
     match consistency {
-        Consistency::Exact => (Applicability::Active, Linkage::Current),
-        Consistency::WorkingTreeAhead => (Applicability::Active, Linkage::Stale),
-        Consistency::StructuralIndexBehind => (Applicability::Active, Linkage::Stale),
-        Consistency::Unresolved => (Applicability::Unknown, Linkage::Unresolved),
+        Consistency::Exact => (Applicability::Active, linkage),
+        Consistency::WorkingTreeAhead => (Applicability::Active, linkage),
+        Consistency::StructuralIndexBehind => (Applicability::Active, linkage),
+        Consistency::Unresolved => (Applicability::Unknown, linkage),
     }
 }
 
@@ -164,7 +177,7 @@ pub fn compute(
 ) -> Assessment {
     let bound_revision = record.bound_revision.clone().unwrap_or_default();
     let consistency = crate::revision::check_consistency(snapshot, &bound_revision);
-    let (applicability, linkage) = applicability_and_linkage(&consistency);
+    let (applicability, linkage) = applicability_and_linkage(record, &consistency);
     let reason = assessment_reason(&consistency, &provider_status, &provider_coverage);
 
     Assessment {
@@ -246,6 +259,57 @@ mod tests {
             Coverage::Complete,
         );
         assert_eq!(assessment.state.authority, AuthorityStatus::Unreviewed);
+    }
+
+    #[test]
+    fn revoked_authority_overrides_historical_approval() {
+        let mut record = record_with(true, "abc123");
+        let mut lifecycle = yaml_serde::Mapping::new();
+        lifecycle.insert(
+            yaml_serde::Value::String("status".to_string()),
+            yaml_serde::Value::String("revoked".to_string()),
+        );
+        record.extra.insert(
+            yaml_serde::Value::String("lifecycle".to_string()),
+            yaml_serde::Value::Mapping(lifecycle),
+        );
+        let snap = GitSnapshot {
+            head: Some("abc123".to_string()),
+            working_tree_dirty: false,
+        };
+        let assessment = compute(
+            &record,
+            &snap,
+            ProviderStatus::Successful,
+            Coverage::Complete,
+        );
+        assert_eq!(assessment.state.authority, AuthorityStatus::Revoked);
+        assert_eq!(crate::storage::authority_label(&record), "revoked");
+    }
+
+    #[test]
+    fn superseded_record_is_not_active_when_revision_is_exact() {
+        let mut record = record_with(true, "abc123");
+        let mut policy = yaml_serde::Mapping::new();
+        policy.insert(
+            yaml_serde::Value::String("superseded_by".to_string()),
+            yaml_serde::Value::String("constraint.replacement".to_string()),
+        );
+        record.extra.insert(
+            yaml_serde::Value::String("applicability_policy".to_string()),
+            yaml_serde::Value::Mapping(policy),
+        );
+        let snap = GitSnapshot {
+            head: Some("abc123".to_string()),
+            working_tree_dirty: false,
+        };
+        let assessment = compute(
+            &record,
+            &snap,
+            ProviderStatus::Successful,
+            Coverage::Complete,
+        );
+        assert_eq!(assessment.state.applicability, Applicability::Superseded);
     }
 
     #[test]

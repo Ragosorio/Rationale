@@ -345,7 +345,54 @@ pub fn write_record(path: &Path, record: &Record) -> Result<(), StorageError> {
 /// Esta vertical slice no implementa bloqueo todavía (Fase F), pero calcula
 /// la señal de autoridad aprobada que ese futuro predicado necesitará.
 pub fn has_approved_authority(record: &Record) -> bool {
-    record.approvals.iter().any(|a| a.status == "approved")
+    !is_revoked(record) && record.approvals.iter().any(|a| a.status == "approved")
+}
+
+/// Etiqueta estable para packets y diagnostics. Revocado tiene prioridad
+/// sobre aprobaciones históricas porque esas aprobaciones siguen en el canon
+/// solo como evidencia de la decisión anterior.
+pub fn authority_label(record: &Record) -> &'static str {
+    if is_revoked(record) {
+        "revoked"
+    } else if has_approved_authority(record) {
+        "approved"
+    } else {
+        "unreviewed"
+    }
+}
+
+/// Estado de lifecycle persistido por `review_record`. Se conserva dentro
+/// de `extra` para que Records completos de v0.5 sobrevivan sin pérdida de
+/// campos no modelados.
+pub fn lifecycle_status(record: &Record) -> Option<&str> {
+    let lifecycle_key = yaml_serde::Value::String("lifecycle".to_string());
+    let status_key = yaml_serde::Value::String("status".to_string());
+    match record.extra.get(&lifecycle_key) {
+        Some(yaml_serde::Value::Mapping(lifecycle)) => {
+            lifecycle.get(&status_key).and_then(|value| value.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// Un Record revocado nunca vuelve a ser una constraint autorizada aunque
+/// conserve sus aprobaciones históricas como evidencia auditable.
+pub fn is_revoked(record: &Record) -> bool {
+    lifecycle_status(record) == Some("revoked")
+}
+
+/// Devuelve el Record que supersede al actual, si existe una transición
+/// explícita de lifecycle.
+pub fn superseded_by(record: &Record) -> Option<&str> {
+    let policy_key = yaml_serde::Value::String("applicability_policy".to_string());
+    let superseded_key = yaml_serde::Value::String("superseded_by".to_string());
+    match record.extra.get(&policy_key) {
+        Some(yaml_serde::Value::Mapping(policy)) => policy
+            .get(&superseded_key)
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.is_empty()),
+        _ => None,
+    }
 }
 
 /// Resultado detallado de listar Records: los que sí parsearon, y los que

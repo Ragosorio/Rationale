@@ -36,6 +36,10 @@ pub struct AuthorityDeclaration {
 pub struct ResolvedAuthority {
     pub role: AuthorityRole,
     pub domain: Option<String>,
+    /// `false` significa que el actor no aparece en la configuración del
+    /// proyecto y recibió `contributor` por defecto. Sirve para impedir que
+    /// una mutación de lifecycle convierta esa señal mínima en autoridad.
+    pub declared: bool,
 }
 
 #[derive(Debug)]
@@ -55,10 +59,12 @@ impl ResolvedConfig {
             .map(|decl| ResolvedAuthority {
                 role: decl.role,
                 domain: decl.domain.clone(),
+                declared: true,
             })
             .unwrap_or(ResolvedAuthority {
                 role: AuthorityRole::Contributor,
                 domain: None,
+                declared: false,
             })
     }
 }
