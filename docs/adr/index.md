@@ -2,7 +2,7 @@
 
 Ningún ADR puede justificarse solamente con "elegimos X porque es rápido" (`Rationale_Arquitectura_Conceptual_v0.1.md §22`). Debe contener evidencia reproducible.
 
-Los 12 ADRs iniciales obligatorios (`Rationale_Arquitectura_Conceptual_v0.1.md §22`), todos en estado `pending` hasta que exista evidencia:
+Los ADRs iniciales obligatorios (0001–0012, `Rationale_Arquitectura_Conceptual_v0.1.md §22`) y el ADR-0013 añadido en Fase G se mantienen explícitos en este índice; las propuestas requieren evidencia antes de pasar de estado:
 
 | ADR | Título | Estado | Depende de |
 |---|---|---|---|

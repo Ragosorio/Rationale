@@ -8,7 +8,7 @@ Rationale es un compilador local de contexto causal y una capa de procedencia, a
 
 **Pre-1.0, núcleo funcional con ciclo de captura y lifecycle de revisión.** El lenguaje del núcleo está decidido (Rust, `docs/adr/ADR-0001-core-language.md`) y ya existe un binario real en `src/` que implementa el modelo canónico completo (`Subject`, `Evidence`, `Assessment`, `Record`), una capa derivada local (SQLite + FTS, invalidada por revisión de Git), un Context Compiler con niveles de prioridad y presupuesto explícito, y una superficie MCP con cuatro herramientas: `prepare_change`, `explain_target`, `health` y `finalize_change`. `finalize_change` captura mecánicamente un cambio (diff, señales de alto valor, Subject candidato) y escribe una propuesta **pendiente** — nunca aprobada automáticamente; `rationale review` y `rationale review-record` en la CLI son las únicas vías de mutación humana, con confirmación explícita y eventos auditables.
 
-**Ningún ADR está `accepted` todavía** — los 9 existentes siguen `proposed`, pendientes de revisión cruzada y aprobación humana (`docs/adr/index.md`, Subject `evaluation.no-self-certification`). El empaquetado de la alfa se genera para GitHub Releases; el tag interno `v0.0.0-dogfood.1` precede al tag instalable `v0.1.0-alpha.1`.
+**Ningún ADR completo está `accepted` todavía** — los 12 ADRs propuestos y la decisión parcial de ADR-0011 siguen pendientes de revisión cruzada y aprobación humana (`docs/adr/index.md`, Subject `evaluation.no-self-certification`). El empaquetado de la alfa se genera para GitHub Releases; el tag interno `v0.0.0-dogfood.1` precede al tag instalable `v0.1.0-alpha.1`.
 
 ## Instalación y uso
 

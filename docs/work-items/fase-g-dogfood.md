@@ -61,8 +61,9 @@ tres una por pantalla, resolvió al actor Git como
 se convirtió en Record aprobado.
 
 Esto satisface la captura mecánica de G3 sin violar G4. La aprobación humana de
-estas decisiones, y especialmente de los siete Subjects fundacionales y los
-nueve ADRs que siguen `unreviewed`/`proposed`, queda deliberadamente pendiente.
+estas decisiones, y especialmente de los nueve Subjects fundacionales y los
+doce ADRs que siguen `unreviewed`/`proposed` (con ADR-0011 parcialmente
+aceptado pero aún abierto), queda deliberadamente pendiente.
 
 ## G5 — medición honesta y límites
 
