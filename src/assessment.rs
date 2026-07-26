@@ -201,6 +201,7 @@ mod tests {
                     actor: "user:x".to_string(),
                     authority: "security-owner".to_string(),
                     status: "approved".to_string(),
+                    extra: yaml_serde::Mapping::new(),
                 }]
             } else {
                 vec![]
@@ -208,6 +209,7 @@ mod tests {
             binding_declarations: Vec::<BindingDeclaration>::new(),
             bound_revision: Some(bound_revision.to_string()),
             subject: None,
+            extra: yaml_serde::Mapping::new(),
         }
     }
 

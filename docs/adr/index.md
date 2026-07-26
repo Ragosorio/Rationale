@@ -13,7 +13,7 @@ Los 12 ADRs iniciales obligatorios (`Rationale_Arquitectura_Conceptual_v0.1.md �
 | [ADR-0005](ADR-0005-cache-root-and-project-identity.md) | Cache root and project identity | **proposed** — `~/.cache/rationale/projects/<id>/` | Fase E1 — precedente medido en Codebase Memory |
 | [ADR-0006](ADR-0006-revision-fingerprint.md) | Revision fingerprint | **proposed** — derivar de Git, nunca del proveedor | Fase B — CBM-008, hallazgo crítico de `detect_changes`. Revisión adversarial: sostiene |
 | [ADR-0007](ADR-0007-mcp-sdk-and-protocol-version.md) | MCP SDK and protocol version | **proposed** — framing manual, `rmcp` diferido | Fase E1 — `rmcp` compilado y evaluado, requiere runtime async |
-| ADR-0008 | Concurrency and locking | pending | Fase E3+ |
+| [ADR-0008](ADR-0008-concurrency-and-locking.md) | Concurrency and locking | **proposed** — rename atómico basta, locking diferido | Fase F1 — bug real de nombre temporal encontrado y corregido, test de 8 hilos escribiendo concurrentemente verificado 15/15 |
 | ADR-0009 | Baseline integration surfaces | pending | Fase F+ |
 | ADR-0010 | Packaging strategy | pending | Fase J |
 | ADR-0011 | Licensing and dependency policy | accepted (parcial) | Licencia MIT decidida (ver nota abajo); política de dependencias pendiente |

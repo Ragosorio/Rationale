@@ -101,10 +101,9 @@ security_audit:
 known_gaps:
   - id: windows-file-locking-unexercised
     description: >
-      El candidato Rust del spike usó una ruta de file locking POSIX-only
-      (flock vía FFI) por simplicidad. std::fs::File::lock (portable desde
-      Rust 1.89) existe pero no se ejerció. Riesgo conocido desde Fase F1
-      (escritura canónica real), no bloqueante hasta que exista un caso real
-      de concurrencia entre procesos en Windows. Ver
-      docs/research/language/compatibility-matrix.md.
+      Decisión formalizada en ADR-0008: rename atómico basta para Fase F,
+      no se añade file locking real. El gap de Windows (¿MoveFileEx con
+      MOVEFILE_REPLACE_EXISTING da la misma garantía atómica que rename en
+      POSIX?) sigue sin ejercitarse empíricamente — ver revisit trigger en
+      el ADR. No bloqueante hasta el piloto en Windows (Fase H).
       severity: low

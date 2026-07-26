@@ -302,12 +302,14 @@ mod tests {
                 id: "risk.golden".to_string(),
                 statement: "Golden risk statement.".to_string(),
                 epistemic_status: EpistemicStatus::Stated,
+                extra: yaml_serde::Mapping::new(),
             }],
             approvals: if approved {
                 vec![Approval {
                     actor: "user:security-owner".to_string(),
                     authority: "security-owner".to_string(),
                     status: "approved".to_string(),
+                    extra: yaml_serde::Mapping::new(),
                 }]
             } else {
                 vec![]
@@ -318,9 +320,11 @@ mod tests {
                 provider: Some("codebase-memory".to_string()),
                 structural_id: Some("function:typescript:golden".to_string()),
                 path_hint: Some("src/golden.ts".to_string()),
+                extra: yaml_serde::Mapping::new(),
             }],
             bound_revision: Some("abc123fixed".to_string()),
             subject: None,
+            extra: yaml_serde::Mapping::new(),
         }
     }
 
@@ -485,6 +489,7 @@ mod tests {
                 actor: "user:security-owner".to_string(),
                 authority: "security-owner".to_string(),
                 status: "approved".to_string(),
+                extra: yaml_serde::Mapping::new(),
             }],
             binding_declarations: vec![BindingDeclaration {
                 id: format!("binding.{id}"),
@@ -492,9 +497,11 @@ mod tests {
                 provider: Some("codebase-memory".to_string()),
                 structural_id: Some(format!("function:typescript:{id}")),
                 path_hint: Some(path_hint.to_string()),
+                extra: yaml_serde::Mapping::new(),
             }],
             bound_revision: Some("abc123fixed".to_string()),
             subject: None,
+            extra: yaml_serde::Mapping::new(),
         }
     }
 
