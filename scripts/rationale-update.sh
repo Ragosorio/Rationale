@@ -21,7 +21,7 @@ if [[ -z "$VERSION" || "$VERSION" == "latest" ]]; then
         print latest_tag
         exit
       }
-    ' | head -1)"
+    ')"
     [[ -n "$VERSION" ]] || { echo "no se encontró una Release preview para $REPOSITORY" >&2; exit 1; }
     installer_url="https://github.com/$REPOSITORY/releases/download/v${VERSION#v}/rationale-installer.sh"
   elif [[ "$CHANNEL" == "stable" ]]; then

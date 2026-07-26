@@ -297,7 +297,12 @@ Se implementaron los cambios P1-P4 y la validación local de P5:
 - El smoke independiente `initialize` por stdin/stdout respondió en menos de
   un segundo y los 11 tests MCP mantuvieron sesiones persistentes.
 
-Pendiente fuera del checkout local: publicar el tag, esperar CI/Release,
-repetir la instalación desde una cuenta macOS limpia y desplegar la landing
-mediante Sites. El conector de Sites no expuso un proyecto ni un
-`.openai/hosting.json` en este entorno; no se simuló ese despliegue.
+La primera publicación de la alfa (`v0.1.0-alpha.1`) expuso un defecto en el
+pipeline preview del helper (`curl` recibía SIGPIPE por un `head` prematuro).
+La corrección se publicará como `v0.1.0-alpha.2`; la landing y los runbooks
+apuntan a ese tag para que la ruta de actualización sea realmente usable.
+
+Pendiente fuera del checkout local: repetir la instalación desde una cuenta
+macOS limpia y desplegar la landing mediante Sites. El conector de Sites no
+expuso un proyecto ni un `.openai/hosting.json` en este entorno; no se simuló
+ese despliegue.

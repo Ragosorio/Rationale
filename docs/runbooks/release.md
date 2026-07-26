@@ -1,6 +1,6 @@
 # Release runbook
 
-La próxima Release pública es `v0.1.0-alpha.1`, construida desde la rama
+La próxima Release pública es `v0.1.0-alpha.2`, construida desde la rama
 `release/v0.1.0-alpha.1`. Los tags `dogfood.*` quedan como iteraciones
 históricas de hardening y no deben usarse para validar el flujo actual.
 
@@ -18,8 +18,8 @@ históricas de hardening y no deben usarse para validar el flujo actual.
 ## Tag y publicación
 
 ```bash
-git tag -a v0.1.0-alpha.1 -m "Rationale alpha 1"
-git push origin v0.1.0-alpha.1
+git tag -a v0.1.0-alpha.2 -m "Rationale alpha 2"
+git push origin v0.1.0-alpha.2
 ```
 
 La workflow [`release.yml`](../../.github/workflows/release.yml) construye los

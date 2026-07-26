@@ -31,8 +31,8 @@ if [[ -z "$VERSION" || "$VERSION" == "latest" ]]; then
         /"prerelease"[[:space:]]*:[[:space:]]*true/ && latest_tag != "" {
           print latest_tag
           exit
-        }
-      ' | head -1)"
+      }
+      ')"
       ;;
     *)
       echo "RATIONALE_CHANNEL debe ser stable o preview" >&2
