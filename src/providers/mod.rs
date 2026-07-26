@@ -58,3 +58,30 @@ pub trait CodeIntelligenceProvider {
         symbol_name: &str,
     ) -> ProviderResult<ResolvedTarget>;
 }
+
+/// Envoltorio sobre una sesión (spawneada o fallida) del proveedor
+/// estructural. Existe para que `pipeline::prepare`/`pipeline::health` no
+/// decidan CUÁNDO se spawnea el proceso — solo lo usan. Esto es lo que
+/// permite que el servidor MCP (Fase E5) mantenga una sesión persistente
+/// durante toda su vida en vez de spawnear un proceso nuevo por llamada,
+/// cerrando el gap real que la revisión adversarial encontró en ADR-0002
+/// (`docs/work-items/adversarial-review-adr-0001-0002-0006.md`): la CLI de
+/// un solo disparo nunca puede amortizar, un servidor sí.
+pub enum ProviderHandle {
+    Live(codebase_memory::CodebaseMemoryClient),
+    /// Guarda el mensaje de error del spawn fallido — nunca se reintenta
+    /// automáticamente dentro de la misma sesión (fail open, Arquitectura
+    /// §13.5); una sesión nueva del servidor sí reintentaría.
+    Unavailable(String),
+}
+
+impl ProviderHandle {
+    /// Spawnea la sesión una sola vez. La CLI la llama por invocación (igual
+    /// costo que antes); el servidor MCP la llama una sola vez al arrancar.
+    pub fn spawn() -> Self {
+        match codebase_memory::CodebaseMemoryClient::spawn() {
+            Ok(client) => ProviderHandle::Live(client),
+            Err(e) => ProviderHandle::Unavailable(e.to_string()),
+        }
+    }
+}

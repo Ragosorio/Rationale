@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rationale.dev/schemas/context-packet.schema.json",
+  "title": "ContextPacket",
+  "description": "El paquete que prepare_change/explain_target devuelven a un agente. Corresponde a src/retrieval.rs::ContextPacket. Rationale_v0.5.md §18: nivel 0 (salud/consistencia) siempre declarado antes que cualquier conclusión.",
+  "type": "object",
+  "required": ["snapshot", "critical_constraints"],
+  "additionalProperties": true,
+  "properties": {
+    "snapshot": {
+      "type": "object",
+      "description": "Nivel 0 de v0.5 §18.1 — salud y consistencia, declarado primero.",
+      "required": ["consistency", "provider_status", "provider_coverage"],
+      "properties": {
+        "git_revision": { "type": ["string", "null"] },
+        "consistency": {
+          "type": "string",
+          "enum": ["exact", "working-tree-ahead", "structural-index-behind", "unresolved"]
+        },
+        "provider_status": {
+          "type": "string",
+          "enum": ["successful", "degraded", "unavailable"]
+        },
+        "provider_coverage": {
+          "type": "string",
+          "enum": ["complete", "partial", "unknown"]
+        }
+      }
+    },
+    "critical_constraints": {
+      "type": "array",
+      "description": "Nivel 1 de v0.5 §18.1. Esta vertical slice (Fase D/E) entrega como máximo una; el budget multi-constraint real es Fase E4.",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement", "authority"],
+        "properties": {
+          "id": { "type": "string" },
+          "statement": { "type": "string" },
+          "authority": {
+            "type": "string",
+            "enum": ["unreviewed", "approved", "policy", "revoked"],
+            "description": "Nunca se disfraza una constraint sin aprobación como 'approved' (v0.5 §10.7)."
+          }
+        }
+      }
+    },
+    "resolved_target": {
+      "type": ["string", "null"],
+      "description": "Qualified name devuelto por el proveedor estructural, o null si no se encontró dentro de la cobertura disponible (nunca implica que el símbolo no existe, v0.5 §19.2)."
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Advertencias normalizadas del proveedor — nunca un string crudo de error interno (docs/research/codebase-memory/10-failure-modes.md)."
+    }
+  }
+}

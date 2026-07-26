@@ -5,11 +5,12 @@
 # alternativas consideradas, CVEs conocidas, si puede vendorizarse, si
 # requiere runtime, y si agrega llamadas externas.
 #
-# ADR-0001 propone Rust (estado "proposed", pendiente de revisión cruzada y
-# aprobación humana). Las dependencias de core_dependencies abajo son las
-# validadas en el spike de lenguaje (docs/research/language/), disponibles
-# como punto de partida para Fase D — no son todavía una decisión final de
-# arquitectura de producto, esa vive en Fase E.
+# ADR-0001 (Rust, estado "proposed") ya está implementado en el Cargo.toml
+# raíz. Las dependencias abajo reflejan el estado REAL del crate `rationale`
+# tras Fase E completa (modelo canónico, capa derivada SQLite+FTS, Context
+# Compiler, superficie MCP) — no el spike (spikes/language/rust/ tiene su
+# propio Cargo.toml y dependencias separadas, código de investigación
+# desechable, no el punto de partida del core real).
 #
 # Dependencias externas ya presentes en el entorno de desarrollo (no del
 # runtime de Rationale) se documentan como research/tooling, no como
@@ -19,14 +20,6 @@
 
 schema_version: 1
 core_dependencies:
-  - name: rusqlite
-    version: "0.31 (feature: bundled)"
-    license: "MIT"
-    purpose: "SQLite embebido para el índice/capa derivada local"
-    runtime_dependency: true
-    requires_network: false
-    vendorable: true
-    notes: "bundled vendoriza su propio SQLite en C; evita dependencia del sistema. Validado en spikes/language/rust/."
   - name: serde
     version: "1"
     license: "MIT OR Apache-2.0"
@@ -36,16 +29,51 @@ core_dependencies:
   - name: serde_json
     version: "1"
     license: "MIT OR Apache-2.0"
-    purpose: "Serialización de Context Packets y respuestas MCP"
+    purpose: "Serialización de Context Packets y mensajes JSON-RPC del servidor MCP"
     runtime_dependency: true
     requires_network: false
-  - name: serde_yaml
-    version: "0.9"
+  - name: yaml_serde
+    version: "0.10.4"
     license: "MIT OR Apache-2.0"
-    purpose: "Parseo de Records/Subjects YAML en .rationale/"
+    purpose: "Parseo de Records/Subjects/Evidence/Assessments YAML en .rationale/"
     runtime_dependency: true
     requires_network: false
-    known_risk: "Marcado '+deprecated' upstream (mantenimiento reducido, confirmado en el spike). Evaluar serde_yml o yaml-rust2 antes de comprometerse en Fase D."
+    notes: >
+      Reemplazó a serde_yaml (0.9, "+deprecated" upstream) en ADR-0003.
+      Mantenido por "The YAML Organization" (github.com/yaml/yaml-serde).
+      Probado con roundtrip real contra un Subject del repo antes de migrar.
+      Trae una dependencia transitiva nueva: libyaml-rs 0.3.0 (libyaml
+      transpilado a Rust puro vía c2rust, MIT, mismo org github.com/yaml)
+      — no reintroduce un toolchain C, confirmado por `cargo info`.
+  - name: rusqlite
+    version: "0.31 (feature: bundled)"
+    license: "MIT"
+    purpose: "SQLite embebido para la capa derivada (assessments, FTS5, cache) — ADR-0004"
+    runtime_dependency: true
+    requires_network: false
+    vendorable: true
+    notes: >
+      Añadido en Fase E3 (src/cache.rs). Validado end-to-end en
+      spikes/language/rust/ antes de migrarlo al core real. `cargo audit`
+      corrido sobre el árbol completo — ver resultado en `security_audit`
+      abajo.
+
+# Transitivas relevantes por tamaño o superficie de ataque (no cada crate
+# del árbol — cargo tree --edges normal en el repo tiene la lista completa).
+notable_transitive_dependencies:
+  - name: libsqlite3-sys
+    via: rusqlite
+    license: "MIT"
+    notes: "Bindings FFI a SQLite (bundled, compilado desde fuente vendorizada — no enlaza contra una libsqlite3 del sistema)."
+  - name: libyaml-rs
+    via: yaml_serde
+    license: "MIT"
+    notes: "libyaml transpilado a Rust puro (c2rust) — sin toolchain C adicional."
+  - name: zerocopy
+    via: "rusqlite -> hashlink -> hashbrown -> ahash"
+    license: "BSD-2-Clause OR Apache-2.0 OR MIT"
+    notes: "Sin unsafe expuesto a Rationale directamente; uso interno de ahash."
+
 tooling_dependencies:
   - name: codebase-memory-mcp
     purpose: "Proveedor estructural inicial, consumido vía MCP/CLI, nunca enlazado"
@@ -57,3 +85,25 @@ tooling_dependencies:
     runtime_dependency: true
     requires_network: false
     license: "GPL-2.0 (herramienta externa, no vinculada)"
+
+# Resultado real de `cargo audit` (ver docs/runbooks/build-and-test.md para
+# cómo re-ejecutarlo). Cierra el known_gap `cargo-audit-not-installed` que
+# existía desde Fase D — corrido en F0 antes de que Fase F añada más
+# dependencias (escritura canónica).
+security_audit:
+  tool: "cargo-audit 0.22.2"
+  advisory_db: "RustSec/advisory-db, 1169 advisories cargados"
+  crates_scanned: 38
+  vulnerabilities_found: 0
+  warnings: 0
+  run_date: "2026-07-25"
+
+known_gaps:
+  - id: windows-file-locking-unexercised
+    description: >
+      Decisión formalizada en ADR-0008: rename atómico basta para Fase F,
+      no se añade file locking real. El gap de Windows (¿MoveFileEx con
+      MOVEFILE_REPLACE_EXISTING da la misma garantía atómica que rename en
+      POSIX?) sigue sin ejercitarse empíricamente — ver revisit trigger en
+      el ADR. No bloqueante hasta el piloto en Windows (Fase H).
+      severity: low

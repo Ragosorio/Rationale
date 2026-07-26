@@ -3,7 +3,22 @@ name = "rationale"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "Rationale — local causal-context compiler and provenance layer for coding agents (vertical slice, Fase D)"
+description = "Rationale — local causal-context compiler and provenance layer for coding agents (captura, revisión humana y dogfood Fase G)"
+repository = "https://github.com/Ragosorio/Rationale"
+readme = "README.md"
+license = "MIT"
+
+[package.metadata.dist]
+dist = true
+ci = ["github"]
+installers = ["shell", "powershell"]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
 
 [[bin]]
 name = "rationale"
@@ -12,7 +27,8 @@ path = "src/main.rs"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
+yaml_serde = "0.10"
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 [profile.release]
 opt-level = 3

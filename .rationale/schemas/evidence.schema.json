@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rationale.dev/schemas/evidence.schema.json",
+  "title": "Evidence",
+  "description": "Rationale_v0.5.md §5.4 — evidencia verificable o referenciada, nunca contenido íntegro (§4.11 minimización). Corresponde a src/storage.rs::Evidence.",
+  "type": "object",
+  "required": ["type"],
+  "additionalProperties": true,
+  "properties": {
+    "type": {
+      "type": "string",
+      "description": "Naturaleza de la evidencia, ej. 'research-note', 'migration', 'test', 'source-code', 'external-reference'."
+    },
+    "path": {
+      "type": "string",
+      "description": "Ruta relativa al repositorio. Nunca una ruta absoluta de una máquina."
+    },
+    "revision": {
+      "type": "string",
+      "description": "SHA de Git en el que esta evidencia se verificó."
+    },
+    "verified": {
+      "type": "boolean",
+      "default": false,
+      "description": "Si un humano o proceso determinista confirmó que la evidencia respalda la afirmación."
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "Hash del contenido cuando la evidencia no se versiona directamente (v0.5 §26.6)."
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["repository", "local", "restricted"],
+      "default": "repository"
+    }
+  }
+}

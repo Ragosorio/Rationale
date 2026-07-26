@@ -24,7 +24,7 @@ Directamente aplicable al parseo de `Record` YAML (`op1_read_record` en el spike
 
 ## Dependencias
 
-- `cargo audit` (herramienta externa, no instalada en este spike) debe incorporarse antes de Fase D como parte del quality gate — verificar CVEs conocidas en las dependencias del `Cargo.lock`. No instalado todavía porque el spike no lo requería; queda como pendiente explícito, no como omisión silenciosa.
+- `cargo audit` forma parte del quality gate desde Fase F — la ejecución más reciente sobre las 38 dependencias del `Cargo.lock` cargó 1.169 advisories y encontró 0 vulnerabilidades. Debe repetirse cada vez que cambien las dependencias del `Cargo.toml` raíz.
 - `Cargo.lock` se versiona (ya está en el repo, `spikes/language/rust/Cargo.lock`) para builds reproducibles — igual criterio aplicará al núcleo real.
 
 ## Sensibilidad

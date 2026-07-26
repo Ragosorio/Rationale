@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  package-unix:
+    name: Package ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-14
+          - target: x86_64-apple-darwin
+            # macos-13 is retired on current GitHub-hosted runner pools.
+            # macos-14 is Apple Silicon but clang can cross-link this Rust
+            # target against the installed macOS SDK.
+            runner: macos-14
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install ARM64 Linux linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-aarch64-linux-gnu
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
+          RATIONALE_VERSION: ${{ github.ref_name }}
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: ./scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rationale-${{ matrix.target }}
+          path: target/packages/*
+
+  package-windows:
+    name: Package Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Package
+        shell: pwsh
+        env:
+          TARGET: x86_64-pc-windows-msvc
+          RATIONALE_VERSION: ${{ github.ref_name }}
+        run: ./scripts/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rationale-x86_64-pc-windows-msvc
+          path: target/packages/*
+
+  publish:
+    name: Publish GitHub Release
+    needs: [package-unix, package-windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Add installers
+        run: |
+          mkdir -p release
+          git show "${GITHUB_REF_NAME}:scripts/rationale-installer.sh" > release/rationale-installer.sh
+          git show "${GITHUB_REF_NAME}:scripts/rationale-uninstall.sh" > release/rationale-uninstall.sh
+          git show "${GITHUB_REF_NAME}:scripts/rationale-installer.ps1" > release/rationale-installer.ps1
+          git show "${GITHUB_REF_NAME}:scripts/rationale-uninstall.ps1" > release/rationale-uninstall.ps1
+          chmod +x release/rationale-installer.sh release/rationale-uninstall.sh
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t release_assets < <(find release -type f -print)
+          test "${#release_assets[@]}" -gt 0
+          gh release create "${GITHUB_REF_NAME}" "${release_assets[@]}" \
+            --title "Rationale ${GITHUB_REF_NAME}" \
+            --generate-notes
+      - name: Attest release artifacts
+        uses: actions/attest@v4
+        with:
+          subject-path: release/*

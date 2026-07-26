@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rationale.dev/schemas/record.schema.json",
+  "title": "Record",
+  "description": "Rationale_v0.5.md §5.2 — una decisión, restricción, riesgo o conocimiento operativo consolidado. Corresponde a src/storage.rs::Record. Un Record nunca se autoaprueba (Proceso §21) — approvals empieza vacío.",
+  "type": "object",
+  "required": ["id", "kind", "severity", "statement"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "type": "string" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9.-]*$",
+      "description": "Ej. 'constraint.no-global-admin-for-staff'."
+    },
+    "project_id": { "type": "string" },
+    "kind": {
+      "type": "string",
+      "enum": ["constraint", "decision", "risk", "exception"]
+    },
+    "title": { "type": "string" },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "scope": { "type": "string", "default": "project" },
+    "subject": {
+      "type": "object",
+      "description": "Referencia embebida al Subject (v0.5 §27) — validada contra el canon real en .rationale/subjects/ por subjects::resolve_by_id_or_alias.",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" }
+      }
+    },
+    "statement": {
+      "type": "string",
+      "minLength": 1,
+      "description": "La afirmación normativa exacta."
+    },
+    "constraint_expression": {
+      "type": "object",
+      "description": "Representación declarativa opcional (v0.5 §11.2) — reduce ambigüedad frente a texto libre.",
+      "properties": {
+        "subject": { "type": "string" },
+        "predicate": { "type": "string" },
+        "object": { "type": "string" },
+        "conditions": { "type": "array" }
+      }
+    },
+    "rationale": {
+      "type": "string",
+      "description": "El motivo, separado de la afirmación normativa misma."
+    },
+    "novelty_reason": {
+      "type": "object",
+      "required": ["contrasted_subject", "difference_kind", "difference", "evidence"],
+      "properties": {
+        "contrasted_subject": { "type": "string", "minLength": 1 },
+        "difference_kind": {
+          "type": "string",
+          "enum": ["behavior", "scope", "lifecycle", "authority", "invariant"]
+        },
+        "difference": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "epistemic_status": {
+      "type": "string",
+      "enum": ["observed", "stated", "corroborated", "inferred", "disputed", "unknown"],
+      "default": "stated",
+      "description": "Rationale_v0.5.md §10, §12.1. Nunca se asume 'observed' por defecto — eso implicaría verificación mecánica que no ocurrió."
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "created_by": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["agent", "human"] },
+            "actor": { "type": "string" },
+            "name": { "type": "string" }
+          }
+        },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "approvals": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "approval.schema.json" }
+    },
+    "binding_declarations": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "binding.schema.json" }
+    },
+    "evidence": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "evidence.schema.json" }
+    },
+    "bound_revision": {
+      "type": "string",
+      "description": "SHA de Git en el que los bindings de este Record fueron declarados válidos. ADR-0006: comparado siempre contra Git real, nunca contra una señal del proveedor estructural."
+    },
+    "applicability_policy": {
+      "type": "object",
+      "properties": {
+        "superseded_by": { "type": ["string", "null"] },
+        "review_conditions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "context_policy": {
+      "type": "object",
+      "properties": {
+        "priority": { "type": "string" },
+        "always_include": { "type": "array", "items": { "type": "string" } },
+        "max_default_tokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sensitivity": {
+      "type": "object",
+      "properties": {
+        "classification": {
+          "type": "string",
+          "enum": ["public", "internal", "confidential", "security"]
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["repository", "local", "restricted"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,34 @@
+id: constraint.f8-roundtrip-fidelity
+kind: constraint
+severity: high
+statement: Every canonical Record field that Rationale does not explicitly modify must survive read-modify-write review operations unchanged.
+rationale: The canonical Record uses flattened fields and atomic writes so review operations cannot silently erase fields they do not understand.
+epistemic_status: stated
+approvals: []
+binding_declarations:
+  - id: binding.storage.write-record
+    type: symbol
+    provider: rationale-self
+    structural_id: rust:src/storage.rs::write_record
+    path_hint: src/storage.rs
+    scope: project
+evidence:
+  - type: test
+    path: src/storage.rs
+    revision: fabeb92
+    verified: true
+    visibility: repository
+  - type: work-item
+    path: docs/work-items/adversarial-review-fase-f.md
+    verified: true
+    visibility: repository
+risks:
+- id: risk.constraint.f8-roundtrip-fidelity.0
+  statement: Pending proposal requires human review before becoming normative.
+  epistemic_status: stated
+bound_revision: ffd7104b77bc4094ebdc8ee08d0fd8bd89b7c0c1
+subject:
+  id: storage.canonical-vs-derived
+schema_version: rationale/0.1
+project_id: rationale
+status: pending

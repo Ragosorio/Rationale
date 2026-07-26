@@ -1,8 +1,8 @@
 # Protocolo del spike de lenguaje — Rust vs Go
 
-**Estado:** protocolo definido, spike **no ejecutado**. Este documento define el criterio de evaluación antes de escribir una sola línea de cualquiera de los dos candidatos, precisamente para evitar el sesgo de fijar el criterio después de ver qué lenguaje "se sintió mejor" (`Rationale_Arquitectura_Conceptual_v0.1.md §8`).
+**Estado:** ejecutado en Fase C. Este documento conserva el criterio de evaluación que se congeló antes del spike; los resultados están en [`candidates.md`](candidates.md), [`compatibility-matrix.md`](compatibility-matrix.md), [`benchmark-results.json`](benchmark-results.json) y [`spike-notes.md`](spike-notes.md), precisamente para evitar el sesgo de fijar el criterio después de ver qué lenguaje "se sintió mejor" (`Rationale_Arquitectura_Conceptual_v0.1.md §8`).
 
-Ningún agente debe comenzar el núcleo definitivo de Rationale antes de que `ADR-0001` esté aprobado con evidencia de este spike (`Rationale_Proceso_Construccion_Agentes_v0.1.md §9`).
+El ADR-0001 conserva estado `proposed` hasta la aprobación humana; la implementación posterior no constituye autoaprobación (`Rationale_Proceso_Construccion_Agentes_v0.1.md §9`).
 
 ## Candidatos
 

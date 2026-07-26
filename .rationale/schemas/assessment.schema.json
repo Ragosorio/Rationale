@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rationale.dev/schemas/assessment.schema.json",
+  "title": "Assessment",
+  "description": "Rationale_v0.5.md §5.6, §27 — lo que Rationale puede afirmar HOY sobre la vigencia de un Record. Nunca autorado a mano, siempre computado. Corresponde a src/assessment.rs::Assessment. Persistencia en capa derivada: Fase E3.",
+  "type": "object",
+  "required": ["record_id", "revision_consistency", "state", "assessment_reason"],
+  "additionalProperties": true,
+  "properties": {
+    "record_id": { "type": "string" },
+    "assessed_revision": {
+      "type": ["string", "null"],
+      "description": "SHA de Git en el momento de este assessment (ADR-0006: siempre derivado de Git, nunca del proveedor)."
+    },
+    "revision_consistency": {
+      "type": "string",
+      "enum": ["exact", "working-tree-ahead", "structural-index-behind", "unresolved"],
+      "description": "Rationale_v0.5.md §12.5 (subconjunto implementado en Fase D/E)."
+    },
+    "state": {
+      "type": "object",
+      "description": "Los cuatro estados juntos, v0.5 §27 ejemplo `state:`.",
+      "required": ["epistemic", "authority", "applicability", "linkage"],
+      "properties": {
+        "epistemic": {
+          "type": "string",
+          "enum": ["observed", "stated", "corroborated", "inferred", "disputed", "unknown"]
+        },
+        "authority": {
+          "type": "string",
+          "enum": ["unreviewed", "approved", "policy", "revoked"],
+          "description": "'revoked' se alcanza mediante rationale review-record; 'policy' sigue reservado para una decisión futura explícita."
+        },
+        "applicability": {
+          "type": "string",
+          "enum": ["active", "superseded", "unknown"],
+          "description": "'superseded' requiere rationale review-record y un superseded_by existente."
+        },
+        "linkage": {
+          "type": "string",
+          "enum": ["current", "stale", "unresolved"]
+        }
+      }
+    },
+    "assessment_reason": {
+      "type": "string",
+      "description": "Explicación determinista de por qué el estado es el que es — nunca generada por heurística no auditable."
+    }
+  }
+}

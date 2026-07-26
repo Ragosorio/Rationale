@@ -15,8 +15,9 @@
 //!     (Arquitectura §13.5 "Provider unavailable").
 
 use super::{CodeIntelligenceProvider, Coverage, ProviderResult, ProviderStatus, ResolvedTarget};
+use crate::mcp::framing;
 use serde_json::{json, Value};
-use std::io::{BufReader, Read, Write};
+use std::io::BufReader;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::Duration;
@@ -69,7 +70,11 @@ impl CodebaseMemoryClient {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
-            while let Some(msg) = read_mcp_message(&mut reader) {
+            // EOF real o un mensaje que Codebase Memory no pudo formar
+            // correctamente terminan el hilo por igual — el `recv_timeout`
+            // del caller ya trata un canal desconectado como `Unavailable`
+            // (fail open, Arquitectura §13.5).
+            while let framing::Frame::Message(msg) = framing::read_message(&mut reader) {
                 if tx.send(msg).is_err() {
                     break;
                 }
@@ -114,9 +119,7 @@ impl CodebaseMemoryClient {
     }
 
     fn send(&mut self, value: Value) -> std::io::Result<()> {
-        let body = serde_json::to_string(&value).expect("serialize request");
-        write!(self.stdin, "Content-Length: {}\r\n\r\n{}", body.len(), body)?;
-        self.stdin.flush()
+        framing::write_message(&mut self.stdin, &value)
     }
 
     /// Espera una respuesta con deadline. Si expira, mata el proceso
@@ -286,35 +289,6 @@ impl CodeIntelligenceProvider for CodebaseMemoryClient {
             }
         }
     }
-}
-
-/// Mismo framing Content-Length verificado empíricamente contra Codebase
-/// Memory en el spike de lenguaje (src/mcp/mcp.c, confirmado en
-/// docs/research/codebase-memory/11-performance-observations.md).
-fn read_mcp_message(reader: &mut dyn Read) -> Option<Value> {
-    let mut header = Vec::new();
-    let mut byte = [0u8; 1];
-    loop {
-        if reader.read(&mut byte).ok()? == 0 {
-            return None;
-        }
-        header.push(byte[0]);
-        if header.ends_with(b"\r\n\r\n") {
-            break;
-        }
-    }
-    let header_str = String::from_utf8_lossy(&header);
-    let length: usize = header_str
-        .lines()
-        .find(|l| l.to_lowercase().starts_with("content-length:"))?
-        .split(':')
-        .nth(1)?
-        .trim()
-        .parse()
-        .ok()?;
-    let mut body = vec![0u8; length];
-    reader.read_exact(&mut body).ok()?;
-    serde_json::from_slice(&body).ok()
 }
 
 #[cfg(test)]
