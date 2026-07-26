@@ -1,0 +1,19 @@
+id: constraint.f8-project-authority
+kind: constraint
+severity: high
+statement: Approval authority must come from project configuration and default to contributor when undeclared.
+rationale: F8 resolves actor authority from .rationale/config.yaml and validates the schema enum before writing.
+epistemic_status: stated
+approvals: []
+binding_declarations: []
+evidence: []
+risks:
+- id: risk.constraint.f8-project-authority.0
+  statement: Pending proposal requires human review before becoming normative.
+  epistemic_status: stated
+bound_revision: 43edae779626dbc2ab99411df5d2ca44237dd16d
+subject:
+  id: architecture.project-declared-authority
+schema_version: rationale/0.1
+project_id: rationale
+status: pending

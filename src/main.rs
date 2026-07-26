@@ -201,13 +201,21 @@ fn cmd_review(args: &[String]) {
         .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
     let config = configuration::load(&project_root).expect("cargar configuración");
 
-    let pending = review::list_pending(&config.rationale_dir);
+    let pending_result = review::list_pending_detailed(&config.rationale_dir);
+    for (path, error) in &pending_result.skipped {
+        eprintln!(
+            "advertencia: propuesta no legible, requiere recuperación manual: {} ({error})",
+            path.display()
+        );
+    }
+    let pending = pending_result.pending;
     if pending.is_empty() {
         println!("No hay propuestas pendientes en .rationale/proposals/.");
         return;
     }
 
     let reviewer_actor = git_reviewer_actor(&project_root);
+    let reviewer_authority = config.authority_for_actor(&reviewer_actor);
     let rationale_local = find_rationale_local(&project_root);
     let stdin = std::io::stdin();
 
@@ -229,7 +237,13 @@ fn cmd_review(args: &[String]) {
 
         let word = review::required_confirmation_word(&proposal.record);
         println!(
-            "\nEscribe '{word}' para aprobar tal cual, 'c' para corregir el statement antes de aprobar, 'r' para rechazar, o cualquier otra cosa para saltar:"
+            "\nActor: {reviewer_actor}\nAutoridad declarada: {}{}\nEscribe '{word}' para aprobar tal cual, 'c' para corregir el statement antes de aprobar, 'r' para rechazar, o cualquier otra cosa para saltar:",
+            reviewer_authority.role,
+            reviewer_authority
+                .domain
+                .as_deref()
+                .map(|d| format!(" (dominio={d})"))
+                .unwrap_or_default()
         );
 
         let mut input = String::new();
@@ -240,7 +254,14 @@ fn cmd_review(args: &[String]) {
         let input = input.trim().to_string();
 
         let decision = if input == word {
-            match review::approve(&config.rationale_dir, proposal, None, &reviewer_actor) {
+            match review::approve(
+                &config.rationale_dir,
+                proposal,
+                None,
+                &reviewer_actor,
+                reviewer_authority.role,
+                reviewer_authority.domain.as_deref(),
+            ) {
                 Ok(dest) => {
                     println!("Aprobado -> {}", dest.display());
                     "approved"
@@ -265,6 +286,8 @@ fn cmd_review(args: &[String]) {
                     proposal,
                     Some(new_statement),
                     &reviewer_actor,
+                    reviewer_authority.role,
+                    reviewer_authority.domain.as_deref(),
                 ) {
                     Ok(dest) => {
                         println!("Aprobado (corregido) -> {}", dest.display());

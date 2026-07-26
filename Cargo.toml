@@ -3,7 +3,7 @@ name = "rationale"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "Rationale — local causal-context compiler and provenance layer for coding agents (vertical slice, Fase D)"
+description = "Rationale — local causal-context compiler and provenance layer for coding agents (captura, revisión humana y dogfood Fase G)"
 
 [[bin]]
 name = "rationale"

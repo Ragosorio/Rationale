@@ -162,6 +162,24 @@ pub struct Candidate {
     pub signals: CandidateSignals,
 }
 
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DifferenceKind {
+    Behavior,
+    Scope,
+    Lifecycle,
+    Authority,
+    Invariant,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct NoveltyReason {
+    pub contrasted_subject: String,
+    pub difference_kind: DifferenceKind,
+    pub difference: String,
+    pub evidence: String,
+}
+
 #[derive(Debug, serde::Serialize)]
 pub struct Resolution {
     pub action: ResolutionAction,
@@ -172,7 +190,32 @@ pub struct Resolution {
     /// (`finalize_change`, Fase F5) cuando decide proponer `Create` pese a
     /// haber candidatos fuertes — `resolve()` nunca lo redacta por sí sola,
     /// solo expone los candidatos contra los que debe contrastar.
-    pub novelty_reason: Option<String>,
+    pub novelty_reason: Option<NoveltyReason>,
+}
+
+pub fn validate_novelty_reason(
+    reason: &NoveltyReason,
+    candidates: &[Candidate],
+) -> Result<(), String> {
+    if reason.contrasted_subject.trim().is_empty() {
+        return Err("contrasted_subject no puede estar vacío".to_string());
+    }
+    if !candidates
+        .iter()
+        .any(|candidate| candidate.id == reason.contrasted_subject)
+    {
+        return Err(format!(
+            "contrasted_subject '{}' no corresponde a ningún candidato real del Resolver",
+            reason.contrasted_subject
+        ));
+    }
+    if reason.difference.trim().is_empty() {
+        return Err("difference no puede estar vacío".to_string());
+    }
+    if reason.evidence.trim().is_empty() {
+        return Err("evidence no puede estar vacío".to_string());
+    }
+    Ok(())
 }
 
 // Umbrales sin calibrar contra datos reales — límite conocido, confirmado
@@ -513,5 +556,44 @@ mod tests {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(".rationale/subjects");
         let subjects = list_subjects(&dir).unwrap();
         assert!(resolve_by_id_or_alias(&subjects, "no.existe").is_none());
+    }
+
+    #[test]
+    fn novelty_reason_requires_a_real_candidate_and_auditable_difference() {
+        let subjects = vec![Subject {
+            id: "auth.existing".to_string(),
+            subject_type: "system-behavior".to_string(),
+            title: "Existing authorization".to_string(),
+            scope: "project".to_string(),
+            aliases: vec![],
+            applies_to: vec![],
+        }];
+        let resolution = resolve(
+            &subjects,
+            "auth.new",
+            "Existing authorization",
+            "project",
+            &[],
+            &std::collections::HashMap::new(),
+        );
+        let valid = NoveltyReason {
+            contrasted_subject: "auth.existing".to_string(),
+            difference_kind: DifferenceKind::Scope,
+            difference: "The new rule applies only to external tenants.".to_string(),
+            evidence: "The changed binding is in the tenant gateway module.".to_string(),
+        };
+        assert!(validate_novelty_reason(&valid, &resolution.candidates).is_ok());
+
+        let unknown = NoveltyReason {
+            contrasted_subject: "auth.missing".to_string(),
+            ..valid.clone()
+        };
+        assert!(validate_novelty_reason(&unknown, &resolution.candidates).is_err());
+
+        let empty = NoveltyReason {
+            difference: " ".to_string(),
+            ..valid
+        };
+        assert!(validate_novelty_reason(&empty, &resolution.candidates).is_err());
     }
 }

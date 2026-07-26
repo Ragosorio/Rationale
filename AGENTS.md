@@ -8,7 +8,17 @@ Rationale completó Fase A (bootstrap), Fase B (análisis de Codebase Memory —
 
 Nueve ADRs existen, **todos en estado `proposed`** — ninguno se autoaprueba (`evaluation.no-self-certification`). Antes de asumir que uno describe el comportamiento actual, revisa su estado en `docs/adr/index.md`.
 
-Siguiente: `review_record` completo (revocar/superseder/asignar autoridad sobre Records ya aprobados) y Fase G (dogfood formal — instalar Rationale en Rationale y usarlo de verdad para construirlo) — ver `docs/work-items/` por el plan vigente.
+F8 cerró los hallazgos P1/P2 de la auditoría adversarial: autoridad declarada
+por proyecto, `novelty_reason` estructurada, claim atómico de propuestas,
+diagnóstico de YAML corrupto, drift documental y CI Linux/macOS. Fase G está en
+dogfood formal; las decisiones F8 ya tienen propuestas pendientes capturadas en
+`.rationale/proposals/`, pero ninguna aprobación automática. Ver
+`docs/work-items/fase-g-dogfood.md` para la evidencia y los límites conocidos.
+
+Siguiente: revisión humana de esas propuestas y de los siete Subjects
+fundacionales; después `review_record` completo (revocar/superseder/asignar
+autoridad sobre Records ya aprobados) — ver `docs/work-items/` por el plan
+vigente.
 
 ## Ruta de lectura por tipo de tarea
 

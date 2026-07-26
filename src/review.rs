@@ -39,40 +39,90 @@ pub struct PendingProposal {
     original_content: String,
 }
 
+pub struct PendingProposalList {
+    pub pending: Vec<PendingProposal>,
+    pub skipped: Vec<(PathBuf, String)>,
+}
+
 /// Lista propuestas pendientes en `.rationale/proposals/`, ordenadas por
-/// path (determinista). Una propuesta que no parsea como Record válido se
-/// omite silenciosamente aquí — `rationale review` no es el lugar para
-/// reportar corrupción de datos; `read_record` ya deja evidencia si se
-/// invoca directamente.
-pub fn list_pending(rationale_dir: &Path) -> Vec<PendingProposal> {
+/// path (determinista). Una propuesta ilegible se conserva en `skipped` para
+/// que la única interfaz humana de revisión nunca oculte corrupción.
+pub fn list_pending_detailed(rationale_dir: &Path) -> PendingProposalList {
     let proposals_dir = rationale_dir.join("proposals");
     let mut pending = Vec::new();
+    let mut skipped = Vec::new();
     let Ok(entries) = std::fs::read_dir(&proposals_dir) else {
-        return pending;
+        return PendingProposalList { pending, skipped };
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
             continue;
         }
-        let Ok(original_content) = std::fs::read_to_string(&path) else {
-            continue;
+        let original_content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                skipped.push((path, format!("error leyendo YAML: {e}")));
+                continue;
+            }
         };
-        if let Ok(record) = storage::read_record(&path) {
-            let proposed_at = entry
-                .metadata()
-                .and_then(|m| m.modified())
-                .unwrap_or_else(|_| std::time::SystemTime::now());
-            pending.push(PendingProposal {
-                path,
-                record,
-                proposed_at,
-                original_content,
-            });
+        match storage::read_record(&path) {
+            Ok(record) => {
+                let proposed_at = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or_else(|_| std::time::SystemTime::now());
+                pending.push(PendingProposal {
+                    path,
+                    record,
+                    proposed_at,
+                    original_content,
+                });
+            }
+            Err(e) => skipped.push((path, e.to_string())),
         }
     }
     pending.sort_by(|a, b| a.path.cmp(&b.path));
-    pending
+    PendingProposalList { pending, skipped }
+}
+
+/// Compatibilidad para callers que solo necesitan las propuestas válidas.
+#[allow(dead_code)]
+pub fn list_pending(rationale_dir: &Path) -> Vec<PendingProposal> {
+    list_pending_detailed(rationale_dir).pending
+}
+
+fn claim_proposal(rationale_dir: &Path, proposal: &PendingProposal) -> std::io::Result<PathBuf> {
+    static CLAIM_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let in_review = rationale_dir.join("proposals").join(".in-review");
+    std::fs::create_dir_all(&in_review)?;
+    let sequence = CLAIM_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = format!(
+        "{}.yaml.{}-{sequence}",
+        proposal.record.id,
+        std::process::id()
+    );
+    let claimed = in_review.join(name);
+    // rename es el claim CAS: exactamente un proceso puede mover el path
+    // original. El perdedor recibe NotFound y no puede aprobar/rechazar una
+    // copia obsoleta.
+    std::fs::rename(&proposal.path, &claimed)?;
+    Ok(claimed)
+}
+
+fn read_claimed_content(
+    claimed: &Path,
+    proposal: &PendingProposal,
+) -> Result<String, storage::StorageError> {
+    let current = std::fs::read_to_string(claimed).map_err(storage::StorageError::Io)?;
+    if current != proposal.original_content {
+        return Err(storage::StorageError::Parse(format!(
+            "la propuesta '{}' cambió mientras se reclamaba — quedó recuperable en {}",
+            proposal.record.id,
+            claimed.display()
+        )));
+    }
+    Ok(current)
 }
 
 /// El "efecto práctico" de aprobar (v0.5 §15.5) — nunca el YAML completo.
@@ -117,13 +167,16 @@ pub fn required_confirmation_word(record: &Record) -> &'static str {
 }
 
 /// Promueve una propuesta a `.rationale/records/` con una `Approval` real —
-/// la única función de todo el sistema que hace esto. Consume la propuesta
-/// (nunca se vuelve a leer del directorio de propuestas después).
+/// la única función de todo el sistema que hace esto. Primero reclama el
+/// archivo con rename atómico; el estado intermedio vive en `.in-review/` y
+/// queda recuperable si el proceso muere antes de completar la promoción.
 pub fn approve(
     rationale_dir: &Path,
     mut proposal: PendingProposal,
     corrected_statement: Option<String>,
     reviewer_actor: &str,
+    reviewer_role: storage::AuthorityRole,
+    reviewer_domain: Option<&str>,
 ) -> Result<PathBuf, storage::StorageError> {
     // `proposal.record.id` viene del contenido YAML de la propuesta — no
     // necesariamente del `record_id` ya validado en `finalize_change` (una
@@ -132,40 +185,26 @@ pub fn approve(
     // ver `storage::validate_safe_id`).
     storage::validate_safe_id(&proposal.record.id)?;
 
-    // TOCTOU real (hallazgo 2, revisión adversarial de Fase F): la
-    // propuesta se cargó en memoria al listar, y el humano pudo tardar
-    // minutos en decidir. Releer el archivo justo antes de promover reduce
-    // la ventana de milisegundos a lo que dura esta función — si el
-    // archivo ya no existe (otra sesión ya lo promovió/rechazó) o cambió
-    // (una nueva `finalize_change` lo sobrescribió mientras se revisaba),
-    // abortar con un error explícito en vez de promover a ciegas una copia
-    // obsoleta o perder en silencio lo que hay ahora en disco.
-    match std::fs::read_to_string(&proposal.path) {
-        Ok(current) if current == proposal.original_content => {}
-        Ok(_) => {
-            return Err(storage::StorageError::Parse(format!(
-                "la propuesta '{}' cambió en disco desde que se listó para revisión — \
-                 vuelve a correr 'rationale review' para ver la versión actual antes de aprobar",
-                proposal.record.id
-            )));
-        }
-        Err(_) => {
-            return Err(storage::StorageError::Parse(format!(
-                "la propuesta '{}' ya no existe en disco — probablemente otra sesión ya la \
-                 promovió, rechazó, o fue sobrescrita mientras se revisaba",
-                proposal.record.id
-            )));
-        }
-    }
+    let claimed = claim_proposal(rationale_dir, &proposal).map_err(storage::StorageError::Io)?;
+    read_claimed_content(&claimed, &proposal)?;
 
     if let Some(s) = corrected_statement {
         proposal.record.statement = s;
     }
     proposal.record.approvals.push(Approval {
         actor: reviewer_actor.to_string(),
-        authority: "reviewer".to_string(),
+        authority: reviewer_role.to_string(),
         status: "approved".to_string(),
-        extra: yaml_serde::Mapping::new(),
+        extra: reviewer_domain
+            .map(|domain| {
+                let mut extra = yaml_serde::Mapping::new();
+                extra.insert(
+                    yaml_serde::Value::String("domain".to_string()),
+                    yaml_serde::Value::String(domain.to_string()),
+                );
+                extra
+            })
+            .unwrap_or_default(),
     });
     // El `status: pending` que `finalize_change` escribió ya no es cierto —
     // el Record se está promoviendo con una Approval real. Dejarlo diría
@@ -178,33 +217,26 @@ pub fn approve(
     let records_dir = rationale_dir.join("records");
     let dest = records_dir.join(format!("{}.yaml", proposal.record.id));
     storage::write_record(&dest, &proposal.record)?;
-    // La propuesta ya vive (con su Approval) en records/ — el archivo de
-    // proposals/ quedaría duplicado y confuso si sobreviviera.
-    let _ = std::fs::remove_file(&proposal.path);
+    // La propuesta ya vive (con su Approval) en records/. Si el proceso
+    // muere antes de este punto, `.in-review/` conserva la evidencia para
+    // recuperación manual; nunca se pierde silenciosamente.
+    std::fs::remove_file(&claimed).map_err(storage::StorageError::Io)?;
     Ok(dest)
 }
 
 /// Rechaza una propuesta — se mueve a `proposals/.rejected/`, nunca se
 /// borra en silencio (preserva evidencia de qué se propuso y se descartó).
 ///
-/// Mismo chequeo TOCTOU que `approve()` (hallazgo 2, revisión adversarial de
-/// Fase F): si el contenido cambió desde que se listó, el humano rechazó
-/// algo que ya no es lo que hay en disco — mejor abortar y forzar una
-/// relectura que mover en silencio una versión distinta a la que se mostró.
+/// Usa el mismo claim atómico que `approve()`: si el contenido cambió desde
+/// que se listó, el archivo queda en `.in-review/` para recuperación y no se
+/// mueve en silencio una versión distinta a la que se mostró.
 pub fn reject(rationale_dir: &Path, proposal: &PendingProposal) -> std::io::Result<PathBuf> {
-    let current = std::fs::read_to_string(&proposal.path)?;
-    if current != proposal.original_content {
-        return Err(std::io::Error::other(format!(
-            "la propuesta '{}' cambió en disco desde que se listó para revisión — \
-             vuelve a correr 'rationale review' antes de rechazarla",
-            proposal.record.id
-        )));
-    }
-
+    let claimed = claim_proposal(rationale_dir, proposal)?;
+    read_claimed_content(&claimed, proposal).map_err(|e| std::io::Error::other(e.to_string()))?;
     let rejected_dir = rationale_dir.join("proposals").join(".rejected");
     std::fs::create_dir_all(&rejected_dir)?;
     let dest = rejected_dir.join(proposal.path.file_name().unwrap());
-    std::fs::rename(&proposal.path, &dest)?;
+    std::fs::rename(&claimed, &dest)?;
     Ok(dest)
 }
 
@@ -250,7 +282,13 @@ pub fn log_decision(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{BindingDeclaration, EpistemicStatus, RecordSubjectRef, Risk};
+    use crate::storage::{
+        AuthorityRole, BindingDeclaration, EpistemicStatus, RecordSubjectRef, Risk,
+    };
+
+    fn contributor() -> (AuthorityRole, Option<&'static str>) {
+        (AuthorityRole::Contributor, None)
+    }
 
     fn proposal_record(id: &str, severity: &str) -> Record {
         let mut extra = yaml_serde::Mapping::new();
@@ -348,7 +386,8 @@ mod tests {
             original_content: String::new(),
         };
 
-        let result = approve(&dir, proposal, None, "user:test-reviewer");
+        let (role, domain) = contributor();
+        let result = approve(&dir, proposal, None, "user:test-reviewer", role, domain);
         assert!(
             matches!(result, Err(storage::StorageError::UnsafeIdentifier(_))),
             "debe rechazar el id inseguro, no escribir nada"
@@ -376,7 +415,8 @@ mod tests {
             original_content,
         };
 
-        let dest = approve(&dir, proposal, None, "user:test-reviewer").unwrap();
+        let (role, domain) = contributor();
+        let dest = approve(&dir, proposal, None, "user:test-reviewer", role, domain).unwrap();
         assert!(dest.starts_with(dir.join("records")));
         assert!(!proposal_path.exists(), "la propuesta debe consumirse");
 
@@ -406,7 +446,8 @@ mod tests {
             original_content,
         };
 
-        let dest = approve(&dir, proposal, None, "user:test-reviewer").unwrap();
+        let (role, domain) = contributor();
+        let dest = approve(&dir, proposal, None, "user:test-reviewer", role, domain).unwrap();
         let content = std::fs::read_to_string(&dest).unwrap();
         assert!(content.contains("status: approved"));
         assert!(!content.contains("status: pending"));
@@ -434,6 +475,8 @@ mod tests {
             proposal,
             Some("corrected statement text".to_string()),
             "user:test-reviewer",
+            contributor().0,
+            contributor().1,
         )
         .unwrap();
 
@@ -495,13 +538,21 @@ mod tests {
         overwritten.statement = "SECOND VERSION written during the review window".to_string();
         storage::write_record(&proposal_path, &overwritten).unwrap();
 
-        let result = approve(&dir, proposal, None, "user:test-reviewer");
+        let (role, domain) = contributor();
+        let result = approve(&dir, proposal, None, "user:test-reviewer", role, domain);
         assert!(
             result.is_err(),
             "debe rechazar promover una copia obsoleta cuando el archivo cambió"
         );
-        // La versión nueva (real) sigue intacta en proposals/ — nada se perdió.
-        let still_there = storage::read_record(&proposal_path).unwrap();
+        // La versión nueva (real) queda intacta en `.in-review/` — nada se
+        // perdió y la recuperación puede inspeccionarla manualmente.
+        let claimed = std::fs::read_dir(dir.join("proposals/.in-review"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let still_there = storage::read_record(&claimed).unwrap();
         assert_eq!(
             still_there.statement,
             "SECOND VERSION written during the review window"
@@ -535,12 +586,14 @@ mod tests {
         };
 
         // El revisor A aprueba primero — consume la propuesta.
-        approve(&dir, proposal_a, None, "user:reviewer-a").unwrap();
+        let (role, domain) = contributor();
+        approve(&dir, proposal_a, None, "user:reviewer-a", role, domain).unwrap();
         assert!(!proposal_path.exists());
 
         // El revisor B, con la misma propuesta cargada ANTES de que A la
         // promoviera, intenta aprobar también.
-        let result_b = approve(&dir, proposal_b, None, "user:reviewer-b");
+        let (role, domain) = contributor();
+        let result_b = approve(&dir, proposal_b, None, "user:reviewer-b", role, domain);
         assert!(
             result_b.is_err(),
             "debe rechazar una segunda aprobación sobre una propuesta ya promovida"
@@ -568,6 +621,24 @@ mod tests {
         assert_eq!(pending.len(), 2);
         assert_eq!(pending[0].record.id, "constraint.a");
         assert_eq!(pending[1].record.id, "constraint.b");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn list_pending_reports_corrupt_yaml_instead_of_hiding_it() {
+        let dir = temp_rationale_dir();
+        std::fs::write(
+            dir.join("proposals/broken.yaml"),
+            "id: constraint.broken\nstatement: [not valid record\n",
+        )
+        .unwrap();
+
+        let result = list_pending_detailed(&dir);
+        assert!(result.pending.is_empty());
+        assert_eq!(result.skipped.len(), 1);
+        assert!(result.skipped[0].0.ends_with("broken.yaml"));
+        assert!(!result.skipped[0].1.is_empty());
 
         std::fs::remove_dir_all(&dir).ok();
     }

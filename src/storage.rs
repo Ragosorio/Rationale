@@ -21,6 +21,53 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// Roles válidos para una Approval. La configuración del proyecto declara
+/// qué actor tiene cada rol; un actor no declarado queda como contributor.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum AuthorityRole {
+    Contributor,
+    DomainMaintainer,
+    DomainOwner,
+    SecurityOwner,
+    ProductOwner,
+    ArchitectureOwner,
+    RepositoryPolicy,
+}
+
+impl AuthorityRole {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Contributor => "contributor",
+            Self::DomainMaintainer => "domain-maintainer",
+            Self::DomainOwner => "domain-owner",
+            Self::SecurityOwner => "security-owner",
+            Self::ProductOwner => "product-owner",
+            Self::ArchitectureOwner => "architecture-owner",
+            Self::RepositoryPolicy => "repository-policy",
+        }
+    }
+}
+
+impl std::fmt::Display for AuthorityRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+pub fn is_valid_authority(value: &str) -> bool {
+    matches!(
+        value,
+        "contributor"
+            | "domain-maintainer"
+            | "domain-owner"
+            | "security-owner"
+            | "product-owner"
+            | "architecture-owner"
+            | "repository-policy"
+    )
+}
+
 // Campos como `id`, `kind`, `provider`, `path_hint` (BindingDeclaration),
 // `actor`/`authority` (Approval) y `Record.kind` reflejan el schema completo
 // de Rationale_v0.5.md §5.2-5.3 para que la deserialización sea fiel al
@@ -173,6 +220,7 @@ pub enum StorageError {
     /// se convierte silenciosamente en un path (path traversal real,
     /// encontrado y corregido durante la verificación de fin de Fase F).
     UnsafeIdentifier(String),
+    InvalidAuthority(String),
 }
 
 impl std::fmt::Display for StorageError {
@@ -186,6 +234,9 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::UnsafeIdentifier(id) => {
                 write!(f, "id inseguro para usar como nombre de archivo: '{id}'")
+            }
+            StorageError::InvalidAuthority(authority) => {
+                write!(f, "autoridad inválida: '{authority}'")
             }
         }
     }
@@ -225,6 +276,11 @@ fn validate(record: &Record) -> Result<(), StorageError> {
     }
     if record.severity.is_empty() {
         return Err(StorageError::MissingRequiredField("severity"));
+    }
+    for approval in &record.approvals {
+        if !is_valid_authority(&approval.authority) {
+            return Err(StorageError::InvalidAuthority(approval.authority.clone()));
+        }
     }
     Ok(())
 }
@@ -367,6 +423,36 @@ mod tests {
         ] {
             assert!(validate_safe_id(safe).is_ok(), "'{safe}' debe aceptarse");
         }
+    }
+
+    #[test]
+    fn approval_authority_must_match_declared_schema_enum() {
+        let mut record = Record {
+            id: "constraint.authority-test".to_string(),
+            kind: "constraint".to_string(),
+            severity: "high".to_string(),
+            statement: "valid statement".to_string(),
+            rationale: None,
+            epistemic_status: EpistemicStatus::Stated,
+            approvals: vec![Approval {
+                actor: "user:test".to_string(),
+                authority: "reviewer".to_string(),
+                status: "approved".to_string(),
+                extra: yaml_serde::Mapping::new(),
+            }],
+            binding_declarations: vec![],
+            evidence: vec![],
+            risks: vec![],
+            bound_revision: None,
+            subject: None,
+            extra: yaml_serde::Mapping::new(),
+        };
+        assert!(matches!(
+            validate(&record),
+            Err(StorageError::InvalidAuthority(authority)) if authority == "reviewer"
+        ));
+        record.approvals[0].authority = "contributor".to_string();
+        assert!(validate(&record).is_ok());
     }
 
     /// PID + nanos + contador atómico: bajo carga extrema (muchos tests en

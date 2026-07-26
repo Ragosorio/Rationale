@@ -1,0 +1,19 @@
+id: constraint.f8-roundtrip-fidelity
+kind: constraint
+severity: high
+statement: Rationale must preserve every canonical Record field when review updates an approval.
+rationale: F8 captures the round-trip invariant already implemented in storage::Record flattening.
+epistemic_status: stated
+approvals: []
+binding_declarations: []
+evidence: []
+risks:
+- id: risk.constraint.f8-roundtrip-fidelity.0
+  statement: Pending proposal requires human review before becoming normative.
+  epistemic_status: stated
+bound_revision: 43edae779626dbc2ab99411df5d2ca44237dd16d
+subject:
+  id: architecture.roundtrip-fidelity
+schema_version: rationale/0.1
+project_id: rationale
+status: pending

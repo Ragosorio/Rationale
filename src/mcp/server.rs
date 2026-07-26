@@ -154,7 +154,17 @@ fn tool_definitions() -> Value {
                     "record_id": {"type": "string", "description": "Slug único para la propuesta, ej. constraint.no-double-charge"},
                     "subject_id": {"type": "string", "description": "Subject candidato — el Subject Resolver contrasta contra el canon existente"},
                     "subject_title": {"type": "string"},
-                    "novelty_reason": {"type": "string", "description": "Requerido si el Subject Resolver sugiere un candidato existente fuerte y aun así se propone uno nuevo (v0.5 §294)"},
+                    "novelty_reason": {
+                        "type": "object",
+                        "description": "Contraste estructurado requerido al no reutilizar un candidato fuerte (v0.5 §9.2)",
+                        "required": ["contrasted_subject", "difference_kind", "difference", "evidence"],
+                        "properties": {
+                            "contrasted_subject": {"type": "string"},
+                            "difference_kind": {"type": "string", "enum": ["behavior", "scope", "lifecycle", "authority", "invariant"]},
+                            "difference": {"type": "string"},
+                            "evidence": {"type": "string"}
+                        }
+                    },
                     "risks": {"type": "array", "items": {"type": "string"}},
                     "project_root": {"type": "string"},
                     "repo_path": {"type": "string"}
@@ -369,8 +379,11 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
         .to_string();
     let novelty_reason = args
         .get("novelty_reason")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(|value| {
+            serde_json::from_value::<crate::subjects::NoveltyReason>(value.clone())
+                .map_err(|e| format!("novelty_reason inválida: {e}"))
+        })
+        .transpose()?;
     let risks: Vec<String> = args
         .get("risks")
         .and_then(|v| v.as_array())

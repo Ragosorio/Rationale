@@ -103,6 +103,56 @@ fn approval_schema_required_matches_struct() {
     assert_eq!(required, vec!["actor", "authority", "status"]);
 }
 
+#[test]
+fn approval_schema_authority_enum_excludes_undeclared_reviewer_role() {
+    let schema = read_schema("approval.schema.json");
+    let roles: Vec<&str> = schema["properties"]["authority"]["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        roles,
+        vec![
+            "contributor",
+            "domain-maintainer",
+            "domain-owner",
+            "security-owner",
+            "product-owner",
+            "architecture-owner",
+            "repository-policy"
+        ]
+    );
+    assert!(!roles.contains(&"reviewer"));
+}
+
+#[test]
+fn record_schema_declares_structured_novelty_reason() {
+    let schema = read_schema("record.schema.json");
+    let novelty = &schema["properties"]["novelty_reason"];
+    let mut required: Vec<&str> = novelty["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    required.sort_unstable();
+    assert_eq!(
+        required,
+        vec![
+            "contrasted_subject",
+            "difference",
+            "difference_kind",
+            "evidence"
+        ]
+    );
+    assert_eq!(
+        novelty["properties"]["difference_kind"]["enum"],
+        serde_json::json!(["behavior", "scope", "lifecycle", "authority", "invariant"])
+    );
+}
+
 /// `assessment.schema.json` — Assessment (`src/assessment.rs`):
 /// `assessed_revision` es el único campo `Option`, correctamente excluido.
 #[test]

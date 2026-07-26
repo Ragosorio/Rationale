@@ -7,12 +7,17 @@
 //! quedan para Fase E cuando exista una razón concreta que los requiera.
 
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+use crate::storage::AuthorityRole;
 
 #[derive(Debug, Deserialize)]
 pub struct ProjectConfig {
     #[serde(default)]
     pub project: ProjectSection,
+    #[serde(default)]
+    pub authority: BTreeMap<String, AuthorityDeclaration>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -20,11 +25,42 @@ pub struct ProjectSection {
     pub id: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct AuthorityDeclaration {
+    pub role: AuthorityRole,
+    #[serde(default)]
+    pub domain: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedAuthority {
+    pub role: AuthorityRole,
+    pub domain: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct ResolvedConfig {
     pub project_root: PathBuf,
     pub rationale_dir: PathBuf,
     pub project_id: String,
+    authority: BTreeMap<String, AuthorityDeclaration>,
+}
+
+impl ResolvedConfig {
+    /// La autoridad pertenece al proyecto, no al actor que pulsa approve.
+    /// Un actor no declarado recibe el rol mínimo y honesto.
+    pub fn authority_for_actor(&self, actor: &str) -> ResolvedAuthority {
+        self.authority
+            .get(actor)
+            .map(|decl| ResolvedAuthority {
+                role: decl.role,
+                domain: decl.domain.clone(),
+            })
+            .unwrap_or(ResolvedAuthority {
+                role: AuthorityRole::Contributor,
+                domain: None,
+            })
+    }
 }
 
 #[derive(Debug)]
@@ -66,22 +102,27 @@ pub fn load(start: &Path) -> Result<ResolvedConfig, ConfigError> {
     let rationale_dir = project_root.join(".rationale");
     let config_path = rationale_dir.join("config.yaml");
 
-    let project_id = if config_path.exists() {
+    let parsed = if config_path.exists() {
         let content = std::fs::read_to_string(&config_path).map_err(ConfigError::Io)?;
-        let parsed: ProjectConfig =
-            yaml_serde::from_str(&content).map_err(|e| ConfigError::Parse(e.to_string()))?;
-        parsed
-            .project
-            .id
-            .unwrap_or_else(|| default_project_id(&project_root))
+        yaml_serde::from_str::<ProjectConfig>(&content)
+            .map_err(|e| ConfigError::Parse(e.to_string()))?
     } else {
-        default_project_id(&project_root)
+        ProjectConfig {
+            project: ProjectSection::default(),
+            authority: BTreeMap::new(),
+        }
     };
+    let project_id = parsed
+        .project
+        .id
+        .unwrap_or_else(|| default_project_id(&project_root));
+    let authority = parsed.authority;
 
     Ok(ResolvedConfig {
         project_root,
         rationale_dir,
         project_id,
+        authority,
     })
 }
 
@@ -115,5 +156,14 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         assert!(find_project_root(&dir).is_none());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn authority_is_project_declared_with_contributor_default() {
+        let config = load(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+        let declared = config.authority_for_actor("user:ragosorio <ragosorio777@gmail.com>");
+        assert_eq!(declared.role, AuthorityRole::ArchitectureOwner);
+        let undeclared = config.authority_for_actor("user:not-declared");
+        assert_eq!(undeclared.role, AuthorityRole::Contributor);
     }
 }

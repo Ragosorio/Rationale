@@ -12,6 +12,12 @@ project:
   # El repositorio Git raíz es la unidad de proyecto en la v1
   # (Rationale_v0.5.md §4.15). No hay federación multi-repo todavía.
 
+authority:
+  # La autoridad la declara el proyecto; aprobar no convierte al actor en
+  # owner. Quien no aparece aquí recibe contributor por defecto.
+  "user:ragosorio <ragosorio777@gmail.com>":
+    role: architecture-owner
+
 providers:
   structural:
     - name: codebase-memory

@@ -278,3 +278,24 @@ proposal_written: True
 **Recomendación sobre bloqueo (a criterio de esta revisión, la decisión final es del dueño humano):** los hallazgos 1, 2 y 3 (los tres "Alto") comparten una característica que los hace más urgentes que los "Medio": los tres son **silenciosos** — ninguno produce un error visible, un panic capturado, o siquiera una entrada en `diagnostics`; en los tres casos el sistema reporta éxito (`proposal_written: true` o `Aprobado -> ...`) mientras hace algo distinto de lo que su propia documentación promete (cobertura completa, ninguna pérdida silenciosa, "una afirmación por pantalla" fiel a lo que se persiste). Los hallazgos 4-7 son reales y merecen corregirse, pero son ruido o gaps de precisión conocidos y ya parcialmente reconocidos en los comentarios del propio código (`signals.rs`/`subjects.rs` se declaran "deliberadamente crudos"), no violaciones silenciosas de una garantía ya prometida como cumplida.
 
 La decisión sobre qué corregir, y si Fase F se considera cerrada tal cual o requiere una iteración de seguridad adicional (al estilo del propio `c9fd5b6`, que corrigió un hallazgo de esta misma naturaleza durante el cierre de esta fase), queda enteramente para el dueño humano del proyecto (`evaluation.no-self-certification`).
+
+---
+
+## Apéndice F8 — revalidación posterior a la auditoría de Codex
+
+La auditoría independiente posterior confirmó tres P1 y cuatro P2 sobre el
+estado de este informe. F8 aplicó las correcciones siguientes:
+
+| Hallazgo | Corrección | Evidencia actual |
+|---|---|---|
+| `authority: reviewer` fuera del schema | `AuthorityRole` enum, autoridad declarada por actor en `.rationale/config.yaml`, default `contributor`, validación en `storage::validate` | `storage::tests::approval_authority_must_match_declared_schema_enum`, `tests/schema_validation.rs` |
+| `novelty_reason` libre y no persistida | Objeto estructurado (`contrasted_subject`, `difference_kind`, `difference`, `evidence`), candidato obligatorio, persistencia en `Resolution` y YAML | `subjects::tests::novelty_reason_requires_a_real_candidate_and_auditable_difference`, `novelty_reason_is_structured_validated_and_persisted` |
+| TOCTOU entre comprobar y promover | claim atómico por `rename` hacia `.rationale/proposals/.in-review/`; solo un consumidor gana y el estado intermedio es recuperable | `tests/review_concurrency.rs`, `approve_detects_proposal_already_promoted_by_another_session` |
+| Propuesta corrupta omitida en review | `list_pending_detailed` acumula errores y `cmd_review` los reporta por stderr | `list_pending_reports_corrupt_yaml_instead_of_hiding_it` |
+| Drift documental | Actualizados `Cargo.toml`, protocolo del spike, security guide, bindings y README de schemas | revisión de enlaces Markdown: 0 rotos |
+| Sin CI multiplataforma | Añadida `.github/workflows/ci.yml` para Linux y macOS | workflow versionado; ejecución remota pendiente de GitHub |
+
+El estado de la suite en este estado de trabajo es **110 tests ejecutados**: 88
+unitarios, 11 MCP, 1 concurrencia de procesos reales y 10 de schemas. La
+revalidación local ejecuta todos los tests y mantiene la prohibición de
+autoaprobación; la aceptación de decisiones fundacionales permanece humana.

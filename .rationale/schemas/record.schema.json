@@ -53,6 +53,19 @@
       "type": "string",
       "description": "El motivo, separado de la afirmación normativa misma."
     },
+    "novelty_reason": {
+      "type": "object",
+      "required": ["contrasted_subject", "difference_kind", "difference", "evidence"],
+      "properties": {
+        "contrasted_subject": { "type": "string", "minLength": 1 },
+        "difference_kind": {
+          "type": "string",
+          "enum": ["behavior", "scope", "lifecycle", "authority", "invariant"]
+        },
+        "difference": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
     "epistemic_status": {
       "type": "string",
       "enum": ["observed", "stated", "corroborated", "inferred", "disputed", "unknown"],

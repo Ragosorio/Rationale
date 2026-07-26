@@ -167,6 +167,23 @@ fn stdout_stays_clean_across_a_sequence_of_calls_including_errors() {
         4,
         "prepare_change, explain_target, health, finalize_change"
     );
+    let finalize = tools
+        .iter()
+        .find(|tool| tool["name"] == "finalize_change")
+        .unwrap();
+    assert_eq!(
+        finalize["inputSchema"]["properties"]["novelty_reason"]["type"],
+        "object"
+    );
+    assert_eq!(
+        finalize["inputSchema"]["properties"]["novelty_reason"]["required"],
+        json!([
+            "contrasted_subject",
+            "difference_kind",
+            "difference",
+            "evidence"
+        ])
+    );
 }
 
 #[test]
@@ -379,6 +396,100 @@ fn finalize_change_writes_pending_proposal_for_high_value_change() {
         .expect("la propuesta debe existir en disco como archivo real");
     assert!(content.contains("status: pending"));
     assert!(content.contains("approvals: []"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn novelty_reason_is_structured_validated_and_persisted() {
+    let dir = make_test_project();
+    std::fs::write(
+        dir.join(".rationale/subjects/authorization.existing.yaml"),
+        "id: authorization.existing\ntype: system-behavior\ntitle: Entity-scoped staff authorization\nscope: project\n",
+    )
+    .unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "add existing subject"]);
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    std::fs::create_dir_all(dir.join("src/auth")).unwrap();
+    std::fs::write(dir.join("src/auth/authorization.ts"), "changed\n").unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "authorization change"]);
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let invalid = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "src/auth/authorization.ts",
+            "base_revision": base_revision,
+            "intent": "new authorization behavior",
+            "statement": "The new authorization behavior is distinct.",
+            "record_id": "constraint.invalid-novelty-test",
+            "subject_id": "authorization.new",
+            "subject_title": "Entity-scoped staff authorization",
+            "novelty_reason": {
+                "contrasted_subject": "authorization.missing",
+                "difference_kind": "behavior",
+                "difference": "different behavior",
+                "evidence": "changed source"
+            },
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    let invalid_text = invalid["result"]["content"][0]["text"].as_str().unwrap();
+    let invalid_outcome: Value = serde_json::from_str(invalid_text).unwrap();
+    assert_eq!(invalid_outcome["proposal_written"], false);
+    assert!(invalid_outcome["blocked_reason"]
+        .as_str()
+        .unwrap()
+        .contains("novelty_reason"));
+
+    let valid = client.call(
+        2,
+        "finalize_change",
+        json!({
+            "target": "src/auth/authorization.ts",
+            "base_revision": base_revision,
+            "intent": "new authorization behavior",
+            "statement": "The new authorization behavior is distinct.",
+            "record_id": "constraint.valid-novelty-test",
+            "subject_id": "authorization.new",
+            "subject_title": "Entity-scoped staff authorization",
+            "novelty_reason": {
+                "contrasted_subject": "authorization.existing",
+                "difference_kind": "behavior",
+                "difference": "The new rule governs audit decisions, not access scope.",
+                "evidence": "The changed binding is the authorization audit path."
+            },
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    let valid_text = valid["result"]["content"][0]["text"].as_str().unwrap();
+    let valid_outcome: Value = serde_json::from_str(valid_text).unwrap();
+    assert_eq!(valid_outcome["proposal_written"], true);
+    assert_eq!(
+        valid_outcome["subject_resolution"]["novelty_reason"]["contrasted_subject"],
+        "authorization.existing"
+    );
+    let proposal =
+        std::fs::read_to_string(valid_outcome["proposal_path"].as_str().unwrap()).unwrap();
+    assert!(proposal.contains("novelty_reason:"));
+    assert!(proposal.contains("contrasted_subject: authorization.existing"));
+    assert!(proposal.contains("difference_kind: behavior"));
 
     std::fs::remove_dir_all(&dir).ok();
 }

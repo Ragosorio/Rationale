@@ -438,7 +438,7 @@ pub struct FinalizeRequest {
     /// candidato fuerte (`Alias`/`MergeCandidate`) pero el caller insiste en
     /// que es un concepto nuevo. Sin esto, una propuesta contra un
     /// candidato fuerte se bloquea (ver `FinalizeOutcome::blocked_reason`).
-    pub novelty_reason: Option<String>,
+    pub novelty_reason: Option<subjects::NoveltyReason>,
     pub risks: Vec<String>,
 }
 
@@ -620,7 +620,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
         .map(|f| f.path.clone())
         .collect();
 
-    let resolution = subjects::resolve(
+    let mut resolution = subjects::resolve(
         &existing_subjects,
         &req.subject_id,
         &req.subject_title,
@@ -628,6 +628,23 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
         &proposed_bindings,
         &existing_bindings,
     );
+
+    if let Some(reason) = &req.novelty_reason {
+        if let Err(error) = subjects::validate_novelty_reason(reason, &resolution.candidates) {
+            diagnostics.push(format!("novelty_reason rechazada: {error}"));
+            return FinalizeOutcome {
+                level,
+                signals: signal_list,
+                capture: mechanical,
+                subject_resolution: Some(resolution),
+                proposal_written: false,
+                proposal_path: None,
+                proposal_id: None,
+                blocked_reason: Some(format!("novelty_reason inválida: {error}")),
+                diagnostics,
+            };
+        }
+    }
 
     let needs_novelty_reason = matches!(
         resolution.action,
@@ -653,6 +670,10 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
             ),
             diagnostics,
         };
+    }
+
+    if let Some(reason) = &req.novelty_reason {
+        resolution.novelty_reason = Some(reason.clone());
     }
 
     // Si el resolver sugiere reusar (o el caller no dio novelty_reason para
@@ -702,6 +723,34 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
         yaml_serde::Value::String("status".to_string()),
         yaml_serde::Value::String("pending".to_string()),
     );
+    if let Some(reason) = &req.novelty_reason {
+        let mut novelty = yaml_serde::Mapping::new();
+        novelty.insert(
+            yaml_serde::Value::String("contrasted_subject".to_string()),
+            yaml_serde::Value::String(reason.contrasted_subject.clone()),
+        );
+        novelty.insert(
+            yaml_serde::Value::String("difference_kind".to_string()),
+            yaml_serde::Value::String(
+                serde_json::to_string(&reason.difference_kind)
+                    .unwrap_or_else(|_| "invariant".to_string())
+                    .trim_matches('"')
+                    .to_string(),
+            ),
+        );
+        novelty.insert(
+            yaml_serde::Value::String("difference".to_string()),
+            yaml_serde::Value::String(reason.difference.clone()),
+        );
+        novelty.insert(
+            yaml_serde::Value::String("evidence".to_string()),
+            yaml_serde::Value::String(reason.evidence.clone()),
+        );
+        extra.insert(
+            yaml_serde::Value::String("novelty_reason".to_string()),
+            yaml_serde::Value::Mapping(novelty),
+        );
+    }
 
     let proposal = Record {
         id: req.record_id.clone(),
