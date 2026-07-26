@@ -18,6 +18,7 @@ mod project;
 mod providers;
 mod retrieval;
 mod revision;
+mod signals;
 mod storage;
 mod subjects;
 

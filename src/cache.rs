@@ -63,6 +63,17 @@ pub fn cache_root(project_root: &Path) -> Result<PathBuf, CacheError> {
 pub fn open(cache_dir: &Path) -> Result<Connection, CacheError> {
     std::fs::create_dir_all(cache_dir).map_err(CacheError::Io)?;
     let conn = Connection::open(cache_dir.join("derived.sqlite3"))?;
+    // Sin esto, SQLite devuelve `SQLITE_BUSY` ("database is locked")
+    // inmediatamente ante cualquier contención real entre conexiones
+    // concurrentes (default: 0ms de espera) — descubierto por
+    // `cache::tests::concurrent_reads_do_not_corrupt_cache` fallando de
+    // forma intermitente bajo carga real de `cargo test` en paralelo (8
+    // hilos + N binarios de test corriendo a la vez), nunca en aislamiento.
+    // 15s es generoso a propósito: solo afecta el camino con contención
+    // real (nunca el camino feliz, que sigue completando en microsegundos);
+    // coherente con WAL, que ya permite lectores concurrentes sin bloquear
+    // escritores — este timeout cubre el resto de la contención real.
+    conn.busy_timeout(std::time::Duration::from_millis(15_000))?;
     conn.execute_batch(
         "
         PRAGMA journal_mode = WAL;
