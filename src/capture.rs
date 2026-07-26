@@ -10,10 +10,6 @@
 //! — es la afirmación humana de menor riesgo posible, verificable por
 //! cualquiera con acceso al mismo repo.
 
-// Todo este módulo queda sin caller fuera de tests hasta que Fase F5
-// (finalize_change) lo consuma para construir propuestas reales.
-#![allow(dead_code)]
-
 use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
 use crate::revision;
 use std::path::Path;
@@ -149,14 +145,30 @@ mod tests {
     /// Repo Git real y desechable, con dos commits que tocan archivos de
     /// forma conocida — usado para verificar `diff_since` contra Git de
     /// verdad, no un mock.
+    /// PID + nanos + contador atómico: bajo carga extrema (varios tests de
+    /// este módulo llaman `make_test_repo()` en hilos paralelos), la
+    /// resolución real del reloj puede no ser tan fina como promete
+    /// `as_nanos()` — dos hilos generando el mismo timestamp colisionarían
+    /// en el mismo directorio y correrían `git init` concurrente sobre él
+    /// (confirmado empíricamente: causaba fallos intermitentes reales, no
+    /// solo teóricos). El contador lo hace imposible.
+    fn unique_suffix() -> String {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        format!(
+            "{}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        )
+    }
+
     fn make_test_repo() -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "rationale-capture-test-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            unique_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let run = |args: &[&str]| {

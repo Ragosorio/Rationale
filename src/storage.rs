@@ -167,9 +167,6 @@ pub struct Record {
 pub enum StorageError {
     Io(std::io::Error),
     Parse(String),
-    // Consumido por write_record; ambos quedan sin caller fuera de tests
-    // hasta que Fase F5/F6 (finalize_change/review) escriban Records reales.
-    #[allow(dead_code)]
     Serialize(String),
     MissingRequiredField(&'static str),
 }
@@ -220,7 +217,6 @@ pub fn read_record(path: &Path) -> Result<Record, StorageError> {
 /// POSIX), fuerza los bytes a disco, y solo entonces renombra sobre el
 /// destino final. Si el proceso muere entre medio, el archivo original
 /// queda intacto — nunca truncado ni a medio escribir.
-#[allow(dead_code)] // consumido por finalize_change/review en Fase F5/F6
 pub fn write_record(path: &Path, record: &Record) -> Result<(), StorageError> {
     validate(record)?;
 
@@ -232,6 +228,10 @@ pub fn write_record(path: &Path, record: &Record) -> Result<(), StorageError> {
             "el path del Record no tiene directorio padre",
         ))
     })?;
+    // `.rationale/proposals/` puede no existir todavía (Fase F5 es quien
+    // primero escribe ahí) — crearlo es responsabilidad de la escritura
+    // atómica, no de cada caller.
+    std::fs::create_dir_all(dir).map_err(StorageError::Io)?;
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -284,6 +284,25 @@ pub fn list_records(records_dir: &Path) -> Result<Vec<Record>, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// PID + nanos + contador atómico: bajo carga extrema (muchos tests en
+    /// paralelo), la resolución real del reloj puede no ser tan fina como
+    /// promete `as_nanos()` — dos hilos pueden generar el mismo timestamp y
+    /// colisionar en el mismo directorio temporal (confirmado empíricamente:
+    /// esto causaba fallos intermitentes de `git init` en tests de otro
+    /// módulo bajo stress). El contador lo hace imposible dentro del mismo
+    /// proceso.
+    fn unique_suffix() -> String {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        format!(
+            "{}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        )
+    }
 
     /// Verdadero si todo par clave/valor de `original` está presente y es
     /// equivalente en `rewritten` (recursivamente). `rewritten` puede tener
@@ -381,10 +400,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "rationale-storage-roundtrip-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            unique_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let written_path = dir.join("roundtrip.yaml");
@@ -415,10 +431,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "rationale-storage-atomic-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            unique_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("atomic.yaml");
@@ -484,10 +497,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "rationale-storage-concurrent-write-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            unique_suffix()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let path = std::sync::Arc::new(dir.join("concurrent.yaml"));

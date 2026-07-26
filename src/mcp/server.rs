@@ -139,6 +139,28 @@ fn tool_definitions() -> Value {
                     "project_root": {"type": "string"}
                 }
             }
+        },
+        {
+            "name": "finalize_change",
+            "description": "Captura mecánica del diff + señales de alto valor + resolución de Subject, y escribe una propuesta PENDIENTE en .rationale/proposals/ (nunca en records/ directamente — solo `rationale review` aprueba). Si el cambio es puramente mecánico (Nivel 0, v0.5 §16), no escribe nada.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "path::symbol del target principal del cambio"},
+                    "base_revision": {"type": "string", "description": "Revisión Git desde la que capturar el diff — normalmente la que un prepare_change anterior reportó"},
+                    "intent": {"type": "string", "description": "Por qué se hizo el cambio — nunca inferido, debe venir de quien hizo el cambio"},
+                    "statement": {"type": "string", "description": "La afirmación normativa propuesta (solo se usa si el nivel resultante supera Git-only)"},
+                    "severity": {"type": "string", "default": "normal"},
+                    "record_id": {"type": "string", "description": "Slug único para la propuesta, ej. constraint.no-double-charge"},
+                    "subject_id": {"type": "string", "description": "Subject candidato — el Subject Resolver contrasta contra el canon existente"},
+                    "subject_title": {"type": "string"},
+                    "novelty_reason": {"type": "string", "description": "Requerido si el Subject Resolver sugiere un candidato existente fuerte y aun así se propone uno nuevo (v0.5 §294)"},
+                    "risks": {"type": "array", "items": {"type": "string"}},
+                    "project_root": {"type": "string"},
+                    "repo_path": {"type": "string"}
+                },
+                "required": ["target", "base_revision", "intent", "statement", "record_id", "subject_id", "subject_title"]
+            }
         }
     ])
 }
@@ -163,6 +185,7 @@ fn handle_tools_call(msg: &Value, id: Option<Value>, provider: &mut ProviderHand
         "prepare_change" => call_prepare_change(&arguments, provider),
         "explain_target" => call_explain_target(&arguments),
         "health" => call_health(&arguments, provider),
+        "finalize_change" => call_finalize_change(&arguments, provider),
         other => Err(format!("herramienta desconocida: '{other}'")),
     }));
 
@@ -321,5 +344,71 @@ fn call_health(args: &Value, provider: &mut ProviderHandle) -> Result<Value, Str
         "provider_status": provider_status_label(&outcome.provider_status),
         "provider_coverage": coverage_label(&outcome.provider_coverage),
         "provider_error": outcome.provider_error,
+    }))
+}
+
+fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<Value, String> {
+    let require_str = |field: &str| -> Result<String, String> {
+        args.get(field)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("falta el argumento requerido '{field}'"))
+    };
+
+    let target_spec = require_str("target")?;
+    let base_revision = require_str("base_revision")?;
+    let intent = require_str("intent")?;
+    let statement = require_str("statement")?;
+    let record_id = require_str("record_id")?;
+    let subject_id = require_str("subject_id")?;
+    let subject_title = require_str("subject_title")?;
+    let severity = args
+        .get("severity")
+        .and_then(|v| v.as_str())
+        .unwrap_or("normal")
+        .to_string();
+    let novelty_reason = args
+        .get("novelty_reason")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let risks: Vec<String> = args
+        .get("risks")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let (project_root, repo_path) = resolve_roots(args)?;
+
+    let outcome = pipeline::finalize(
+        &pipeline::FinalizeRequest {
+            target_spec,
+            project_root,
+            repo_path,
+            base_revision,
+            intent,
+            statement,
+            severity,
+            record_id,
+            subject_id,
+            subject_title,
+            novelty_reason,
+            risks,
+        },
+        provider,
+    );
+
+    Ok(json!({
+        "level": outcome.level,
+        "signals": outcome.signals,
+        "capture": outcome.capture,
+        "subject_resolution": outcome.subject_resolution,
+        "proposal_written": outcome.proposal_written,
+        "proposal_path": outcome.proposal_path,
+        "proposal_id": outcome.proposal_id,
+        "blocked_reason": outcome.blocked_reason,
+        "diagnostics": outcome.diagnostics,
     }))
 }

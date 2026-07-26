@@ -9,8 +9,13 @@
 //! escribirlos.
 
 use crate::providers::{CodeIntelligenceProvider, Coverage, ProviderHandle, ProviderStatus};
-use crate::storage::Record;
-use crate::{assessment, cache, configuration, project, retrieval, revision, storage, subjects};
+use crate::storage::{
+    Approval, BindingDeclaration, EpistemicStatus, Record, RecordSubjectRef, Risk,
+};
+use crate::{
+    assessment, cache, capture, configuration, project, retrieval, revision, signals, storage,
+    subjects,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -404,5 +409,271 @@ pub fn explain(target_spec: &str, project_root: &Path, repo_path: &Path) -> Expl
         known,
         unknown,
         diagnostics,
+    }
+}
+
+/// Entrada de `finalize_change` (Rationale_v0.5.md §24, flujo de
+/// `Arquitectura §13.3`). Lo que NO puede derivarse mecánicamente (la razón,
+/// la afirmación normativa propuesta, el Subject candidato) viene del
+/// caller — Rationale nunca inventa contenido normativo, solo lo estructura
+/// y lo contrasta contra el canon existente.
+pub struct FinalizeRequest {
+    pub target_spec: String,
+    pub project_root: PathBuf,
+    pub repo_path: PathBuf,
+    /// Revisión desde la que se captura el diff — normalmente la revisión
+    /// que un `prepare_change` anterior ya reportó como "preflight".
+    pub base_revision: String,
+    /// Por qué se hizo el cambio — alimenta la detección de señales
+    /// (`signals::signals_from_text`) y se guarda como `rationale` del Record.
+    pub intent: String,
+    /// La afirmación normativa propuesta. Requerido por la API, pero solo
+    /// se usa si el nivel de captura resultante supera Nivel 0 (Git-only).
+    pub statement: String,
+    pub severity: String,
+    pub record_id: String,
+    pub subject_id: String,
+    pub subject_title: String,
+    /// Requerido por v0.5 §294 cuando el Subject Resolver sugiere un
+    /// candidato fuerte (`Alias`/`MergeCandidate`) pero el caller insiste en
+    /// que es un concepto nuevo. Sin esto, una propuesta contra un
+    /// candidato fuerte se bloquea (ver `FinalizeOutcome::blocked_reason`).
+    pub novelty_reason: Option<String>,
+    pub risks: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FinalizeOutcome {
+    pub level: signals::CaptureLevel,
+    pub signals: Vec<signals::Signal>,
+    pub capture: capture::MechanicalCapture,
+    pub subject_resolution: Option<subjects::Resolution>,
+    pub proposal_written: bool,
+    pub proposal_path: Option<String>,
+    pub proposal_id: Option<String>,
+    /// Por qué NO se escribió una propuesta, cuando aplica — Nivel 0 (nada
+    /// que capturar) o un candidato de Subject fuerte sin `novelty_reason`
+    /// (v0.5 §294). Nunca silencioso: siempre que `proposal_written` es
+    /// `false`, este campo explica por qué.
+    pub blocked_reason: Option<String>,
+    pub diagnostics: Vec<String>,
+}
+
+/// El cuerpo de `finalize_change`: captura mecánica → señales → nivel →
+/// resolución de Subject → escritura de la propuesta (nunca del Record
+/// aprobado — eso es `rationale review`, Fase F6). Sigue el flujo de
+/// `Arquitectura §13.3` hasta "Write canonical files atomically", pero
+/// escribe en `.rationale/proposals/`, no en `.rationale/records/`.
+pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> FinalizeOutcome {
+    let mut diagnostics = Vec::new();
+    let config = configuration::load(&req.project_root).expect("cargar configuración");
+
+    // Resolver el target principal es solo diagnóstico aquí — nunca decide
+    // qué se captura (eso lo hace el diff mecánico completo); sirve para
+    // que quien lea la propuesta vea contra qué target se declaró el cambio.
+    match project::resolve_target(&req.repo_path, &req.target_spec) {
+        Ok(t) => diagnostics.push(format!("target declarado: {}", t.path.display())),
+        Err(e) => diagnostics.push(format!("advertencia: target declarado no resuelto: {e}")),
+    }
+
+    let mechanical = capture::capture(&req.repo_path, &req.base_revision, provider);
+
+    let mut all_signals: std::collections::HashSet<signals::Signal> =
+        signals::signals_from_paths(&mechanical.changed_files)
+            .into_iter()
+            .collect();
+    all_signals.extend(signals::signals_from_text(&req.intent));
+    all_signals.extend(signals::signals_from_text(&req.statement));
+    let signal_list: Vec<signals::Signal> = all_signals.into_iter().collect();
+
+    let level = signals::determine_level(&mechanical.changed_files, &signal_list);
+
+    if level == signals::CaptureLevel::GitOnly {
+        diagnostics.push(
+            "Nivel 0 (Git-only): cambios mecánicos sin señales de alto valor — no se crea \
+             ninguna propuesta (v0.5 §16)."
+                .to_string(),
+        );
+        return FinalizeOutcome {
+            level,
+            signals: signal_list,
+            capture: mechanical,
+            subject_resolution: None,
+            proposal_written: false,
+            proposal_path: None,
+            proposal_id: None,
+            blocked_reason: Some("nivel Git-only: nada que capturar".to_string()),
+            diagnostics,
+        };
+    }
+
+    // Resolver el Subject contra el canon real (Fase F4) antes de escribir
+    // nada — nunca se crea un Subject nuevo a ciegas.
+    let subjects_dir = config.rationale_dir.join("subjects");
+    let records_dir = config.rationale_dir.join("records");
+    let existing_subjects = subjects::list_subjects(&subjects_dir).unwrap_or_default();
+    let existing_records = storage::list_records(&records_dir).unwrap_or_default();
+
+    let mut existing_bindings: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for record in &existing_records {
+        if let Some(subject_ref) = &record.subject {
+            let paths: Vec<String> = record
+                .binding_declarations
+                .iter()
+                .filter_map(|b| b.path_hint.clone())
+                .collect();
+            existing_bindings
+                .entry(subject_ref.id.clone())
+                .or_default()
+                .extend(paths);
+        }
+    }
+
+    let proposed_bindings: Vec<String> = mechanical
+        .changed_files
+        .iter()
+        .map(|f| f.path.clone())
+        .collect();
+
+    let resolution = subjects::resolve(
+        &existing_subjects,
+        &req.subject_id,
+        &req.subject_title,
+        "project",
+        &proposed_bindings,
+        &existing_bindings,
+    );
+
+    let needs_novelty_reason = matches!(
+        resolution.action,
+        subjects::ResolutionAction::Alias | subjects::ResolutionAction::MergeCandidate
+    );
+    if needs_novelty_reason && req.novelty_reason.is_none() {
+        diagnostics.push(format!(
+            "el Subject Resolver sugiere '{:?}' contra un candidato existente — se requiere \
+             novelty_reason explícito para proponer un Subject nuevo de todas formas (v0.5 §294)",
+            resolution.action
+        ));
+        return FinalizeOutcome {
+            level,
+            signals: signal_list,
+            capture: mechanical,
+            subject_resolution: Some(resolution),
+            proposal_written: false,
+            proposal_path: None,
+            proposal_id: None,
+            blocked_reason: Some(
+                "candidato de Subject fuerte sin novelty_reason — ver subject_resolution.candidates"
+                    .to_string(),
+            ),
+            diagnostics,
+        };
+    }
+
+    // Si el resolver sugiere reusar (o el caller no dio novelty_reason para
+    // anular Alias/MergeCandidate — ya cubierto arriba), el Record propuesto
+    // referencia el Subject EXISTENTE, no uno nuevo.
+    let final_subject_id = match &resolution.selected_subject {
+        Some(existing_id) if req.novelty_reason.is_none() => existing_id.clone(),
+        _ => req.subject_id.clone(),
+    };
+
+    let binding_declarations: Vec<BindingDeclaration> = mechanical
+        .changed_files
+        .iter()
+        .enumerate()
+        .map(|(i, f)| BindingDeclaration {
+            id: format!("binding.{}.{i}", req.record_id),
+            kind: "file".to_string(),
+            provider: None,
+            structural_id: None,
+            path_hint: Some(f.path.clone()),
+            extra: yaml_serde::Mapping::new(),
+        })
+        .collect();
+
+    let risks: Vec<Risk> = req
+        .risks
+        .iter()
+        .enumerate()
+        .map(|(i, statement)| Risk {
+            id: format!("risk.{}.{i}", req.record_id),
+            statement: statement.clone(),
+            epistemic_status: EpistemicStatus::Stated,
+            extra: yaml_serde::Mapping::new(),
+        })
+        .collect();
+
+    let mut extra = yaml_serde::Mapping::new();
+    extra.insert(
+        yaml_serde::Value::String("schema_version".to_string()),
+        yaml_serde::Value::String("rationale/0.1".to_string()),
+    );
+    extra.insert(
+        yaml_serde::Value::String("project_id".to_string()),
+        yaml_serde::Value::String(config.project_id.clone()),
+    );
+    extra.insert(
+        yaml_serde::Value::String("status".to_string()),
+        yaml_serde::Value::String("pending".to_string()),
+    );
+
+    let proposal = Record {
+        id: req.record_id.clone(),
+        kind: "constraint".to_string(),
+        severity: req.severity.clone(),
+        statement: req.statement.clone(),
+        rationale: Some(req.intent.clone()),
+        epistemic_status: EpistemicStatus::Stated,
+        // Nunca se autoaprueba — approvals vacío es la garantía estructural
+        // de que ninguna propuesta nace aprobada (Proceso §21).
+        approvals: Vec::<Approval>::new(),
+        binding_declarations,
+        evidence: vec![],
+        risks,
+        bound_revision: mechanical.final_revision.clone(),
+        subject: Some(RecordSubjectRef {
+            id: final_subject_id.clone(),
+            extra: yaml_serde::Mapping::new(),
+        }),
+        extra,
+    };
+
+    let proposals_dir = config.rationale_dir.join("proposals");
+    let proposal_path = proposals_dir.join(format!("{}.yaml", req.record_id));
+
+    match storage::write_record(&proposal_path, &proposal) {
+        Ok(()) => {
+            diagnostics.push(format!(
+                "propuesta escrita en {} (nivel={level:?}, subject={final_subject_id})",
+                proposal_path.display()
+            ));
+            FinalizeOutcome {
+                level,
+                signals: signal_list,
+                capture: mechanical,
+                subject_resolution: Some(resolution),
+                proposal_written: true,
+                proposal_path: Some(proposal_path.display().to_string()),
+                proposal_id: Some(req.record_id.clone()),
+                blocked_reason: None,
+                diagnostics,
+            }
+        }
+        Err(e) => {
+            diagnostics.push(format!("error escribiendo la propuesta: {e}"));
+            FinalizeOutcome {
+                level,
+                signals: signal_list,
+                capture: mechanical,
+                subject_resolution: Some(resolution),
+                proposal_written: false,
+                proposal_path: None,
+                proposal_id: None,
+                blocked_reason: Some(format!("error de escritura: {e}")),
+                diagnostics,
+            }
+        }
     }
 }

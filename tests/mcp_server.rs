@@ -162,7 +162,11 @@ fn stdout_stays_clean_across_a_sequence_of_calls_including_errors() {
     client.send(&json!({"jsonrpc": "2.0", "id": 6, "method": "tools/list", "params": {}}));
     let list = client.recv();
     let tools = list["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 3, "prepare_change, explain_target, health");
+    assert_eq!(
+        tools.len(),
+        4,
+        "prepare_change, explain_target, health, finalize_change"
+    );
 }
 
 #[test]
@@ -263,4 +267,168 @@ fn deeply_nested_json_does_not_kill_the_persistent_session() {
 
     let health = client.call(101, "health", json!({}));
     assert_eq!(health["result"]["isError"], false);
+}
+
+fn run_git(dir: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?} debe tener éxito");
+}
+
+/// PID + nanos + contador atómico: bajo carga extrema, la resolución real
+/// del reloj puede no ser tan fina como promete `as_nanos()` — dos tests en
+/// hilos paralelos podrían colisionar en el mismo directorio y correr
+/// `git init` concurrente sobre él (mismo bug encontrado y corregido en
+/// `src/capture.rs`). El contador lo hace imposible.
+fn unique_suffix() -> String {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    format!(
+        "{}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    )
+}
+
+/// Proyecto Rationale desechable con su propio repo Git — usado por los
+/// tests de `finalize_change`, que necesitan un `base_revision` real y un
+/// `.rationale/` propio (nunca el del repo de Rationale mismo).
+fn make_test_project() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "rationale-finalize-test-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    run_git(&dir, &["init", "-q"]);
+    run_git(&dir, &["config", "user.email", "test@rationale.local"]);
+    run_git(&dir, &["config", "user.name", "Rationale Test"]);
+
+    for sub in ["subjects", "records", "proposals", "approvals", "bindings"] {
+        std::fs::create_dir_all(dir.join(".rationale").join(sub)).unwrap();
+    }
+    std::fs::write(dir.join("README.md"), "proyecto de prueba\n").unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "commit inicial"]);
+
+    dir
+}
+
+#[test]
+fn finalize_change_writes_pending_proposal_for_high_value_change() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    // Cambio real que toca autorización — debe activar señales y superar
+    // Nivel 0.
+    std::fs::create_dir_all(dir.join("src/auth")).unwrap();
+    std::fs::write(
+        dir.join("src/auth/authorization.ts"),
+        "export function resolveEntityRole() { /* ... */ }\n",
+    )
+    .unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "add authorization resolver"]);
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "src/auth/authorization.ts",
+            "base_revision": base_revision,
+            "intent": "Staff users must never receive global super_admin access.",
+            "statement": "Staff users must never receive global super_admin.",
+            "record_id": "constraint.no-global-admin-for-staff-test",
+            "subject_id": "authorization.entity-scoped-staff-access-test",
+            "subject_title": "Entity-scoped staff authorization",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+
+    assert_ne!(outcome["level"], "git-only");
+    assert_eq!(outcome["proposal_written"], true);
+    assert!(outcome["signals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|s| s == "authorization" || s == "normative-language"));
+
+    let proposal_path = outcome["proposal_path"].as_str().unwrap();
+    let content = std::fs::read_to_string(proposal_path)
+        .expect("la propuesta debe existir en disco como archivo real");
+    assert!(content.contains("status: pending"));
+    assert!(content.contains("approvals: []"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn finalize_change_skips_proposal_for_mechanical_only_change() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    // Solo un lockfile — Nivel 0, v0.5 §16: no se crea ningún registro.
+    std::fs::write(dir.join("Cargo.lock"), "# lockfile\n").unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "update lockfile"]);
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "Cargo.lock",
+            "base_revision": base_revision,
+            "intent": "Bump a dependency version.",
+            "statement": "N/A",
+            "record_id": "constraint.should-not-exist-test",
+            "subject_id": "should.not-exist-test",
+            "subject_title": "Should not exist",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+
+    assert_eq!(outcome["level"], "git-only");
+    assert_eq!(outcome["proposal_written"], false);
+    assert!(outcome["proposal_path"].is_null());
+    assert!(!dir
+        .join(".rationale/proposals/constraint.should-not-exist-test.yaml")
+        .exists());
+
+    std::fs::remove_dir_all(&dir).ok();
 }

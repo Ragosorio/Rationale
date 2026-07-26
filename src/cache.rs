@@ -62,42 +62,48 @@ pub fn cache_root(project_root: &Path) -> Result<PathBuf, CacheError> {
 /// Idempotente: puede llamarse sobre una base ya existente sin efecto.
 pub fn open(cache_dir: &Path) -> Result<Connection, CacheError> {
     std::fs::create_dir_all(cache_dir).map_err(CacheError::Io)?;
-    let conn = Connection::open(cache_dir.join("derived.sqlite3"))?;
+    let db_path = cache_dir.join("derived.sqlite3");
+    // Determinar esto ANTES de `Connection::open` (que crea un archivo
+    // vacío si no existía) — es lo que evita que N conexiones concurrentes
+    // contra un cache YA inicializado vuelvan a correr el DDL completo
+    // innecesariamente (ver nota de busy_timeout abajo: esta era la fuente
+    // real de contención, no solo la falta de timeout).
+    let needs_schema = !db_path.exists();
+
+    let conn = Connection::open(&db_path)?;
     // Sin esto, SQLite devuelve `SQLITE_BUSY` ("database is locked")
     // inmediatamente ante cualquier contención real entre conexiones
     // concurrentes (default: 0ms de espera) — descubierto por
     // `cache::tests::concurrent_reads_do_not_corrupt_cache` fallando de
-    // forma intermitente bajo carga real de `cargo test` en paralelo (8
-    // hilos + N binarios de test corriendo a la vez), nunca en aislamiento.
-    // 15s es generoso a propósito: solo afecta el camino con contención
-    // real (nunca el camino feliz, que sigue completando en microsegundos);
-    // coherente con WAL, que ya permite lectores concurrentes sin bloquear
-    // escritores — este timeout cubre el resto de la contención real.
+    // forma intermitente bajo carga real de `cargo test` en paralelo.
     conn.busy_timeout(std::time::Duration::from_millis(15_000))?;
-    conn.execute_batch(
-        "
-        PRAGMA journal_mode = WAL;
 
-        CREATE TABLE IF NOT EXISTS assessments_cache (
-            record_id           TEXT NOT NULL,
-            assessed_revision   TEXT NOT NULL,
-            revision_consistency TEXT NOT NULL,
-            epistemic           TEXT NOT NULL,
-            authority           TEXT NOT NULL,
-            applicability        TEXT NOT NULL,
-            linkage             TEXT NOT NULL,
-            assessment_reason   TEXT NOT NULL,
-            computed_at         TEXT NOT NULL,
-            PRIMARY KEY (record_id, assessed_revision)
-        );
+    if needs_schema {
+        conn.execute_batch(
+            "
+            PRAGMA journal_mode = WAL;
 
-        CREATE VIRTUAL TABLE IF NOT EXISTS records_fts USING fts5(
-            record_id UNINDEXED,
-            statement,
-            title
-        );
-        ",
-    )?;
+            CREATE TABLE IF NOT EXISTS assessments_cache (
+                record_id           TEXT NOT NULL,
+                assessed_revision   TEXT NOT NULL,
+                revision_consistency TEXT NOT NULL,
+                epistemic           TEXT NOT NULL,
+                authority           TEXT NOT NULL,
+                applicability        TEXT NOT NULL,
+                linkage             TEXT NOT NULL,
+                assessment_reason   TEXT NOT NULL,
+                computed_at         TEXT NOT NULL,
+                PRIMARY KEY (record_id, assessed_revision)
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS records_fts USING fts5(
+                record_id UNINDEXED,
+                statement,
+                title
+            );
+            ",
+        )?;
+    }
     Ok(conn)
 }
 
@@ -200,14 +206,20 @@ mod tests {
         std::env::temp_dir().join(format!("rationale-cache-test-{}", uuid_like()))
     }
 
+    /// PID + nanos + un contador atómico: bajo carga extrema (muchos tests
+    /// en paralelo), la resolución real del reloj puede no ser tan fina como
+    /// promete `as_nanos()` — dos hilos pueden generar el mismo timestamp y
+    /// colisionar en el mismo directorio. El contador lo hace imposible.
     fn uuid_like() -> String {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         format!(
-            "{}-{}",
+            "{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         )
     }
 

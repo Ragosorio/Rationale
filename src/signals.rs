@@ -9,8 +9,6 @@
 //! el nivel candidato; nunca escribe nada (eso es `finalize_change`, F5) ni
 //! asigna autoridad (eso requiere `rationale review`, F6).
 
-#![allow(dead_code)] // sin caller fuera de tests hasta Fase F5
-
 use crate::capture::ChangedFile;
 
 /// Rationale_v0.5.md §15.4 — señales de alto valor. `NormativeLanguage` es

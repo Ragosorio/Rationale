@@ -22,10 +22,6 @@
 //! humano. Solo el paso 1 (coincidencia exacta) es lo bastante inequívoco
 //! para no necesitar candidatos.
 
-// resolve() y sus tipos quedan sin caller fuera de tests hasta Fase F5
-// (finalize_change).
-#![allow(dead_code)]
-
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::Path;
