@@ -31,42 +31,163 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let command = args.get(1).map(|s| s.as_str()).unwrap_or("");
 
+    if command.is_empty() || command == "-h" || command == "--help" {
+        print_usage();
+        return;
+    }
+
+    let command_args = &args[2..];
+    if wants_help(command_args)
+        && matches!(
+            command,
+            "init"
+                | "health"
+                | "prepare"
+                | "serve"
+                | "review"
+                | "review-record"
+                | "install-agent"
+                | "uninstall-agent"
+        )
+    {
+        print_command_help(command);
+        return;
+    }
+
+    if let Err(error) = validate_command_args(command, command_args) {
+        eprintln!("{error}");
+        std::process::exit(2);
+    }
+
     match command {
-        "init" => cmd_init(&args[2..]),
-        "health" => cmd_health(&args[2..]),
-        "prepare" => cmd_prepare(&args[2..]),
+        "init" => cmd_init(command_args),
+        "health" => cmd_health(command_args),
+        "prepare" => cmd_prepare(command_args),
         "serve" => mcp::server::run(),
-        "review" => cmd_review(&args[2..]),
-        "review-record" => cmd_review_record(&args[2..]),
-        "install-agent" => cmd_install_agent(&args[2..]),
-        "uninstall-agent" => cmd_uninstall_agent(&args[2..]),
+        "review" => cmd_review(command_args),
+        "review-record" => cmd_review_record(command_args),
+        "install-agent" => cmd_install_agent(command_args),
+        "uninstall-agent" => cmd_uninstall_agent(command_args),
         _ => {
-            eprintln!(
-                "Uso: rationale <init|health|prepare|serve|review|review-record|install-agent|uninstall-agent> [opciones]"
-            );
-            eprintln!("  rationale init [--skip-agent-config]");
-            eprintln!("  rationale health [--project-root <path>]");
-            eprintln!(
-                "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]"
-            );
-            eprintln!(
-                "  rationale serve   # servidor MCP (prepare_change, explain_target, health, finalize_change)"
-            );
-            eprintln!(
-                "  rationale review [--project-root <path>]   # confirma propuestas pendientes, una a la vez"
-            );
-            eprintln!(
-                "  rationale review-record <record-id> [--project-root <path>]   # lifecycle humano de un Record aprobado"
-            );
-            eprintln!(
-                "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
-            );
-            eprintln!(
-                "  rationale uninstall-agent [--project-root <path>]   # revierte exactamente lo que install-agent escribió"
-            );
-            std::process::exit(1);
+            eprintln!("comando desconocido: {command}");
+            print_usage();
+            std::process::exit(2);
         }
     }
+}
+
+fn print_usage() {
+    println!(
+        "Uso: rationale <init|health|prepare|serve|review|review-record|install-agent|uninstall-agent> [opciones]"
+    );
+    println!("  rationale --help");
+    println!("  rationale init [--skip-agent-config]");
+    println!("  rationale health [--project-root <path>]");
+    println!(
+        "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]"
+    );
+    println!(
+        "  rationale serve   # servidor MCP (prepare_change, explain_target, health, finalize_change)"
+    );
+    println!(
+        "  rationale review [--project-root <path>]   # confirma propuestas pendientes, una a la vez"
+    );
+    println!(
+        "  rationale review-record <record-id> [--project-root <path>]   # lifecycle humano de un Record aprobado"
+    );
+    println!(
+        "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
+    );
+    println!(
+        "  rationale uninstall-agent [--project-root <path>]   # revierte exactamente lo que install-agent escribió"
+    );
+}
+
+fn print_command_help(command: &str) {
+    match command {
+        "init" => println!(
+            "Uso: rationale init [--skip-agent-config]\n\nCrea el canon .rationale/ del proyecto."
+        ),
+        "health" => println!(
+            "Uso: rationale health [--project-root <path>]\n\nReporta el estado del proyecto y del proveedor."
+        ),
+        "prepare" => println!(
+            "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]\n\nCompila un ContextPacket antes de un cambio."
+        ),
+        "serve" => println!(
+            "Uso: rationale serve\n\nInicia el servidor MCP persistente."
+        ),
+        "review" => println!(
+            "Uso: rationale review [--project-root <path>]\n\nRevisa propuestas pendientes con confirmación humana."
+        ),
+        "review-record" => println!(
+            "Uso: rationale review-record <record-id> [--project-root <path>]\n\nEjecuta lifecycle sobre un Record aprobado."
+        ),
+        "install-agent" => println!(
+            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only]\n\nRegistra MCP e instrucciones de invocación de forma idempotente."
+        ),
+        "uninstall-agent" => println!(
+            "Uso: rationale uninstall-agent [--project-root <path>]\n\nRevierte exactamente lo que install-agent escribió."
+        ),
+        _ => unreachable!("solo se solicita ayuda para comandos conocidos"),
+    }
+}
+
+fn wants_help(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "-h" || arg == "--help")
+}
+
+fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
+    match command {
+        "init" => validate_flags(command, args, &["--skip-agent-config"], &[]),
+        "health" => validate_flags(command, args, &[], &["--project-root"]),
+        "prepare" => validate_flags(
+            command,
+            args,
+            &[],
+            &["--project-root", "--repo-path", "--intent"],
+        ),
+        "serve" => validate_flags(command, args, &[], &[]),
+        "review" => validate_flags(command, args, &[], &["--project-root"]),
+        "review-record" => validate_flags(command, args, &[], &["--project-root"]),
+        "install-agent" => validate_flags(
+            command,
+            args,
+            &["--dry-run", "--global-only"],
+            &["--project-root"],
+        ),
+        "uninstall-agent" => validate_flags(command, args, &[], &["--project-root"]),
+        _ => Ok(()),
+    }
+}
+
+fn validate_flags(
+    command: &str,
+    args: &[String],
+    bare_flags: &[&str],
+    value_flags: &[&str],
+) -> Result<(), String> {
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        if !arg.starts_with('-') {
+            index += 1;
+            continue;
+        }
+        if bare_flags.contains(&arg.as_str()) {
+            index += 1;
+            continue;
+        }
+        if value_flags.contains(&arg.as_str()) {
+            if index + 1 >= args.len() || args[index + 1].starts_with('-') {
+                return Err(format!("{command}: falta un valor para la opción {arg}"));
+            }
+            index += 2;
+            continue;
+        }
+        return Err(format!("{command}: opción desconocida {arg}"));
+    }
+    Ok(())
 }
 
 fn parse_flag(args: &[String], flag: &str) -> Option<PathBuf> {
