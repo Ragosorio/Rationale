@@ -80,8 +80,8 @@ nueve ADRs que siguen `unreviewed`/`proposed`, queda deliberadamente pendiente.
 ## Verificación del grafo
 
 Después de los cambios se reindexó Codebase Memory en modo `fast`. El estado
-quedó `ready` con 1.644 nodos y 3.500 aristas; búsquedas posteriores
-encontraron `src/review.rs::claim_proposal` y
+quedó `indexed` con 2.440 nodos y 4.448 aristas; búsquedas posteriores
+encontraron `src/review.rs::claim_proposal`, `src/review.rs::mutate_record` y
 `src/configuration.rs::ResolvedConfig.authority_for_actor`. La cobertura del
 índice es parcial por diseño del modo rápido y no sustituye la revisión directa
-del código fuente.
+del código fuente; `docs/`, `scripts/` y artefactos locales están excluidos.
