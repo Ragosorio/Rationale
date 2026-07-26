@@ -432,3 +432,60 @@ fn finalize_change_skips_proposal_for_mechanical_only_change() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Vulnerabilidad real encontrada y corregida durante la verificación de
+/// fin de Fase F: un `record_id` con `../` escribía fuera de
+/// `.rationale/proposals/` — confirmado empíricamente escribiendo un
+/// archivo real fuera del directorio del proyecto antes del fix. Este test
+/// reproduce el ataque exacto contra el binario real compilado.
+#[test]
+fn finalize_change_rejects_path_traversal_in_record_id() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "malicious change"]);
+
+    let escape_target = dir.join("../pwned-by-rationale-test.yaml");
+    let _ = std::fs::remove_file(&escape_target);
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "f.txt",
+            "base_revision": base_revision,
+            "intent": "attempted traversal must never escape because it would be a real vulnerability",
+            "statement": "test",
+            "record_id": "../pwned-by-rationale-test",
+            "subject_id": "x.y",
+            "subject_title": "x",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+
+    assert_eq!(outcome["proposal_written"], false);
+    assert!(!outcome["blocked_reason"].is_null());
+    assert!(
+        !escape_target.exists(),
+        "el record_id malicioso NUNCA debe escribir fuera de .rationale/proposals/"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}

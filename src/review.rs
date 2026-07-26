@@ -114,6 +114,13 @@ pub fn approve(
     corrected_statement: Option<String>,
     reviewer_actor: &str,
 ) -> Result<PathBuf, storage::StorageError> {
+    // `proposal.record.id` viene del contenido YAML de la propuesta — no
+    // necesariamente del `record_id` ya validado en `finalize_change` (una
+    // propuesta pudo editarse a mano, o llegar por otra vía en el futuro).
+    // Nunca confiar en que ya fue validado río arriba (path traversal real,
+    // ver `storage::validate_safe_id`).
+    storage::validate_safe_id(&proposal.record.id)?;
+
     if let Some(s) = corrected_statement {
         proposal.record.statement = s;
     }
@@ -269,6 +276,35 @@ mod tests {
         assert!(effect.contains("something could go wrong"));
         // No debe volcar el YAML crudo (ej. la clave "schema_version").
         assert!(!effect.contains("schema_version"));
+    }
+
+    /// Vulnerabilidad real encontrada y corregida durante la verificación de
+    /// fin de Fase F: un `record.id` con `../` habría escrito fuera de
+    /// `.rationale/records/`. `approve()` debe rechazarlo antes de tocar
+    /// disco, no solo confiar en que `finalize_change` ya lo validó.
+    #[test]
+    fn approve_rejects_path_traversal_in_record_id() {
+        let dir = temp_rationale_dir();
+        let mut record = proposal_record("placeholder", "normal");
+        record.id = "../../../../tmp/pwned-by-rationale-test".to_string();
+
+        let proposal = PendingProposal {
+            path: dir.join("proposals/placeholder.yaml"),
+            record,
+            proposed_at: std::time::SystemTime::now(),
+        };
+
+        let result = approve(&dir, proposal, None, "user:test-reviewer");
+        assert!(
+            matches!(result, Err(storage::StorageError::UnsafeIdentifier(_))),
+            "debe rechazar el id inseguro, no escribir nada"
+        );
+        assert!(
+            !std::path::Path::new("/tmp/pwned-by-rationale-test.yaml").exists(),
+            "no debe haber escapado del directorio del proyecto"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

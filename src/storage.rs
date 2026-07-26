@@ -169,6 +169,10 @@ pub enum StorageError {
     Parse(String),
     Serialize(String),
     MissingRequiredField(&'static str),
+    /// Un `id` que no es seguro para usarse como nombre de archivo — nunca
+    /// se convierte silenciosamente en un path (path traversal real,
+    /// encontrado y corregido durante la verificación de fin de Fase F).
+    UnsafeIdentifier(String),
 }
 
 impl std::fmt::Display for StorageError {
@@ -180,8 +184,32 @@ impl std::fmt::Display for StorageError {
             StorageError::MissingRequiredField(field) => {
                 write!(f, "Record inválido: falta campo obligatorio '{field}'")
             }
+            StorageError::UnsafeIdentifier(id) => {
+                write!(f, "id inseguro para usar como nombre de archivo: '{id}'")
+            }
         }
     }
+}
+
+/// Valida que un `id` sea seguro para convertirse en un nombre de archivo
+/// real — nunca debe interpretarse como un path. Rechaza vacío, `.`/`..`,
+/// separadores de path y NUL. Obligatorio en cualquier lugar donde un `id`
+/// (que puede venir de contenido YAML no confiable — una propuesta escrita
+/// por `finalize_change` a partir de argumentos de un cliente MCP) se
+/// convierte en un nombre de archivo (`finalize_change`, `rationale
+/// review`). Sin esto, un `record_id` como `"../../../etc/pwned"` escribe
+/// fuera de `.rationale/` — vulnerabilidad real confirmada empíricamente
+/// antes de este fix.
+pub fn validate_safe_id(id: &str) -> Result<(), StorageError> {
+    if id.is_empty() {
+        return Err(StorageError::MissingRequiredField("id"));
+    }
+    let is_unsafe =
+        id == "." || id == ".." || id.contains('/') || id.contains('\\') || id.contains('\0');
+    if is_unsafe {
+        return Err(StorageError::UnsafeIdentifier(id.to_string()));
+    }
+    Ok(())
 }
 
 /// Validación mínima y determinista — no depende de un LLM ni de
@@ -284,6 +312,38 @@ pub fn list_records(records_dir: &Path) -> Result<Vec<Record>, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Vulnerabilidad real encontrada y corregida durante la verificación de
+    /// fin de Fase F: un `record_id` con `../` escribía fuera de
+    /// `.rationale/` (confirmado escribiendo un archivo real fuera del
+    /// directorio del proyecto antes de este fix).
+    #[test]
+    fn validate_safe_id_rejects_path_traversal_attempts() {
+        for malicious in [
+            "../../../../etc/pwned",
+            "..",
+            ".",
+            "sub/dir",
+            "back\\slash",
+            "nul\0byte",
+        ] {
+            assert!(
+                validate_safe_id(malicious).is_err(),
+                "'{malicious}' debe rechazarse como id inseguro"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_safe_id_accepts_normal_record_ids() {
+        for safe in [
+            "constraint.no-provider-internal-access",
+            "constraint.no-double-charge",
+            "decision.foo_bar-123",
+        ] {
+            assert!(validate_safe_id(safe).is_ok(), "'{safe}' debe aceptarse");
+        }
+    }
 
     /// PID + nanos + contador atómico: bajo carga extrema (muchos tests en
     /// paralelo), la resolución real del reloj puede no ser tan fina como

@@ -466,6 +466,34 @@ pub struct FinalizeOutcome {
 /// escribe en `.rationale/proposals/`, no en `.rationale/records/`.
 pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> FinalizeOutcome {
     let mut diagnostics = Vec::new();
+
+    // Validar ANTES de tocar disco o Git: `record_id` viene de un cliente
+    // MCP no confiable y se convierte en un nombre de archivo real más
+    // abajo — sin esta validación, un `record_id` como
+    // "../../../../etc/pwned" escribe fuera de `.rationale/` (path
+    // traversal real, confirmado empíricamente y corregido aquí).
+    if let Err(e) = storage::validate_safe_id(&req.record_id) {
+        diagnostics.push(format!("record_id rechazado: {e}"));
+        return FinalizeOutcome {
+            level: signals::CaptureLevel::GitOnly,
+            signals: vec![],
+            capture: capture::MechanicalCapture {
+                base_revision: None,
+                final_revision: None,
+                working_tree_dirty: false,
+                changed_files: vec![],
+                provider_status: "unavailable".to_string(),
+                provider_coverage: "unknown".to_string(),
+            },
+            subject_resolution: None,
+            proposal_written: false,
+            proposal_path: None,
+            proposal_id: None,
+            blocked_reason: Some(format!("record_id inseguro: {e}")),
+            diagnostics,
+        };
+    }
+
     let config = configuration::load(&req.project_root).expect("cargar configuración");
 
     // Resolver el target principal es solo diagnóstico aquí — nunca decide
