@@ -230,6 +230,12 @@ function boot() {
 
   function setLanguage(language) {
     const selected = translations[language] ? language : "en";
+    const title = selected === "en"
+      ? "Rationale — Context behind the code"
+      : "Rationale — El contexto detrás del código";
+    const description = selected === "en"
+      ? "Rationale compiles the decisions, constraints, risks and evidence behind a codebase before an agent changes it."
+      : "Rationale compila las decisiones, restricciones, riesgos y evidencia detrás de un codebase antes de que un agente lo cambie.";
     root.lang = selected;
     window.localStorage.setItem("rationale-language", selected);
     document.querySelectorAll("[data-i18n]").forEach((node) => {
@@ -244,9 +250,12 @@ function boot() {
       languageToggle.textContent = selected === "en" ? "ES" : "EN";
       languageToggle.setAttribute("aria-label", translations[selected].languageLabel);
     }
-    document.title = selected === "en"
-      ? "Rationale — Context behind the code"
-      : "Rationale — El contexto detrás del código";
+    document.title = title;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", description);
+    document.querySelector('meta[property="og:title"]')?.setAttribute("content", title);
+    document.querySelector('meta[property="og:description"]')?.setAttribute("content", description);
+    document.querySelector('meta[name="twitter:title"]')?.setAttribute("content", title);
+    document.querySelector('meta[name="twitter:description"]')?.setAttribute("content", description);
   }
 
   function setTheme(theme) {
