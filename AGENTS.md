@@ -4,7 +4,11 @@ Instrucciones operativas para cualquier agente (Claude Code, Codex u otro) que t
 
 ## Qué es esto y en qué fase está
 
-Rationale completó Fase A (bootstrap) y Fase B (análisis de Codebase Memory) — ver `docs/work-items/EPIC-CBM-ANALYSIS.md`. Está en **Fase C/D**: el spike de lenguaje ya se ejecutó (`docs/research/language/`) y propuso **Rust** en `docs/adr/ADR-0001-core-language.md` (estado `proposed`, pendiente de revisión cruzada y aprobación humana antes de `accepted`). Aún no existe núcleo de producto — solo el spike en `spikes/language/`, que es código de investigación desechable, no el punto de partida del núcleo real (Fase D construye la vertical slice desde cero, informada por el spike, no encima de él).
+Rationale completó Fase A (bootstrap), Fase B (análisis de Codebase Memory — ver `docs/work-items/EPIC-CBM-ANALYSIS.md`), Fase C (spike de lenguaje, propuso **Rust** en `docs/adr/ADR-0001-core-language.md`), Fase D (vertical slice: `init`/`health`/`prepare` reales contra Codebase Memory vía MCP persistente) y **Fase E** (store canónico completo — `Subject`/`Evidence`/`Assessment`, capa derivada SQLite+FTS, Context Compiler con niveles de prioridad y budget, y superficie MCP: `rationale serve` expone `prepare_change`/`explain_target`/`health` a cualquier agente). El núcleo real vive en `src/`; `spikes/language/` sigue siendo código de investigación desechable, no su punto de partida.
+
+Ocho ADRs existen, **todos en estado `proposed`** — ninguno se autoaprueba (`evaluation.no-self-certification`). Antes de asumir que uno describe el comportamiento actual, revisa su estado en `docs/adr/index.md`.
+
+Siguiente: Fase F (`finalize_change`, captura de señales, confirmación humana) — ver `docs/work-items/` por el plan vigente.
 
 ## Ruta de lectura por tipo de tarea
 
