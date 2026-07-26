@@ -279,4 +279,41 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    /// E6 — lecturas concurrentes: dos conexiones independientes al mismo
+    /// archivo `.sqlite3` (el escenario real: dos invocaciones de la CLI o
+    /// dos llamadas del servidor MCP en paralelo) deben poder leer el mismo
+    /// assessment cacheado sin error ni corrupción. WAL (`PRAGMA
+    /// journal_mode = WAL`, ya activado en `open()`) es precisamente lo que
+    /// permite lectores concurrentes sin bloquearse entre sí.
+    #[test]
+    fn concurrent_reads_do_not_corrupt_cache() {
+        let dir = temp_cache_dir();
+        let writer = open(&dir).unwrap();
+        cache_assessment(&writer, &fixed_assessment("rev-concurrent")).unwrap();
+        drop(writer);
+
+        let dir_for_threads = std::sync::Arc::new(dir.clone());
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let dir = std::sync::Arc::clone(&dir_for_threads);
+                std::thread::spawn(move || {
+                    let conn = open(&dir).expect("abrir conexión de lectura concurrente");
+                    get_cached_assessment(&conn, "constraint.cache-test", "rev-concurrent")
+                        .expect("lectura concurrente no debe fallar")
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            let result = handle.join().expect("el hilo lector no debe panicar");
+            assert_eq!(
+                result.map(|r| r.assessment_reason),
+                Some("test reason".to_string()),
+                "cada lector concurrente debe ver el mismo dato, sin corrupción"
+            );
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
