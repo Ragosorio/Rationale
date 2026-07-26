@@ -33,8 +33,8 @@ archive="$OUT_DIR/rationale-$VERSION-$TARGET.tar.xz"
 tar -C "$stage" -cJf "$archive" "rationale-$VERSION-$TARGET"
 
 if command -v shasum >/dev/null 2>&1; then
-  shasum -a 256 "$archive" > "$archive.sha256"
+  (cd "$OUT_DIR" && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive.sha256")")
 else
-  sha256sum "$archive" > "$archive.sha256"
+  (cd "$OUT_DIR" && sha256sum "$(basename "$archive")" > "$(basename "$archive.sha256")")
 fi
 echo "creado: $archive"
