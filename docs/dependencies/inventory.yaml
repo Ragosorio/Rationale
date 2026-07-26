@@ -7,10 +7,10 @@
 #
 # ADR-0001 (Rust, estado "proposed") ya está implementado en el Cargo.toml
 # raíz. Las dependencias abajo reflejan el estado REAL del crate `rationale`
-# (Fase D completa), no el spike (spikes/language/rust/ tiene su propio
-# Cargo.toml y dependencias separadas, incluyendo rusqlite — validado ahí
-# pero todavía NO añadido al core real; se añade en Fase E3 cuando exista
-# la capa derivada, ver ADR-0004).
+# tras Fase E completa (modelo canónico, capa derivada SQLite+FTS, Context
+# Compiler, superficie MCP) — no el spike (spikes/language/rust/ tiene su
+# propio Cargo.toml y dependencias separadas, código de investigación
+# desechable, no el punto de partida del core real).
 #
 # Dependencias externas ya presentes en el entorno de desarrollo (no del
 # runtime de Rationale) se documentan como research/tooling, no como
@@ -29,7 +29,7 @@ core_dependencies:
   - name: serde_json
     version: "1"
     license: "MIT OR Apache-2.0"
-    purpose: "Serialización de Context Packets y respuestas MCP"
+    purpose: "Serialización de Context Packets y mensajes JSON-RPC del servidor MCP"
     runtime_dependency: true
     requires_network: false
   - name: yaml_serde
@@ -45,15 +45,35 @@ core_dependencies:
       Trae una dependencia transitiva nueva: libyaml-rs 0.3.0 (libyaml
       transpilado a Rust puro vía c2rust, MIT, mismo org github.com/yaml)
       — no reintroduce un toolchain C, confirmado por `cargo info`.
-planned_core_dependencies:
   - name: rusqlite
     version: "0.31 (feature: bundled)"
     license: "MIT"
-    purpose: "SQLite embebido para la capa derivada (assessments, FTS, cache) — Fase E3"
+    purpose: "SQLite embebido para la capa derivada (assessments, FTS5, cache) — ADR-0004"
     runtime_dependency: true
     requires_network: false
     vendorable: true
-    notes: "Ya validado end-to-end en spikes/language/rust/ (build, tests, roundtrip). Pendiente: cargo audit antes de añadirlo al core real (ver known_risk de seguridad abajo)."
+    notes: >
+      Añadido en Fase E3 (src/cache.rs). Validado end-to-end en
+      spikes/language/rust/ antes de migrarlo al core real. `cargo audit`
+      corrido sobre el árbol completo — ver resultado en `security_audit`
+      abajo.
+
+# Transitivas relevantes por tamaño o superficie de ataque (no cada crate
+# del árbol — cargo tree --edges normal en el repo tiene la lista completa).
+notable_transitive_dependencies:
+  - name: libsqlite3-sys
+    via: rusqlite
+    license: "MIT"
+    notes: "Bindings FFI a SQLite (bundled, compilado desde fuente vendorizada — no enlaza contra una libsqlite3 del sistema)."
+  - name: libyaml-rs
+    via: yaml_serde
+    license: "MIT"
+    notes: "libyaml transpilado a Rust puro (c2rust) — sin toolchain C adicional."
+  - name: zerocopy
+    via: "rusqlite -> hashlink -> hashbrown -> ahash"
+    license: "BSD-2-Clause OR Apache-2.0 OR MIT"
+    notes: "Sin unsafe expuesto a Rationale directamente; uso interno de ahash."
+
 tooling_dependencies:
   - name: codebase-memory-mcp
     purpose: "Proveedor estructural inicial, consumido vía MCP/CLI, nunca enlazado"
@@ -66,20 +86,25 @@ tooling_dependencies:
     requires_network: false
     license: "GPL-2.0 (herramienta externa, no vinculada)"
 
-# Gates de seguridad declarados pero no ejecutados todavía — registrados
-# explícitamente en vez de omitidos en silencio (docs/rust/security-guide.md).
+# Resultado real de `cargo audit` (ver docs/runbooks/build-and-test.md para
+# cómo re-ejecutarlo). Cierra el known_gap `cargo-audit-not-installed` que
+# existía desde Fase D — corrido en F0 antes de que Fase F añada más
+# dependencias (escritura canónica).
+security_audit:
+  tool: "cargo-audit 0.22.2"
+  advisory_db: "RustSec/advisory-db, 1169 advisories cargados"
+  crates_scanned: 38
+  vulnerabilities_found: 0
+  warnings: 0
+  run_date: "2026-07-25"
+
 known_gaps:
-  - id: cargo-audit-not-installed
-    description: >
-      cargo-audit no está instalado ni corre en CI. Antes de Fase E3 (que
-      añade rusqlite al core real) debe ejecutarse al menos una vez sobre
-      el Cargo.lock completo.
-      severity: medium
   - id: windows-file-locking-unexercised
     description: >
       El candidato Rust del spike usó una ruta de file locking POSIX-only
       (flock vía FFI) por simplicidad. std::fs::File::lock (portable desde
-      Rust 1.89) existe pero no se ejerció. Riesgo conocido para Fase D5/E3,
-      no bloqueante hasta que exista un caso real de concurrencia entre
-      procesos en Windows. Ver docs/research/language/compatibility-matrix.md.
+      Rust 1.89) existe pero no se ejerció. Riesgo conocido desde Fase F1
+      (escritura canónica real), no bloqueante hasta que exista un caso real
+      de concurrencia entre procesos en Windows. Ver
+      docs/research/language/compatibility-matrix.md.
       severity: low

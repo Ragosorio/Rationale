@@ -8,6 +8,8 @@ Los 7 schemas JSON formales (`record`, `subject`, `binding`, `evidence`, `approv
 
 **La validación determinista real hoy** (`Rationale_v0.5.md §9.2`: "la validación básica debe ser determinista y basada en schema") vive en Rust: `storage::read_record` y `subjects::read_subject` rechazan explícitamente campos obligatorios ausentes (`StorageError::MissingRequiredField`, `SubjectError::MissingRequiredField`), verificado con tests (`storage::tests::rejects_record_missing_statement`). No es heurística ni un LLM decidiendo si un campo "parece" completo.
 
-## Próximo paso (Fase E3/E6)
+## Decisión tomada (Fase E6): no se añadió un validador JSON Schema
 
-Añadir `jsonschema` con features acotadas y validar los 7 schemas contra datos reales (`.rationale/records/*.yaml`, `.rationale/subjects/*.yaml`, la salida real de `ContextPacket`) como parte del endurecimiento de la capa derivada — cerraría la brecha entre "el schema existe" y "el schema se aplica en cada lectura/escritura".
+Fase E6 (`tests/schema_validation.rs`) resolvió esta brecha de otra forma: en vez de agregar `jsonschema`, un test verifica que los campos `required` de los 7 schemas coinciden con los campos no-`Option` de sus structs Rust correspondientes — detecta divergencia schema/struct sin necesitar el crate. La validación de datos reales (Records/Subjects/ContextPacket) sigue viviendo en `storage::read_record`/`subjects::read_subject` como se describe arriba.
+
+**Revisit trigger:** reabrir esta decisión si aparece una necesidad real de validar contra el schema JSON completo (no solo campos requeridos) — por ejemplo, tipos de datos o formatos específicos (`format: date-time`) — o si `jsonschema` publica una variante sin `resolve-http`/`tls-aws-lc-rs` en sus features por defecto.

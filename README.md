@@ -6,13 +6,23 @@ Rationale es un compilador local de contexto causal y una capa de procedencia, a
 
 ## Estado real del proyecto
 
-**Pre-implementación.** No existe todavía núcleo, lenguaje elegido, ni producto distribuible. Este repositorio contiene:
+**Pre-1.0, núcleo funcional.** El lenguaje del núcleo está decidido (Rust, `docs/adr/ADR-0001-core-language.md`) y ya existe un binario real en `src/` que implementa el modelo canónico completo (`Subject`, `Evidence`, `Assessment`, `Record`), una capa derivada local (SQLite + FTS, invalidada por revisión de Git), un Context Compiler con niveles de prioridad y presupuesto explícito, y una superficie MCP que expone `prepare_change`, `explain_target` y `health` a cualquier agente compatible.
 
-- El contrato conceptual del producto y su arquitectura.
-- El proceso operativo para construirlo con múltiples agentes (Claude Code, Codex, otros).
-- El bootstrap del repositorio (Fase A) y el análisis reproducible de Codebase Memory (Fase B), su primer proveedor estructural.
+**Ningún ADR está `accepted` todavía** — los 8 existentes siguen `proposed`, pendientes de revisión cruzada y aprobación humana (`docs/adr/index.md`, Subject `evaluation.no-self-certification`). No hay empaquetado ni distribución; se corre desde el código fuente con `cargo`.
 
-No hay lenguaje de núcleo decidido todavía: esa decisión (ADR-0001) requiere evidencia de un spike comparativo, no una preferencia. Ver `Rationale_Arquitectura_Conceptual_v0.1.md §8` y `docs/research/language/`.
+## Instalación y uso
+
+Requiere el toolchain de Rust (`rustc`/`cargo`) y, opcionalmente, [`codebase-memory-mcp`](docs/research/codebase-memory/) en el `PATH` como proveedor estructural — sin él, Rationale sigue funcionando pero con cobertura degradada (`provider_status: unavailable`), nunca bloquea.
+
+```bash
+cargo build --release
+./target/release/rationale init                    # crea .rationale/ en el proyecto actual
+./target/release/rationale health                   # revisión Git, proveedor, cobertura
+./target/release/rationale prepare <path::symbol>    # packet de contexto para un target
+./target/release/rationale serve                     # servidor MCP (prepare_change/explain_target/health)
+```
+
+Para que un agente MCP (como esta misma sesión de Claude Code) pueda llamar al servidor, este repo ya trae [`.mcp.json`](.mcp.json) registrado — requiere reiniciar la sesión del agente para que lo cargue.
 
 ## Documentos fundacionales (leer en este orden)
 
@@ -22,7 +32,13 @@ No hay lenguaje de núcleo decidido todavía: esa decisión (ADR-0001) requiere 
 
 ## Para agentes
 
-Empezar por [`AGENTS.md`](AGENTS.md), no por estos tres documentos completos. `AGENTS.md` indica qué leer según el tipo de tarea.
+Empezar por [`AGENTS.md`](AGENTS.md), no por estos tres documentos completos. `AGENTS.md` indica qué leer según el tipo de tarea, en qué fase está el proyecto ahora mismo, y qué NO hacer.
+
+## Más documentación
+
+- [`docs/architecture/code-map.md`](docs/architecture/code-map.md) — mapa de los módulos reales de `src/` y cómo fluyen `prepare`/`serve` de punta a punta.
+- [`docs/runbooks/`](docs/runbooks/) — build, test, instalación, reseteo de cache, fallo de proveedor, diagnóstico, desinstalación.
+- [`docs/adr/`](docs/adr/) — decisiones arquitectónicas con su evidencia, todas en estado `proposed`.
 
 ## Licencia
 
