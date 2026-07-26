@@ -18,7 +18,7 @@ command -v curl >/dev/null || { echo "se necesita curl" >&2; exit 1; }
 if [[ -z "$VERSION" || "$VERSION" == "latest" ]]; then
   case "$CHANNEL" in
     stable)
-      tag="$(curl -fsSL "https://api.github.com/repos/$REPOSITORY/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+      tag="$(curl -fsSL "https://api.github.com/repos/$REPOSITORY/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
       ;;
     preview)
       tag="$(curl -fsSL "https://api.github.com/repos/$REPOSITORY/releases?per_page=100" | awk '
@@ -28,10 +28,10 @@ if [[ -z "$VERSION" || "$VERSION" == "latest" ]]; then
           sub(/".*$/, "", value)
           latest_tag = value
         }
-        /"prerelease"[[:space:]]*:[[:space:]]*true/ && latest_tag != "" {
+        /"prerelease"[[:space:]]*:[[:space:]]*true/ && latest_tag != "" && !found {
           print latest_tag
-          exit
-      }
+          found = 1
+        }
       ')"
       ;;
     *)

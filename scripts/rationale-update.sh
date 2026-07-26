@@ -17,9 +17,9 @@ if [[ -z "$VERSION" || "$VERSION" == "latest" ]]; then
         sub(/".*$/, "", value)
         latest_tag = value
       }
-      /"prerelease"[[:space:]]*:[[:space:]]*true/ && latest_tag != "" {
+      /"prerelease"[[:space:]]*:[[:space:]]*true/ && latest_tag != "" && !found {
         print latest_tag
-        exit
+        found = 1
       }
     ')"
     [[ -n "$VERSION" ]] || { echo "no se encontró una Release preview para $REPOSITORY" >&2; exit 1; }
