@@ -7,11 +7,13 @@
 //! No más que esto — el resto (FTS, budget multi-constraint, capture,
 //! assessments persistidos) pertenece a Fase E/F.
 
+mod agents;
 mod assessment;
 mod cache;
 mod capture;
 mod configuration;
 mod evaluation;
+mod mascot;
 mod mcp;
 mod pipeline;
 mod project;
@@ -30,15 +32,19 @@ fn main() {
     let command = args.get(1).map(|s| s.as_str()).unwrap_or("");
 
     match command {
-        "init" => cmd_init(),
+        "init" => cmd_init(&args[2..]),
         "health" => cmd_health(&args[2..]),
         "prepare" => cmd_prepare(&args[2..]),
         "serve" => mcp::server::run(),
         "review" => cmd_review(&args[2..]),
         "review-record" => cmd_review_record(&args[2..]),
+        "install-agent" => cmd_install_agent(&args[2..]),
+        "uninstall-agent" => cmd_uninstall_agent(&args[2..]),
         _ => {
-            eprintln!("Uso: rationale <init|health|prepare|serve|review|review-record> [opciones]");
-            eprintln!("  rationale init");
+            eprintln!(
+                "Uso: rationale <init|health|prepare|serve|review|review-record|install-agent|uninstall-agent> [opciones]"
+            );
+            eprintln!("  rationale init [--skip-agent-config]");
             eprintln!("  rationale health [--project-root <path>]");
             eprintln!(
                 "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]"
@@ -51,6 +57,12 @@ fn main() {
             );
             eprintln!(
                 "  rationale review-record <record-id> [--project-root <path>]   # lifecycle humano de un Record aprobado"
+            );
+            eprintln!(
+                "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
+            );
+            eprintln!(
+                "  rationale uninstall-agent [--project-root <path>]   # revierte exactamente lo que install-agent escribió"
             );
             std::process::exit(1);
         }
@@ -71,7 +83,7 @@ fn parse_string_flag(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
-fn cmd_init() {
+fn cmd_init(args: &[String]) {
     let cwd = std::env::current_dir().expect("cwd");
     let rationale_dir = cwd.join(".rationale");
     if rationale_dir.exists() {
@@ -95,6 +107,40 @@ fn cmd_init() {
         "{{\"status\":\"initialized\",\"path\":\"{}\"}}",
         rationale_dir.display()
     );
+
+    // Todo lo que sigue es decoración y conveniencia para humanos — va a
+    // stderr para no tocar el contrato de stdout de arriba.
+    eprintln!("{}", mascot::art(mascot::Mood::Happy));
+    eprintln!("  Soy Chestie — cuido las vallas de este proyecto: por qué existe el código, no solo qué hace.");
+
+    let skip_agent_config = args.iter().any(|a| a == "--skip-agent-config")
+        || std::env::var("RATIONALE_SKIP_AGENT_CONFIG").as_deref() == Ok("1");
+    if skip_agent_config {
+        return;
+    }
+
+    eprintln!();
+    eprintln!("{}", mascot::art(mascot::Mood::Searching));
+    eprintln!("  Buscando agentes de código en este proyecto para avisarles de mí...");
+    let rationale_local = find_rationale_local(&cwd);
+    let binary_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("rationale"));
+    match agents::install(&cwd, &rationale_local, &binary_path, false) {
+        Ok(report) if report.detected.is_empty() => {
+            eprintln!(
+                "  No encontré ningún agente conocido todavía — corre 'rationale install-agent' cuando tengas uno."
+            );
+        }
+        Ok(report) => {
+            eprintln!("{}", mascot::art(mascot::Mood::Happy));
+            eprintln!("  Avisé a: {}", report.detected.join(", "));
+            for line in &report.actions {
+                eprintln!("  - {line}");
+            }
+        }
+        Err(error) => {
+            eprintln!("  advertencia: no pude avisar a los agentes automáticamente: {error}");
+        }
+    }
 }
 
 fn cmd_health(args: &[String]) {
@@ -158,6 +204,15 @@ fn cmd_prepare(args: &[String]) {
 
     for line in &outcome.diagnostics {
         eprintln!("{line}");
+    }
+
+    match outcome.packet.critical_constraints.first() {
+        Some(constraint) => {
+            eprintln!("{}", mascot::guarding_with_message(&constraint.statement));
+        }
+        None => {
+            eprintln!("{}", mascot::art(mascot::Mood::Happy));
+        }
     }
 
     let packet_json = serde_json::to_string(&outcome.packet).expect("serialize packet");
@@ -491,6 +546,84 @@ fn cmd_review_record(args: &[String]) {
     ) {
         Ok(path) => println!("Lifecycle actualizado atómicamente -> {}", path.display()),
         Err(error) => eprintln!("mutación abortada: {error}"),
+    }
+}
+
+/// `rationale install-agent` (Arquitectura §24) — registra el servidor MCP
+/// en los agentes detectados y escribe las instrucciones que hacen que se
+/// invoque solo. Registrar el MCP no basta: sin instrucciones, un agente
+/// con herramientas disponibles no las llama (v0.5 §4.12).
+fn cmd_install_agent(args: &[String]) {
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    let binary_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("rationale"));
+
+    if args.iter().any(|a| a == "--global-only") {
+        // Solo el registro que no depende de un proyecto (Codex vía CLI
+        // global). Lo usa `scripts/rationale-installer.sh` justo tras
+        // instalar el binario, antes de que exista ningún `.rationale/`.
+        match agents::install_global_only(&binary_path, dry_run) {
+            Ok(actions) => {
+                for line in &actions {
+                    println!("- {line}");
+                }
+            }
+            Err(error) => {
+                eprintln!("install-agent --global-only falló: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    let project_root = parse_flag(args, "--project-root")
+        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
+        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
+    let rationale_local = find_rationale_local(&project_root);
+
+    println!("{}", mascot::art(mascot::Mood::Searching));
+    println!("Buscando agentes de código en este proyecto...");
+
+    match agents::install(&project_root, &rationale_local, &binary_path, dry_run) {
+        Ok(report) => {
+            if report.dry_run {
+                println!("(dry-run — no se escribió nada)");
+            }
+            if report.detected.is_empty() {
+                println!("{}", mascot::art(mascot::Mood::Base));
+                println!("No se detectó ningún agente conocido (claude, codex, cursor-agent).");
+            } else {
+                println!("{}", mascot::art(mascot::Mood::Happy));
+                println!("Agentes detectados: {}", report.detected.join(", "));
+            }
+            for line in &report.actions {
+                println!("- {line}");
+            }
+        }
+        Err(error) => {
+            eprintln!("install-agent falló: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `rationale uninstall-agent` — revierte exactamente lo que `install-agent`
+/// escribió, dejando cualquier contenido previo del usuario intacto.
+fn cmd_uninstall_agent(args: &[String]) {
+    let project_root = parse_flag(args, "--project-root")
+        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
+        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
+    let rationale_local = find_rationale_local(&project_root);
+
+    match agents::uninstall(&project_root, &rationale_local) {
+        Ok(actions) => {
+            for line in &actions {
+                println!("- {line}");
+            }
+        }
+        Err(error) => {
+            eprintln!("uninstall-agent falló: {error}");
+            std::process::exit(1);
+        }
     }
 }
 

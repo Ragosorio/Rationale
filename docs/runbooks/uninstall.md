@@ -10,6 +10,17 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/rel
 `RATIONALE_REMOVE_AGENT_CONFIG=1` permite quitar la entrada global de Codex.
 Los datos canónicos no se eliminan nunca de forma automática.
 
+Esto solo desinstala el binario. Si `rationale init`/`install-agent` avisó a
+algún agente **dentro de un proyecto** (bloque en `CLAUDE.md`/`AGENTS.md`,
+`.mcp.json`/`.cursor/mcp.json`), revertir eso es por proyecto:
+
+```bash
+cd /ruta/al/proyecto
+rationale uninstall-agent
+```
+
+Borra solo lo que `install-agent` escribió (según `.rationale-local/installed-agent-files.json`), dejando cualquier contenido previo del usuario en esos archivos intacto.
+
 ## Lo que es seguro borrar siempre
 
 ```bash

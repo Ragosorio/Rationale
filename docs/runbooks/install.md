@@ -38,6 +38,8 @@ Desde la raíz del proyecto que quieras gobernar con Rationale (puede ser el pro
 
 Crea `.rationale/{subjects,records,bindings,approvals,schemas,migrations}/`. `proposals/` se crea automáticamente la primera vez que `finalize_change` escribe una propuesta — no hace falta crearlo a mano.
 
+**`init` también detecta y avisa a los agentes de código presentes** (paso 4, ver abajo) — no es un paso manual separado a menos que lo desactives con `rationale init --skip-agent-config` o `RATIONALE_SKIP_AGENT_CONFIG=1`.
+
 ## 3. Proveedor estructural (opcional pero recomendado)
 
 Rationale funciona sin un proveedor de inteligencia de código, pero con cobertura degradada (`provider_status: unavailable`, nunca bloquea). Para cobertura completa, instala [`codebase-memory-mcp`](../research/codebase-memory/) y verifica que esté en el `PATH`:
@@ -48,20 +50,17 @@ which codebase-memory-mcp
 
 ## 4. Registrar el servidor MCP para un agente
 
-El repo de Rationale mismo trae [`.mcp.json`](../../.mcp.json) de ejemplo:
+`rationale init` ya lo hace por ti (ver paso 2) — este paso es solo para volver a ejecutarlo a mano, en un proyecto donde instalaste un agente nuevo después del `init`, o para revisar exactamente qué escribiría antes de tocar nada:
 
-```json
-{
-  "mcpServers": {
-    "rationale": {
-      "command": "cargo",
-      "args": ["run", "--quiet", "--release", "--", "serve"]
-    }
-  }
-}
+```bash
+rationale install-agent                     # detecta claude-code/codex/cursor-agent y escribe/actualiza sus instrucciones + registro MCP
+rationale install-agent --dry-run           # imprime qué haría sin escribir nada
+rationale install-agent --project-root <p>  # apunta a un proyecto distinto del cwd
 ```
 
-Cópialo (ajustando el `command` si no vas a correr `cargo run` desde el propio directorio del proyecto) al `.mcp.json` del proyecto donde quieras que un agente MCP (Claude Code, etc.) pueda llamar `prepare_change`/`explain_target`/`health`/`finalize_change`. Para Codex global usa `codex mcp add rationale -- /ruta/al/rationale serve`. **Requiere reiniciar la sesión del agente** para que cargue el archivo.
+Detecta el agente por binario en `PATH` (`claude`, `codex`, `cursor-agent`) o por configuración ya presente en el proyecto, y escribe un bloque delimitado e idempotente en `CLAUDE.md`/`AGENTS.md`/`.cursor/rules/rationale.mdc` más el registro MCP correspondiente (`.mcp.json`, `.cursor/mcp.json`, o `codex mcp add` global). Nunca sobrescribe contenido previo del usuario. Revertir: `rationale uninstall-agent` — ver [`uninstall.md`](uninstall.md).
+
+**Requiere reiniciar la sesión del agente** para que cargue la configuración nueva.
 
 ## Actualizar y desinstalar
 

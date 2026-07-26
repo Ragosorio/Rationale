@@ -35,10 +35,10 @@ tar -xJf "$tmp/$archive" -C "$tmp"
 mkdir -p "$PREFIX"
 install -m 0755 "$tmp/rationale-$tag-$TARGET/rationale" "$PREFIX/rationale"
 
-if [[ "${RATIONALE_SKIP_AGENT_CONFIG:-0}" != "1" ]] && command -v codex >/dev/null 2>&1; then
-  codex mcp list 2>/dev/null | grep -q '[[:space:]]rationale[[:space:]]' || \
-    codex mcp add rationale -- "$PREFIX/rationale" serve >/dev/null
+if [[ "${RATIONALE_SKIP_AGENT_CONFIG:-0}" != "1" ]]; then
+  "$PREFIX/rationale" install-agent --global-only || true
 fi
 
 echo "Rationale $tag instalado en $PREFIX/rationale"
-echo "Ejecuta 'rationale init' dentro de un proyecto para crear .rationale/."
+echo "Ejecuta 'rationale init' dentro de un proyecto: crea .rationale/ y avisa"
+echo "automáticamente a los agentes de código presentes (usa --skip-agent-config para omitirlo)."

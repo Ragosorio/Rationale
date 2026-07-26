@@ -13,3 +13,5 @@ if [[ "${RATIONALE_REMOVE_AGENT_CONFIG:-0}" == "1" ]] && command -v codex >/dev/
   codex mcp remove rationale >/dev/null 2>&1 || true
 fi
 echo "No se modificó ningún directorio .rationale/."
+echo "Si 'rationale init' avisó a algún agente en un proyecto, corre"
+echo "'rationale uninstall-agent' dentro de ese proyecto para revertirlo."
