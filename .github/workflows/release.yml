@@ -85,19 +85,28 @@ jobs:
         run: |
           mkdir -p release
           git show "${GITHUB_REF_NAME}:scripts/rationale-installer.sh" > release/rationale-installer.sh
+          git show "${GITHUB_REF_NAME}:scripts/rationale-update.sh" \
+            | sed "s/^DEFAULT_CHANNEL=\"stable\"/DEFAULT_CHANNEL=\"preview\"/" \
+            > release/rationale-update.sh
           git show "${GITHUB_REF_NAME}:scripts/rationale-uninstall.sh" > release/rationale-uninstall.sh
           git show "${GITHUB_REF_NAME}:scripts/rationale-installer.ps1" > release/rationale-installer.ps1
+          git show "${GITHUB_REF_NAME}:scripts/rationale-update.ps1" \
+            | sed "s/^\$DefaultChannel = \"stable\"/\$DefaultChannel = \"preview\"/" \
+            > release/rationale-update.ps1
           git show "${GITHUB_REF_NAME}:scripts/rationale-uninstall.ps1" > release/rationale-uninstall.ps1
-          chmod +x release/rationale-installer.sh release/rationale-uninstall.sh
+          chmod +x release/rationale-installer.sh release/rationale-update.sh release/rationale-uninstall.sh
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mapfile -t release_assets < <(find release -type f -print)
           test "${#release_assets[@]}" -gt 0
+          release_flags=(--title "Rationale ${GITHUB_REF_NAME}" --generate-notes)
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "${GITHUB_REF_NAME}" "${release_assets[@]}" \
-            --title "Rationale ${GITHUB_REF_NAME}" \
-            --generate-notes
+            "${release_flags[@]}"
       - name: Attest release artifacts
         uses: actions/attest@v4
         with:

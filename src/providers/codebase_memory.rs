@@ -74,7 +74,7 @@ impl CodebaseMemoryClient {
             // correctamente terminan el hilo por igual — el `recv_timeout`
             // del caller ya trata un canal desconectado como `Unavailable`
             // (fail open, Arquitectura §13.5).
-            while let framing::Frame::Message(msg) = framing::read_message(&mut reader) {
+            while let framing::Frame::Message(msg) = framing::read_content_length(&mut reader) {
                 if tx.send(msg).is_err() {
                     break;
                 }
@@ -119,7 +119,7 @@ impl CodebaseMemoryClient {
     }
 
     fn send(&mut self, value: Value) -> std::io::Result<()> {
-        framing::write_message(&mut self.stdin, &value)
+        framing::write_content_length(&mut self.stdin, &value)
     }
 
     /// Espera una respuesta con deadline. Si expira, mata el proceso

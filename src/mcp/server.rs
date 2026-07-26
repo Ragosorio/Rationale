@@ -1,6 +1,7 @@
 //! Servidor MCP de Rationale — Fase E5 (ADR-0007).
 //!
-//! Bucle síncrono sobre stdin/stdout con el framing de `mcp::framing`, sin
+//! Bucle síncrono sobre stdin/stdout con el transporte stdio newline de
+//! `mcp::framing`, sin
 //! runtime async (ADR-0007 §Decision). Mantiene **una sola** sesión de
 //! `ProviderHandle` viva durante toda la vida del proceso — la amortización
 //! real que la CLI de un solo disparo no puede ofrecer. Este es exactamente
@@ -27,12 +28,13 @@ pub fn run() {
     let mut reader = BufReader::new(stdin.lock());
     let mut writer = stdout.lock();
 
-    // Sesión persistente para toda la vida del servidor — no una por
-    // llamada (ADR-0002 / ADR-0007).
-    let mut provider = ProviderHandle::spawn();
+    // El proveedor se inicializa de forma lazy. El handshake MCP y
+    // `tools/list` no deben depender de que Codebase Memory esté instalado,
+    // indexado o responda dentro de su propio deadline.
+    let mut provider = None;
 
     loop {
-        let msg = match framing::read_message(&mut reader) {
+        let msg = match framing::read_stdio_message(&mut reader) {
             framing::Frame::Message(msg) => msg,
             // Fin real de la sesión — el cliente cerró stdin.
             framing::Frame::Eof => break,
@@ -47,7 +49,7 @@ pub fn run() {
                     "id": Value::Null,
                     "error": {"code": -32700, "message": format!("parse error: {reason}")}
                 });
-                let _ = framing::write_message(&mut writer, &resp);
+                let _ = framing::write_stdio_message(&mut writer, &resp);
                 continue;
             }
         };
@@ -66,7 +68,7 @@ pub fn run() {
                         "serverInfo": {"name": "rationale", "version": env!("CARGO_PKG_VERSION")}
                     }
                 });
-                let _ = framing::write_message(&mut writer, &resp);
+                let _ = framing::write_stdio_message(&mut writer, &resp);
             }
             "notifications/initialized" => {
                 // Sin respuesta — es una notificación.
@@ -77,11 +79,11 @@ pub fn run() {
                     "id": id,
                     "result": {"tools": tool_definitions()}
                 });
-                let _ = framing::write_message(&mut writer, &resp);
+                let _ = framing::write_stdio_message(&mut writer, &resp);
             }
             "tools/call" => {
                 let resp = handle_tools_call(&msg, id, &mut provider);
-                let _ = framing::write_message(&mut writer, &resp);
+                let _ = framing::write_stdio_message(&mut writer, &resp);
             }
             _ => {
                 if let Some(id) = id {
@@ -90,7 +92,7 @@ pub fn run() {
                         "id": id,
                         "error": {"code": -32601, "message": "method not found"}
                     });
-                    let _ = framing::write_message(&mut writer, &resp);
+                    let _ = framing::write_stdio_message(&mut writer, &resp);
                 }
             }
         }
@@ -175,7 +177,11 @@ fn tool_definitions() -> Value {
     ])
 }
 
-fn handle_tools_call(msg: &Value, id: Option<Value>, provider: &mut ProviderHandle) -> Value {
+fn handle_tools_call(
+    msg: &Value,
+    id: Option<Value>,
+    provider: &mut Option<ProviderHandle>,
+) -> Value {
     let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
     let name = params
         .get("name")
@@ -192,10 +198,10 @@ fn handle_tools_call(msg: &Value, id: Option<Value>, provider: &mut ProviderHand
     // normaliza a `isError` y el servidor sigue vivo para la llamada
     // siguiente (regla no negociable de E5).
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match name.as_str() {
-        "prepare_change" => call_prepare_change(&arguments, provider),
+        "prepare_change" => call_prepare_change(&arguments, provider_mut(provider)),
         "explain_target" => call_explain_target(&arguments),
-        "health" => call_health(&arguments, provider),
-        "finalize_change" => call_finalize_change(&arguments, provider),
+        "health" => call_health(&arguments, provider_mut(provider)),
+        "finalize_change" => call_finalize_change(&arguments, provider_mut(provider)),
         other => Err(format!("herramienta desconocida: '{other}'")),
     }));
 
@@ -214,6 +220,10 @@ fn handle_tools_call(msg: &Value, id: Option<Value>, provider: &mut ProviderHand
             "error interno inesperado al ejecutar la herramienta — la sesión sigue viva",
         ),
     }
+}
+
+fn provider_mut(provider: &mut Option<ProviderHandle>) -> &mut ProviderHandle {
+    provider.get_or_insert_with(ProviderHandle::spawn)
 }
 
 fn error_result(id: Option<Value>, message: &str) -> Value {
@@ -309,7 +319,7 @@ fn call_prepare_change(args: &Value, provider: &mut ProviderHandle) -> Result<Va
             budget,
         },
         provider,
-    );
+    )?;
 
     Ok(json!({
         "packet": outcome.packet,
@@ -326,7 +336,7 @@ fn call_explain_target(args: &Value) -> Result<Value, String> {
         .ok_or_else(|| "falta el argumento requerido 'target'".to_string())?;
     let (project_root, repo_path) = resolve_roots(args)?;
 
-    let outcome = pipeline::explain(target, &project_root, &repo_path);
+    let outcome = pipeline::explain(target, &project_root, &repo_path)?;
 
     Ok(json!({
         "resolved_target": outcome.resolved_target,
@@ -344,7 +354,7 @@ fn call_health(args: &Value, provider: &mut ProviderHandle) -> Result<Value, Str
         None => default_project_root()?,
     };
 
-    let outcome = pipeline::health(&project_root, provider);
+    let outcome = pipeline::health(&project_root, provider)?;
 
     Ok(json!({
         "project_id": outcome.project_id,
@@ -411,7 +421,7 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
             risks,
         },
         provider,
-    );
+    )?;
 
     Ok(json!({
         "level": outcome.level,

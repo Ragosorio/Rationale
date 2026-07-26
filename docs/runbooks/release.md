@@ -1,8 +1,8 @@
 # Release runbook
 
-La Release dogfood vigente es `v0.0.0-dogfood.7`; los tags `dogfood.1` a
-`dogfood.6` quedan como iteraciones históricas de hardening de CI y no deben
-usarse para instalar. La alfa pública prevista es `v0.1.0-alpha.1`.
+La próxima Release pública es `v0.1.0-alpha.1`, construida desde la rama
+`release/v0.1.0-alpha.1`. Los tags `dogfood.*` quedan como iteraciones
+históricas de hardening y no deben usarse para validar el flujo actual.
 
 ## Antes del tag
 
@@ -24,7 +24,9 @@ git push origin v0.1.0-alpha.1
 
 La workflow [`release.yml`](../../.github/workflows/release.yml) construye los
 targets, crea archives y ZIP, calcula SHA-256, publica instaladores y genera
-attestation. Nunca se suben `.rationale-local/`, caches ni secretos.
+attestation. También publica `rationale-update.sh` y `rationale-update.ps1`,
+que quedan junto al binario para que `rationale update` pueda actualizar una
+instalación existente. Nunca se suben `.rationale-local/`, caches ni secretos.
 
 ## Rollback
 

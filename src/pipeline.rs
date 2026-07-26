@@ -47,16 +47,20 @@ pub struct PrepareOutcome {
 /// Movido tal cual desde `cmd_prepare` (Fase D/E4): misma lógica, mismo
 /// orden de pasos, solo que los `eprintln!` se acumulan en `diagnostics` en
 /// vez de escribirse directamente.
-pub fn prepare(req: &PrepareRequest, provider: &mut ProviderHandle) -> PrepareOutcome {
+pub fn prepare(
+    req: &PrepareRequest,
+    provider: &mut ProviderHandle,
+) -> Result<PrepareOutcome, String> {
     let t0 = Instant::now();
     let mut diagnostics = Vec::new();
 
-    let config = configuration::load(&req.project_root).expect("cargar configuración");
+    let config = configuration::load(&req.project_root).map_err(|e| e.to_string())?;
 
     // 1. Leer el Record canónico (por ahora: el primero disponible que
     // mencione el symbol solicitado; Fase E añade FTS/scope real).
     let records_dir = config.rationale_dir.join("records");
-    let records = storage::list_records(&records_dir).expect("leer records");
+    let records = storage::list_records(&records_dir)
+        .map_err(|e| format!("no se pudieron leer Records: {e}"))?;
 
     // 2. Resolver el target dentro del proyecto (protección path traversal,
     // Arquitectura §15.3). El Target resuelto se reutiliza como fuente única
@@ -246,12 +250,12 @@ pub fn prepare(req: &PrepareRequest, provider: &mut ProviderHandle) -> PrepareOu
         &req.budget,
     );
 
-    PrepareOutcome {
+    Ok(PrepareOutcome {
         packet,
         assessment: computed_assessment,
         diagnostics,
         latency_ms: t0.elapsed().as_millis(),
-    }
+    })
 }
 
 /// Salida de `health` — Rationale_v0.5.md §24: revisión, working tree,
@@ -268,8 +272,8 @@ pub struct HealthOutcome {
     pub provider_error: Option<String>,
 }
 
-pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> HealthOutcome {
-    let config = configuration::load(project_root).expect("cargar configuración");
+pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> Result<HealthOutcome, String> {
+    let config = configuration::load(project_root).map_err(|e| e.to_string())?;
     let snap = revision::snapshot(&config.project_root);
 
     let (provider_status, provider_coverage, provider_error) = match provider {
@@ -284,7 +288,7 @@ pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> HealthOutco
         ),
     };
 
-    HealthOutcome {
+    Ok(HealthOutcome {
         project_id: config.project_id,
         project_root: config.project_root,
         git_revision: snap.head,
@@ -292,7 +296,7 @@ pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> HealthOutco
         provider_status,
         provider_coverage,
         provider_error,
-    }
+    })
 }
 
 /// Un Record que gobierna el target, tal como lo expone `explain_target`.
@@ -329,14 +333,19 @@ pub struct ExplainOutcome {
 /// Records lo gobiernan por binding exacto, y qué parte es conocida vs
 /// desconocida. Recuperación determinista, sin heurísticas ni FTS todavía
 /// (eso es candidato de Fase F si el binding exacto resulta insuficiente).
-pub fn explain(target_spec: &str, project_root: &Path, repo_path: &Path) -> ExplainOutcome {
+pub fn explain(
+    target_spec: &str,
+    project_root: &Path,
+    repo_path: &Path,
+) -> Result<ExplainOutcome, String> {
     let mut diagnostics = Vec::new();
     let mut known = Vec::new();
     let mut unknown = Vec::new();
 
-    let config = configuration::load(project_root).expect("cargar configuración");
+    let config = configuration::load(project_root).map_err(|e| e.to_string())?;
     let records_dir = config.rationale_dir.join("records");
-    let records = storage::list_records(&records_dir).expect("leer records");
+    let records = storage::list_records(&records_dir)
+        .map_err(|e| format!("no se pudieron leer Records: {e}"))?;
 
     let target = project::resolve_target(repo_path, target_spec);
     let symbol = target.as_ref().ok().and_then(|t| t.symbol.clone());
@@ -416,14 +425,14 @@ pub fn explain(target_spec: &str, project_root: &Path, repo_path: &Path) -> Expl
         }
     }
 
-    ExplainOutcome {
+    Ok(ExplainOutcome {
         resolved_target,
         governing_records,
         subject,
         known,
         unknown,
         diagnostics,
-    }
+    })
 }
 
 /// Entrada de `finalize_change` (Rationale_v0.5.md §24, flujo de
@@ -495,7 +504,10 @@ fn sanitize_control_chars(text: &str) -> String {
 /// aprobado — eso es `rationale review`, Fase F6). Sigue el flujo de
 /// `Arquitectura §13.3` hasta "Write canonical files atomically", pero
 /// escribe en `.rationale/proposals/`, no en `.rationale/records/`.
-pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> FinalizeOutcome {
+pub fn finalize(
+    req: &FinalizeRequest,
+    provider: &mut ProviderHandle,
+) -> Result<FinalizeOutcome, String> {
     let mut diagnostics = Vec::new();
 
     // Validar ANTES de tocar disco o Git: `record_id` viene de un cliente
@@ -505,7 +517,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
     // traversal real, confirmado empíricamente y corregido aquí).
     if let Err(e) = storage::validate_safe_id(&req.record_id) {
         diagnostics.push(format!("record_id rechazado: {e}"));
-        return FinalizeOutcome {
+        return Ok(FinalizeOutcome {
             level: signals::CaptureLevel::GitOnly,
             signals: vec![],
             capture: capture::MechanicalCapture {
@@ -522,10 +534,10 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
             proposal_id: None,
             blocked_reason: Some(format!("record_id inseguro: {e}")),
             diagnostics,
-        };
+        });
     }
 
-    let config = configuration::load(&req.project_root).expect("cargar configuración");
+    let config = configuration::load(&req.project_root).map_err(|e| e.to_string())?;
 
     // Resolver el target principal es solo diagnóstico aquí — nunca decide
     // qué se captura (eso lo hace el diff mecánico completo); sirve para
@@ -553,7 +565,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
              ninguna propuesta (v0.5 §16)."
                 .to_string(),
         );
-        return FinalizeOutcome {
+        return Ok(FinalizeOutcome {
             level,
             signals: signal_list,
             capture: mechanical,
@@ -563,7 +575,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
             proposal_id: None,
             blocked_reason: Some("nivel Git-only: nada que capturar".to_string()),
             diagnostics,
-        };
+        });
     }
 
     // Resolver el Subject contra el canon real (Fase F4) antes de escribir
@@ -646,7 +658,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
     if let Some(reason) = &req.novelty_reason {
         if let Err(error) = subjects::validate_novelty_reason(reason, &resolution.candidates) {
             diagnostics.push(format!("novelty_reason rechazada: {error}"));
-            return FinalizeOutcome {
+            return Ok(FinalizeOutcome {
                 level,
                 signals: signal_list,
                 capture: mechanical,
@@ -656,7 +668,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
                 proposal_id: None,
                 blocked_reason: Some(format!("novelty_reason inválida: {error}")),
                 diagnostics,
-            };
+            });
         }
     }
 
@@ -670,7 +682,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
              novelty_reason explícito para proponer un Subject nuevo de todas formas (v0.5 §294)",
             resolution.action
         ));
-        return FinalizeOutcome {
+        return Ok(FinalizeOutcome {
             level,
             signals: signal_list,
             capture: mechanical,
@@ -683,7 +695,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
                     .to_string(),
             ),
             diagnostics,
-        };
+        });
     }
 
     if let Some(reason) = &req.novelty_reason {
@@ -796,7 +808,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
                 "propuesta escrita en {} (nivel={level:?}, subject={final_subject_id})",
                 proposal_path.display()
             ));
-            FinalizeOutcome {
+            Ok(FinalizeOutcome {
                 level,
                 signals: signal_list,
                 capture: mechanical,
@@ -806,11 +818,11 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
                 proposal_id: Some(req.record_id.clone()),
                 blocked_reason: None,
                 diagnostics,
-            }
+            })
         }
         Err(e) => {
             diagnostics.push(format!("error escribiendo la propuesta: {e}"));
-            FinalizeOutcome {
+            Ok(FinalizeOutcome {
                 level,
                 signals: signal_list,
                 capture: mechanical,
@@ -820,7 +832,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
                 proposal_id: None,
                 blocked_reason: Some(format!("error de escritura: {e}")),
                 diagnostics,
-            }
+            })
         }
     }
 }

@@ -11,10 +11,17 @@ Es local-first: sin servidor, sin cuenta, sin API de pago. La memoria de código
 ## Instalar
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.1/rationale-installer.sh | sh
 ```
 
 Esto coloca el binario en `~/.local/bin` (o `$RATIONALE_INSTALL_DIR`) y, si detecta `codex` en el `PATH`, registra el servidor MCP globalmente. Todavía no toca ningún proyecto — eso ocurre en el siguiente paso.
+
+Después de instalar una versión nueva, las siguientes actualizaciones se hacen
+con:
+
+```bash
+rationale update
+```
 
 Dentro del proyecto que quieres gobernar con Rationale:
 
@@ -54,6 +61,8 @@ Rationale sigue funcionando. `rationale health` reporta `"provider_status":"unav
 ## Verificar que quedó bien
 
 ```bash
+rationale --version
+rationale --help
 rationale health
 ```
 

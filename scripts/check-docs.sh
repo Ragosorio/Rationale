@@ -33,5 +33,10 @@ if rg -n 'target/release/rationale health' README.md docs; then
   exit 1
 fi
 
+if rg -n 'dogfood\.7|releases/latest/download/rationale-installer\.sh' site/src; then
+  echo "stale or floating Rationale installer reference found in the preview site" >&2
+  exit 1
+fi
+
 git diff --check
 echo "documentation checks passed"

@@ -18,6 +18,7 @@ rationale --help
 | `review-record <id>` | Ejecuta lifecycle sobre un Record aprobado. |
 | `install-agent` | Añade instrucciones y registro MCP de forma idempotente. |
 | `uninstall-agent` | Revierte solamente lo escrito por `install-agent`. |
+| `update` | Descarga e instala la última Release mediante el helper local. |
 
 Opciones frecuentes:
 
@@ -25,6 +26,7 @@ Opciones frecuentes:
 rationale health --project-root /ruta/proyecto
 rationale prepare "src/lib.rs::funcion" --project-root /ruta/proyecto
 rationale install-agent --project-root /ruta/proyecto --dry-run
+rationale update
 ```
 
 La CLI no ofrece una vía automática para aprobar Records. Si una versión

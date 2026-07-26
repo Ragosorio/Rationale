@@ -7,18 +7,21 @@ necesitan instalar Rust.
 ## Instalación desde GitHub
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.1/rationale-installer.sh | sh
 ```
 
 Variables soportadas:
 
-- `RATIONALE_VERSION=v0.0.0-dogfood.7` fija una versión concreta (sustitúyela
+- `RATIONALE_VERSION=v0.1.0-alpha.1` fija una versión concreta (sustitúyela
   por el tag publicado que quieras usar).
+- `RATIONALE_CHANNEL=preview` hace que `rationale update` busque la
+  prerelease más reciente; el canal por defecto es `stable`.
 - `RATIONALE_INSTALL_DIR=$HOME/.local/bin` cambia el destino.
 - `RATIONALE_SKIP_AGENT_CONFIG=1` evita editar la configuración MCP de Codex.
 
 El script descarga el artefacto de la plataforma, comprueba SHA-256, instala
-`rationale` y deja intactos todos los `.rationale/` de los proyectos.
+`rationale`, instala el helper `rationale-update` y deja intactos todos los
+`.rationale/` de los proyectos.
 
 ## 1. Compilar
 
@@ -65,7 +68,20 @@ Detecta el agente por binario en `PATH` (`claude`, `codex`, `cursor-agent`) o po
 
 ## Actualizar y desinstalar
 
-Reinstalar con `RATIONALE_VERSION` vacío actualiza a la Release más reciente.
+Después de una instalación nueva, actualiza el binario con:
+
+```bash
+rationale update
+```
+
+Para un usuario que todavía tiene una versión anterior a la que incluye el
+helper, ejecuta una vez:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.1/rationale-update.sh | sh
+```
+
+El helper conserva `RATIONALE_VERSION` si se fija para rollback o preview.
 El rollback consiste en reinstalar una versión anterior fijando esa variable.
 La desinstalación elimina solo el binario; nunca borra `.rationale/` de un
 proyecto automáticamente. Ver [`uninstall.md`](uninstall.md).

@@ -9,6 +9,8 @@
 El MVP no se considera producto terminado mientras dependa de clonar el
 repositorio e instalar Rust. El usuario necesita instalar Rationale desde
 GitHub, conectarlo a sus agentes y actualizarlo o quitarlo sin perder el canon.
+La instalación debe poder actualizar un binario ya instalado con un comando,
+sin obligar al usuario cleanroom a borrar manualmente el paquete anterior.
 
 ## Options considered
 
@@ -39,6 +41,12 @@ por crates.io.
 
 - Tier objetivo: macOS ARM64/x86_64, Linux x86_64/ARM64 y Windows x86_64.
 - La alfa requiere una prueba de máquina limpia, update y rollback.
+- El instalador distribuye también un helper `rationale-update`; el comando
+  `rationale update` lo ejecuta y conserva `.rationale/` y la configuración del
+  proyecto.
+- Mientras Rationale sea pre-1.0 se distinguen los canales `stable` y
+  `preview`: la landing no puede usar `releases/latest` si la versión visible
+  es una prerelease; debe fijar el tag preview explícito.
 - Una plataforma que no pase la matriz no se declara soportada en las notas.
 - Los binarios de release son una superficie de supply-chain y necesitan
   checksums y attestation antes de publicar.

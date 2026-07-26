@@ -1,9 +1,8 @@
-//! Framing JSON-RPC 2.0 `Content-Length` — ADR-0007.
+//! Codecs de transporte JSON-RPC.
 //!
-//! Verificado empíricamente dos veces contra Codebase Memory real: en el
-//! spike de lenguaje (`spikes/language/rust/src/main.rs`, cliente Python de
-//! prueba) y en el cliente de producción (`src/providers/codebase_memory.rs`,
-//! Fase D).
+//! Codebase Memory conserva el framing histórico `Content-Length`. El
+//! servidor de Rationale usa el transporte stdio MCP estándar, con un objeto
+//! JSON por línea. Son fronteras distintas y no deben compartir el codec.
 //!
 //! Límites explícitos (E7 — revisión adversarial de Fase E,
 //! `docs/work-items/adversarial-review-fase-e5-e6.md`, hallazgos A1/A2/B):
@@ -43,7 +42,7 @@ pub enum Frame {
 /// Lee un mensaje `Content-Length: N\r\n\r\n<body>`. Nunca bloquea de forma
 /// indefinida por sí solo (el caller decide timeouts, si aplica) y nunca
 /// asigna memoria sin cota ni dispara un abort del proceso.
-pub fn read_message(reader: &mut dyn Read) -> Frame {
+pub fn read_content_length(reader: &mut dyn Read) -> Frame {
     let mut header = Vec::new();
     let mut byte = [0u8; 1];
     loop {
@@ -93,10 +92,57 @@ pub fn read_message(reader: &mut dyn Read) -> Frame {
     }
 }
 
-/// Escribe un mensaje con el mismo framing `Content-Length`.
-pub fn write_message(writer: &mut dyn Write, value: &Value) -> std::io::Result<()> {
+/// Escribe un mensaje con el framing `Content-Length` de Codebase Memory.
+pub fn write_content_length(writer: &mut dyn Write, value: &Value) -> std::io::Result<()> {
     let body = serde_json::to_string(value).expect("serialize mcp message");
     write!(writer, "Content-Length: {}\r\n\r\n{}", body.len(), body)?;
+    writer.flush()
+}
+
+const MAX_STDIO_LINE_BYTES: usize = 16 * 1024 * 1024;
+
+/// Lee un mensaje MCP stdio: un objeto JSON UTF-8 terminado por `\n`.
+pub fn read_stdio_message(reader: &mut dyn Read) -> Frame {
+    let mut line = Vec::new();
+    let mut byte = [0u8; 1];
+    loop {
+        match reader.read(&mut byte) {
+            Ok(0) if line.is_empty() => return Frame::Eof,
+            Ok(0) => return Frame::Invalid("mensaje stdio terminado antes de newline".to_string()),
+            Ok(_) if byte[0] == b'\n' => break,
+            Ok(_) => {
+                line.push(byte[0]);
+                if line.len() > MAX_STDIO_LINE_BYTES {
+                    while let Ok(1) = reader.read(&mut byte) {
+                        if byte[0] == b'\n' {
+                            break;
+                        }
+                    }
+                    return Frame::Invalid(format!(
+                        "mensaje stdio excede el máximo permitido de {MAX_STDIO_LINE_BYTES} bytes"
+                    ));
+                }
+            }
+            Err(e) => return Frame::Invalid(format!("no se pudo leer stdin: {e}")),
+        }
+    }
+
+    if line.last() == Some(&b'\r') {
+        line.pop();
+    }
+    if line.is_empty() {
+        return Frame::Invalid("mensaje stdio vacío".to_string());
+    }
+    match serde_json::from_slice(&line) {
+        Ok(v) => Frame::Message(v),
+        Err(e) => Frame::Invalid(format!("mensaje stdio no es JSON válido: {e}")),
+    }
+}
+
+/// Escribe un mensaje MCP stdio sin contaminar stdout con texto auxiliar.
+pub fn write_stdio_message(writer: &mut dyn Write, value: &Value) -> std::io::Result<()> {
+    let body = serde_json::to_string(value).expect("serialize mcp message");
+    writeln!(writer, "{body}")?;
     writer.flush()
 }
 
@@ -109,10 +155,10 @@ mod tests {
     fn write_then_read_roundtrips() {
         let mut buf: Vec<u8> = Vec::new();
         let msg = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"});
-        write_message(&mut buf, &msg).unwrap();
+        write_content_length(&mut buf, &msg).unwrap();
 
         let mut cursor = std::io::Cursor::new(buf);
-        match read_message(&mut cursor) {
+        match read_content_length(&mut cursor) {
             Frame::Message(parsed) => assert_eq!(parsed, msg),
             other => panic!("esperaba Frame::Message, obtuve {other:?}"),
         }
@@ -121,7 +167,7 @@ mod tests {
     #[test]
     fn read_message_returns_eof_on_empty_input() {
         let mut cursor = std::io::Cursor::new(Vec::<u8>::new());
-        assert!(matches!(read_message(&mut cursor), Frame::Eof));
+        assert!(matches!(read_content_length(&mut cursor), Frame::Eof));
     }
 
     /// E7 hallazgo A1 — un `Content-Length` astronómico nunca debe intentar
@@ -130,7 +176,10 @@ mod tests {
     fn content_length_above_max_is_rejected_without_allocating() {
         let mut cursor =
             std::io::Cursor::new(b"Content-Length: 999999999999999999\r\n\r\n".to_vec());
-        assert!(matches!(read_message(&mut cursor), Frame::Invalid(_)));
+        assert!(matches!(
+            read_content_length(&mut cursor),
+            Frame::Invalid(_)
+        ));
     }
 
     /// E7 hallazgo A2 — un header que nunca completa `\r\n\r\n` debe
@@ -139,7 +188,10 @@ mod tests {
     fn header_without_terminator_is_rejected_after_max_size() {
         let junk = vec![b'X'; MAX_HEADER_BYTES + 1024];
         let mut cursor = std::io::Cursor::new(junk);
-        assert!(matches!(read_message(&mut cursor), Frame::Invalid(_)));
+        assert!(matches!(
+            read_content_length(&mut cursor),
+            Frame::Invalid(_)
+        ));
     }
 
     /// E7 hallazgo B — un body que no parsea como JSON debe distinguirse de
@@ -151,7 +203,10 @@ mod tests {
         let mut bytes = header.into_bytes();
         bytes.extend_from_slice(body);
         let mut cursor = std::io::Cursor::new(bytes);
-        assert!(matches!(read_message(&mut cursor), Frame::Invalid(_)));
+        assert!(matches!(
+            read_content_length(&mut cursor),
+            Frame::Invalid(_)
+        ));
     }
 
     /// E7 hallazgo B — JSON sintácticamente válido pero por encima del
@@ -165,6 +220,28 @@ mod tests {
         let mut bytes = header.into_bytes();
         bytes.extend_from_slice(body.as_bytes());
         let mut cursor = std::io::Cursor::new(bytes);
-        assert!(matches!(read_message(&mut cursor), Frame::Invalid(_)));
+        assert!(matches!(
+            read_content_length(&mut cursor),
+            Frame::Invalid(_)
+        ));
+    }
+
+    #[test]
+    fn stdio_newline_roundtrips() {
+        let msg = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"});
+        let mut buf = Vec::new();
+        write_stdio_message(&mut buf, &msg).unwrap();
+        assert!(buf.ends_with(b"\n"));
+        let mut cursor = std::io::Cursor::new(buf);
+        match read_stdio_message(&mut cursor) {
+            Frame::Message(parsed) => assert_eq!(parsed, msg),
+            other => panic!("esperaba Frame::Message, obtuve {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stdio_malformed_message_is_invalid() {
+        let mut cursor = std::io::Cursor::new(b"{not json}\n".to_vec());
+        assert!(matches!(read_stdio_message(&mut cursor), Frame::Invalid(_)));
     }
 }

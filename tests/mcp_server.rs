@@ -3,8 +3,8 @@
 //! "Un `println!` perdido rompe la sesión entera" (`Arquitectura §11.1`).
 //! Este test spawnea el binario real (`rationale serve`) y hace N llamadas
 //! seguidas, incluyendo una herramienta desconocida y un target
-//! inexistente. Si un solo byte de stdout no formara parte de un mensaje
-//! `Content-Length` bien formado, el parseo de framing de abajo fallaría
+//! inexistente. Si un solo byte de stdout no formara parte de una línea JSON
+//! MCP bien formada, el parseo de framing de abajo fallaría
 //! inmediatamente — esa es la aserción real, no una lectura superficial.
 //!
 //! No reutiliza `src/mcp/framing.rs` porque este crate solo tiene binario
@@ -13,7 +13,7 @@
 //! honesto que inventar un `lib.rs` solo para el test.
 
 use serde_json::{json, Value};
-use std::io::{BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 
 struct TestClient {
@@ -43,56 +43,29 @@ impl TestClient {
 
     fn send(&mut self, value: &Value) {
         let body = serde_json::to_string(value).unwrap();
-        write!(self.stdin, "Content-Length: {}\r\n\r\n{}", body.len(), body).unwrap();
+        writeln!(self.stdin, "{body}").unwrap();
         self.stdin.flush().unwrap();
     }
 
     /// Envía bytes crudos sin pasar por serialización JSON — necesario para
-    /// los ataques de E7 (Content-Length astronómico, body malformado) que
-    /// por definición no son JSON válido.
+    /// probar mensajes malformados que por definición no son JSON válido.
     fn send_raw(&mut self, bytes: &[u8]) {
         self.stdin.write_all(bytes).unwrap();
         self.stdin.flush().unwrap();
     }
 
-    /// Falla el test (no devuelve `Option`/`Result` silencioso) si stdout no
-    /// contiene un mensaje `Content-Length` bien formado — esa falla EN SÍ
-    /// es la detección de un `println!` perdido rompiendo el protocolo.
+    /// Falla el test si stdout no contiene exactamente una línea JSON válida;
+    /// texto auxiliar en stdout rompería el protocolo MCP.
     fn recv(&mut self) -> Value {
-        let mut header = Vec::new();
-        let mut byte = [0u8; 1];
-        loop {
-            let n = self
-                .reader
-                .read(&mut byte)
-                .expect("leer stdout no debe fallar");
-            assert_ne!(n, 0, "EOF inesperado — el servidor murió a mitad de sesión");
-            header.push(byte[0]);
-            if header.ends_with(b"\r\n\r\n") {
-                break;
-            }
-            assert!(
-                header.len() < 4096,
-                "header demasiado largo — stdout está corrupto (posible println! perdido): {:?}",
-                String::from_utf8_lossy(&header)
-            );
-        }
-        let header_str = String::from_utf8_lossy(&header);
-        let length: usize = header_str
-            .lines()
-            .find(|l| l.to_lowercase().starts_with("content-length:"))
-            .expect("cada mensaje debe traer Content-Length — stdout corrupto")
-            .split(':')
-            .nth(1)
-            .unwrap()
-            .trim()
-            .parse()
-            .expect("Content-Length debe ser un entero válido");
-        let mut body = vec![0u8; length];
+        let mut line = String::new();
         self.reader
-            .read_exact(&mut body)
-            .expect("body completo debe poder leerse");
-        serde_json::from_slice(&body).expect("body debe ser JSON válido")
+            .read_line(&mut line)
+            .expect("leer stdout no debe fallar");
+        assert!(
+            !line.is_empty(),
+            "EOF inesperado — el servidor murió a mitad de sesión"
+        );
+        serde_json::from_str(line.trim_end()).expect("cada línea stdout debe ser JSON válido")
     }
 
     fn initialize(&mut self) {
@@ -142,9 +115,8 @@ fn stdout_stays_clean_across_a_sequence_of_calls_including_errors() {
     let bad_target = client.call(3, "prepare_change", json!({"target": "no/existe.rs::nada"}));
     assert!(bad_target.get("result").is_some());
 
-    // project_root inválido -> dispara el panic interno de
-    // `configuration::load(...).expect(...)`; debe normalizarse a isError
-    // sin tumbar el proceso ni corromper el framing de las llamadas
+    // project_root inválido -> debe convertirse en un error de herramienta
+    // limpio, sin tumbar el proceso ni corromper el framing de las llamadas
     // siguientes (regla no negociable de E5.3).
     let bad_root = client.call(
         4,
@@ -218,19 +190,14 @@ fn prepare_change_intent_aware_detects_conflict_without_blocking() {
     );
 }
 
-/// E7 hallazgo A1 — reproduce el ataque exacto de la revisión adversarial
-/// contra el binario real compilado: un `Content-Length` astronómico antes
-/// disparaba `handle_alloc_error` (SIGABRT). Debe rechazarse sin abortar el
-/// proceso, y la sesión debe seguir viva para la llamada siguiente.
+/// Un mensaje stdio sobredimensionado debe rechazarse sin abortar el proceso,
+/// y la sesión debe seguir viva para la llamada siguiente.
 #[test]
-fn astronomical_content_length_does_not_abort_the_process() {
+fn oversized_stdio_message_does_not_abort_the_process() {
     let mut client = TestClient::spawn();
     client.initialize();
 
-    // Sin body: el límite de tamaño rechaza el header apenas se parsea
-    // Content-Length, antes de intentar leer ningún byte del body (por
-    // diseño — nunca se asigna memoria para un tamaño fuera de cota).
-    client.send_raw(b"Content-Length: 999999999999999999\r\n\r\n");
+    client.send_raw(format!("{}\n", "x".repeat(16 * 1024 * 1024 + 1)).as_bytes());
 
     // El servidor debe responder con un error de parseo JSON-RPC en vez de
     // morir en silencio — si el proceso hubiera abortado, `recv()` fallaría
@@ -251,9 +218,7 @@ fn malformed_json_does_not_kill_the_persistent_session() {
     let mut client = TestClient::spawn();
     client.initialize();
 
-    let body = b"{not valid json!!!";
-    client.send_raw(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes());
-    client.send_raw(body);
+    client.send_raw(b"{not valid json!!!\n");
 
     let resp = client.recv();
     assert_eq!(
@@ -275,8 +240,7 @@ fn deeply_nested_json_does_not_kill_the_persistent_session() {
     client.initialize();
 
     let depth = 200;
-    let body = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
-    client.send_raw(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes());
+    let body = format!("{}{}\n", "[".repeat(depth), "]".repeat(depth));
     client.send_raw(body.as_bytes());
 
     let resp = client.recv();

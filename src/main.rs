@@ -26,6 +26,7 @@ mod storage;
 mod subjects;
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -33,6 +34,10 @@ fn main() {
 
     if command.is_empty() || command == "-h" || command == "--help" {
         print_usage();
+        return;
+    }
+    if command == "-V" || command == "--version" {
+        println!("rationale {}", env!("RATIONALE_BUILD_VERSION"));
         return;
     }
 
@@ -48,6 +53,7 @@ fn main() {
                 | "review-record"
                 | "install-agent"
                 | "uninstall-agent"
+                | "update"
         )
     {
         print_command_help(command);
@@ -68,6 +74,7 @@ fn main() {
         "review-record" => cmd_review_record(command_args),
         "install-agent" => cmd_install_agent(command_args),
         "uninstall-agent" => cmd_uninstall_agent(command_args),
+        "update" => cmd_update(command_args),
         _ => {
             eprintln!("comando desconocido: {command}");
             print_usage();
@@ -78,9 +85,10 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "Uso: rationale <init|health|prepare|serve|review|review-record|install-agent|uninstall-agent> [opciones]"
+        "Uso: rationale <init|health|prepare|serve|review|review-record|install-agent|uninstall-agent|update> [opciones]"
     );
     println!("  rationale --help");
+    println!("  rationale --version");
     println!("  rationale init [--skip-agent-config]");
     println!("  rationale health [--project-root <path>]");
     println!(
@@ -101,6 +109,7 @@ fn print_usage() {
     println!(
         "  rationale uninstall-agent [--project-root <path>]   # revierte exactamente lo que install-agent escribió"
     );
+    println!("  rationale update   # descarga e instala la última Release disponible");
 }
 
 fn print_command_help(command: &str) {
@@ -115,7 +124,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]\n\nCompila un ContextPacket antes de un cambio."
         ),
         "serve" => println!(
-            "Uso: rationale serve\n\nInicia el servidor MCP persistente."
+            "Uso: rationale serve\n\nInicia el servidor MCP persistente por stdin/stdout. El proceso permanece abierto esperando mensajes del agente."
         ),
         "review" => println!(
             "Uso: rationale review [--project-root <path>]\n\nRevisa propuestas pendientes con confirmación humana."
@@ -128,6 +137,9 @@ fn print_command_help(command: &str) {
         ),
         "uninstall-agent" => println!(
             "Uso: rationale uninstall-agent [--project-root <path>]\n\nRevierte exactamente lo que install-agent escribió."
+        ),
+        "update" => println!(
+            "Uso: rationale update\n\nDescarga e instala la última Release mediante el helper instalado junto al binario."
         ),
         _ => unreachable!("solo se solicita ayuda para comandos conocidos"),
     }
@@ -157,6 +169,7 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
             &["--project-root"],
         ),
         "uninstall-agent" => validate_flags(command, args, &[], &["--project-root"]),
+        "update" => validate_flags(command, args, &[], &[]),
         _ => Ok(()),
     }
 }
@@ -204,8 +217,27 @@ fn parse_string_flag(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
+fn resolve_project_root(args: &[String]) -> Result<PathBuf, String> {
+    let start = match parse_flag(args, "--project-root") {
+        Some(path) => path,
+        None => std::env::current_dir().map_err(|e| format!("no se pudo determinar cwd: {e}"))?,
+    };
+    configuration::find_project_root(&start).ok_or_else(|| {
+        format!(
+            "no se encontró .rationale/ desde {}; usa --project-root con la raíz de un proyecto inicializado",
+            start.display()
+        )
+    })
+}
+
+fn fail<T>(error: impl std::fmt::Display) -> T {
+    eprintln!("error: {error}");
+    std::process::exit(1);
+}
+
 fn cmd_init(args: &[String]) {
-    let cwd = std::env::current_dir().expect("cwd");
+    let cwd =
+        std::env::current_dir().unwrap_or_else(|e| fail(format!("no se pudo determinar cwd: {e}")));
     let rationale_dir = cwd.join(".rationale");
     if rationale_dir.exists() {
         println!(
@@ -222,7 +254,8 @@ fn cmd_init(args: &[String]) {
         "schemas",
         "migrations",
     ] {
-        std::fs::create_dir_all(rationale_dir.join(sub)).expect("crear subdirectorio");
+        std::fs::create_dir_all(rationale_dir.join(sub))
+            .unwrap_or_else(|e| fail(format!("no se pudo crear .rationale/{sub}: {e}")));
     }
     println!(
         "{{\"status\":\"initialized\",\"path\":\"{}\"}}",
@@ -265,12 +298,10 @@ fn cmd_init(args: &[String]) {
 }
 
 fn cmd_health(args: &[String]) {
-    let project_root = parse_flag(args, "--project-root")
-        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
-        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
 
     let mut provider = providers::ProviderHandle::spawn();
-    let outcome = pipeline::health(&project_root, &mut provider);
+    let outcome = pipeline::health(&project_root, &mut provider).unwrap_or_else(fail);
 
     let provider_line = match &outcome.provider_error {
         Some(e) => format!("\"provider_status\":\"unreachable\",\"provider_error\":\"{e}\""),
@@ -303,11 +334,9 @@ fn cmd_prepare(args: &[String]) {
         .iter()
         .find(|a| !a.starts_with("--"))
         .cloned()
-        .expect("uso: rationale prepare <target-spec>");
+        .unwrap_or_else(|| fail("uso: rationale prepare <target-spec>"));
 
-    let project_root = parse_flag(args, "--project-root")
-        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
-        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
     let repo_path = parse_flag(args, "--repo-path").unwrap_or_else(|| project_root.clone());
     let intent = parse_string_flag(args, "--intent");
 
@@ -321,7 +350,8 @@ fn cmd_prepare(args: &[String]) {
             budget: retrieval::Budget::default(),
         },
         &mut provider,
-    );
+    )
+    .unwrap_or_else(fail);
 
     for line in &outcome.diagnostics {
         eprintln!("{line}");
@@ -376,10 +406,8 @@ fn find_rationale_local(project_root: &Path) -> PathBuf {
 /// puede hacer preguntas interactivas; esta es la única vía que promueve
 /// una propuesta a `.rationale/records/` con una `Approval` real.
 fn cmd_review(args: &[String]) {
-    let project_root = parse_flag(args, "--project-root")
-        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
-        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
-    let config = configuration::load(&project_root).expect("cargar configuración");
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let config = configuration::load(&project_root).unwrap_or_else(fail);
 
     let pending_result = review::list_pending_detailed(&config.rationale_dir);
     for (path, error) in &pending_result.skipped {
@@ -514,10 +542,8 @@ fn cmd_review_record(args: &[String]) {
             eprintln!("uso: rationale review-record <record-id> [--project-root <path>]");
             std::process::exit(1);
         });
-    let project_root = parse_flag(args, "--project-root")
-        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
-        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
-    let config = configuration::load(&project_root).expect("cargar configuración");
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let config = configuration::load(&project_root).unwrap_or_else(fail);
     let record_path = config
         .rationale_dir
         .join("records")
@@ -526,7 +552,7 @@ fn cmd_review_record(args: &[String]) {
         Ok(record) => record,
         Err(error) => {
             eprintln!("no se pudo leer el Record '{record_id}': {error}");
-            return;
+            std::process::exit(1);
         }
     };
     let reviewer_actor = git_reviewer_actor(&project_root);
@@ -696,9 +722,7 @@ fn cmd_install_agent(args: &[String]) {
         return;
     }
 
-    let project_root = parse_flag(args, "--project-root")
-        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
-        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
     let rationale_local = find_rationale_local(&project_root);
 
     println!("{}", mascot::art(mascot::Mood::Searching));
@@ -730,9 +754,7 @@ fn cmd_install_agent(args: &[String]) {
 /// `rationale uninstall-agent` — revierte exactamente lo que `install-agent`
 /// escribió, dejando cualquier contenido previo del usuario intacto.
 fn cmd_uninstall_agent(args: &[String]) {
-    let project_root = parse_flag(args, "--project-root")
-        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
-        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
     let rationale_local = find_rationale_local(&project_root);
 
     match agents::uninstall(&project_root, &rationale_local) {
@@ -745,6 +767,50 @@ fn cmd_uninstall_agent(args: &[String]) {
             eprintln!("uninstall-agent falló: {error}");
             std::process::exit(1);
         }
+    }
+}
+
+fn cmd_update(args: &[String]) {
+    if !args.is_empty() {
+        fail::<()>("update no acepta opciones; usa 'rationale update --help'");
+    }
+    let executable = std::env::current_exe()
+        .unwrap_or_else(|e| fail(format!("no se pudo localizar rationale: {e}")));
+
+    #[cfg(unix)]
+    let status = {
+        let helper = executable.with_file_name("rationale-update");
+        if !helper.is_file() {
+            fail::<()>(
+                "no se encontró el helper de actualización junto al binario; ejecuta 'curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-update.sh | sh' una vez",
+            );
+        }
+        Command::new(helper).status().unwrap_or_else(|e| {
+            fail(format!(
+                "no se pudo ejecutar el helper de actualización: {e}"
+            ))
+        })
+    };
+
+    #[cfg(windows)]
+    let status = {
+        let helper = executable.with_file_name("rationale-update.ps1");
+        if !helper.is_file() {
+            return fail("no se encontró rationale-update.ps1 junto al binario");
+        }
+        Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(helper)
+            .status()
+            .unwrap_or_else(|e| {
+                fail(format!(
+                    "no se pudo ejecutar el helper de actualización: {e}"
+                ))
+            })
+    };
+
+    if !status.success() {
+        fail::<()>(format!("la actualización terminó con {status}"));
     }
 }
 

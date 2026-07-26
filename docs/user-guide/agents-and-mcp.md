@@ -17,6 +17,10 @@ rationale install-agent
 e idempotentes y registra el servidor MCP correspondiente. Reinicia la sesión
 del agente después de instalar una configuración nueva.
 
+`rationale serve` es un servidor stdio: permanece abierto y no muestra un
+banner en stdout. El agente debe enviarle JSON-RPC por líneas; una ejecución
+manual que parece silenciosa está esperando tráfico, no bloqueada.
+
 Para revertir exactamente esos cambios:
 
 ```bash
