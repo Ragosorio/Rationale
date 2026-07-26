@@ -17,6 +17,7 @@ mod pipeline;
 mod project;
 mod providers;
 mod retrieval;
+mod review;
 mod revision;
 mod signals;
 mod storage;
@@ -33,15 +34,19 @@ fn main() {
         "health" => cmd_health(&args[2..]),
         "prepare" => cmd_prepare(&args[2..]),
         "serve" => mcp::server::run(),
+        "review" => cmd_review(&args[2..]),
         _ => {
-            eprintln!("Uso: rationale <init|health|prepare|serve> [opciones]");
+            eprintln!("Uso: rationale <init|health|prepare|serve|review> [opciones]");
             eprintln!("  rationale init");
             eprintln!("  rationale health [--project-root <path>]");
             eprintln!(
                 "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]"
             );
             eprintln!(
-                "  rationale serve   # servidor MCP (prepare_change, explain_target, health)"
+                "  rationale serve   # servidor MCP (prepare_change, explain_target, health, finalize_change)"
+            );
+            eprintln!(
+                "  rationale review [--project-root <path>]   # confirma propuestas pendientes, una a la vez"
             );
             std::process::exit(1);
         }
@@ -183,5 +188,144 @@ fn find_rationale_local(project_root: &Path) -> PathBuf {
         if !current.pop() {
             return project_root.join(".rationale-local");
         }
+    }
+}
+
+/// `rationale review` (Fase F6) — confirmación humana de propuestas, una a
+/// la vez. Nunca corre dentro de `rationale serve`: un servidor MCP no
+/// puede hacer preguntas interactivas; esta es la única vía que promueve
+/// una propuesta a `.rationale/records/` con una `Approval` real.
+fn cmd_review(args: &[String]) {
+    let project_root = parse_flag(args, "--project-root")
+        .or_else(|| configuration::find_project_root(&std::env::current_dir().unwrap()))
+        .expect("no se encontró .rationale/; usa --project-root o corre dentro de un proyecto Rationale");
+    let config = configuration::load(&project_root).expect("cargar configuración");
+
+    let pending = review::list_pending(&config.rationale_dir);
+    if pending.is_empty() {
+        println!("No hay propuestas pendientes en .rationale/proposals/.");
+        return;
+    }
+
+    let reviewer_actor = git_reviewer_actor(&project_root);
+    let rationale_local = find_rationale_local(&project_root);
+    let stdin = std::io::stdin();
+
+    println!(
+        "{} propuesta(s) pendiente(s). Una por pantalla — nunca el YAML completo (v0.5 §15.5).",
+        pending.len()
+    );
+
+    for proposal in pending {
+        let record_id = proposal.record.id.clone();
+        let elapsed_ms = proposal
+            .proposed_at
+            .elapsed()
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+
+        println!("\n=== Propuesta: {record_id} ===");
+        println!("{}", review::describe_effect(&proposal.record));
+
+        let word = review::required_confirmation_word(&proposal.record);
+        println!(
+            "\nEscribe '{word}' para aprobar tal cual, 'c' para corregir el statement antes de aprobar, 'r' para rechazar, o cualquier otra cosa para saltar:"
+        );
+
+        let mut input = String::new();
+        if stdin.read_line(&mut input).is_err() {
+            eprintln!("no se pudo leer stdin — saltando el resto de propuestas");
+            break;
+        }
+        let input = input.trim().to_string();
+
+        let decision = if input == word {
+            match review::approve(&config.rationale_dir, proposal, None, &reviewer_actor) {
+                Ok(dest) => {
+                    println!("Aprobado -> {}", dest.display());
+                    "approved"
+                }
+                Err(e) => {
+                    eprintln!("error aprobando: {e}");
+                    "error"
+                }
+            }
+        } else if input == "c" {
+            println!("Nuevo statement (una línea):");
+            let mut new_statement = String::new();
+            let _ = stdin.read_line(&mut new_statement);
+            let new_statement = new_statement.trim().to_string();
+
+            println!("Escribe '{word}' para confirmar la aprobación con el texto corregido, cualquier otra cosa para abortar:");
+            let mut confirm = String::new();
+            let _ = stdin.read_line(&mut confirm);
+            if confirm.trim() == word {
+                match review::approve(
+                    &config.rationale_dir,
+                    proposal,
+                    Some(new_statement),
+                    &reviewer_actor,
+                ) {
+                    Ok(dest) => {
+                        println!("Aprobado (corregido) -> {}", dest.display());
+                        "approved-corrected"
+                    }
+                    Err(e) => {
+                        eprintln!("error aprobando: {e}");
+                        "error"
+                    }
+                }
+            } else {
+                println!("Aborted — la propuesta sigue pendiente.");
+                "aborted"
+            }
+        } else if input == "r" {
+            match review::reject(&config.rationale_dir, &proposal) {
+                Ok(dest) => {
+                    println!("Rechazado -> {}", dest.display());
+                    "rejected"
+                }
+                Err(e) => {
+                    eprintln!("error rechazando: {e}");
+                    "error"
+                }
+            }
+        } else {
+            println!("Saltado — la propuesta sigue pendiente.");
+            "skipped"
+        };
+
+        let _ = review::log_decision(&rationale_local, &record_id, decision, elapsed_ms);
+    }
+}
+
+/// Identidad del revisor humano — reusa `git config user.name`/`user.email`
+/// del propio repo, nunca inventa una identidad ni asume "el agente" como
+/// aprobador (`Proceso §21`: la aprobación es de un humano).
+fn git_reviewer_actor(repo_path: &Path) -> String {
+    let name = run_git_config(repo_path, "user.name");
+    let email = run_git_config(repo_path, "user.email");
+    match (name, email) {
+        (Some(n), Some(e)) => format!("user:{n} <{e}>"),
+        (Some(n), None) => format!("user:{n}"),
+        _ => "user:local-reviewer".to_string(),
+    }
+}
+
+fn run_git_config(repo_path: &Path, key: &str) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .args(["config", "--get", key])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
     }
 }
