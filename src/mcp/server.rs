@@ -65,7 +65,7 @@ pub fn run() {
                     "result": {
                         "protocolVersion": PROTOCOL_VERSION,
                         "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "rationale", "version": env!("CARGO_PKG_VERSION")}
+                        "serverInfo": {"name": "rationale", "version": env!("RATIONALE_BUILD_VERSION")}
                     }
                 });
                 let _ = framing::write_stdio_message(&mut writer, &resp);

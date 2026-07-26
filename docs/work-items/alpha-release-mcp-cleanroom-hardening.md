@@ -288,7 +288,7 @@ Se implementaron los cambios P1-P4 y la validación local de P5:
 - El helper distingue `stable` y `preview`: la alfa empaquetada busca la
   prerelease más reciente y no puede degradar silenciosamente a `latest`
   estable.
-- La landing y el quickstart apuntan explícitamente a `v0.1.0-alpha.3` para
+- La landing y el quickstart apuntan explícitamente a `v0.1.0-alpha.4` para
   no confundir una prerelease con GitHub `latest`; el workflow marca tags con
   guion como prerelease y publica los helpers.
 - Pasaron `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
@@ -297,10 +297,10 @@ Se implementaron los cambios P1-P4 y la validación local de P5:
 - El smoke independiente `initialize` por stdin/stdout respondió en menos de
   un segundo y los 11 tests MCP mantuvieron sesiones persistentes.
 
-Las dos primeras publicaciones de la alfa (`v0.1.0-alpha.1` y
-`v0.1.0-alpha.2`) expusieron un defecto en el
+Las primeras publicaciones de la alfa (`v0.1.0-alpha.1` a
+`v0.1.0-alpha.3`) expusieron defectos en el
 pipeline preview del helper (`curl` recibía SIGPIPE por un `head` prematuro).
-La corrección se publicará como `v0.1.0-alpha.3`; la landing y los runbooks
+La corrección se publicará como `v0.1.0-alpha.4`; la landing y los runbooks
 apuntan a ese tag para que la ruta de actualización sea realmente usable.
 
 Pendiente fuera del checkout local: repetir la instalación desde una cuenta
