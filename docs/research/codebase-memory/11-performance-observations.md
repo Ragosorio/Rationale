@@ -54,6 +54,12 @@ Ninguna documentación de CBM publica benchmarks de latencia CLI vs MCP.
 2. **A favor de ADR-0002 (MCP sobre CLI subprocess):** una vez pagado el `initialize`, el costo por-llamada de MCP (15-30ms) es sustancialmente mejor que reinvocar la CLI (que repetiría el costo completo, `04-cli-contracts.md`). Esto es evidencia concreta a favor de que el adaptador de Rationale mantenga **una sesión MCP persistente de larga duración** (un solo `initialize` por vida del proceso de Rationale), en vez de subprocesos CLI repetidos.
 3. Próximo research item, ahora más acotado: confirmar si conectar contra el `daemon` persistente de CBM (`daemon start`) permite evitar el costo de `initialize` en clientes MCP nuevos — determinaría si Rationale puede reconectar rápido tras un reinicio propio sin pagar 6.8s de nuevo.
 
+## Nota (E7, revisión adversarial de Fase E) — la cifra de 6.8s no se reprodujo en el entorno de desarrollo actual
+
+`docs/work-items/adversarial-review-fase-e5-e6.md` (hallazgo G) midió `initialize` fresco contra `codebase-memory-mcp` 0.8.1 (misma versión, mismo binario) en **~15-20ms**, no 6.8s, en la máquina de desarrollo donde se implementó la superficie MCP de Fase E5. La discrepancia no se explica todavía — candidatos no descartados: caché en disco ya caliente (`~/.cache/codebase-memory-mcp/*.db`, confirmado no vacío) que evitaría el costo de indexación original medido bajo el nombre de "`initialize`"; un entorno de medición distinto al de esta nota; o un cambio real de comportamiento entre la fecha de esta investigación y hoy.
+
+Esto **no invalida el mecanismo de amortización de Fase E5** (la sesión persistente sigue siendo estrictamente mejor que una CLI de un solo disparo, y se midió una mejora real de ~4-5x, 150ms→33ms, en ese mismo entorno) — pero la magnitud dramática que motivó ADR-0002 y esta nota de research podría estar sobrestimada para desarrollo local con caché caliente. Próximo experimento sugerido: medir `initialize` con `~/.cache/codebase-memory-mcp/` vacío (contenedor limpio) para aislar la variable de caché y confirmar si el 6.8s original correspondía a indexación en frío, no al handshake del protocolo en sí.
+
 ## Reproducir
 
 ```bash

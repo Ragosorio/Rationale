@@ -47,6 +47,14 @@ impl TestClient {
         self.stdin.flush().unwrap();
     }
 
+    /// Envía bytes crudos sin pasar por serialización JSON — necesario para
+    /// los ataques de E7 (Content-Length astronómico, body malformado) que
+    /// por definición no son JSON válido.
+    fn send_raw(&mut self, bytes: &[u8]) {
+        self.stdin.write_all(bytes).unwrap();
+        self.stdin.flush().unwrap();
+    }
+
     /// Falla el test (no devuelve `Option`/`Result` silencioso) si stdout no
     /// contiene un mensaje `Content-Length` bien formado — esa falla EN SÍ
     /// es la detección de un `println!` perdido rompiendo el protocolo.
@@ -187,4 +195,72 @@ fn prepare_change_intent_aware_detects_conflict_without_blocking() {
         authority, "unreviewed",
         "una constraint sin aprobación nunca se sirve como aprobada"
     );
+}
+
+/// E7 hallazgo A1 — reproduce el ataque exacto de la revisión adversarial
+/// contra el binario real compilado: un `Content-Length` astronómico antes
+/// disparaba `handle_alloc_error` (SIGABRT). Debe rechazarse sin abortar el
+/// proceso, y la sesión debe seguir viva para la llamada siguiente.
+#[test]
+fn astronomical_content_length_does_not_abort_the_process() {
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    // Sin body: el límite de tamaño rechaza el header apenas se parsea
+    // Content-Length, antes de intentar leer ningún byte del body (por
+    // diseño — nunca se asigna memoria para un tamaño fuera de cota).
+    client.send_raw(b"Content-Length: 999999999999999999\r\n\r\n");
+
+    // El servidor debe responder con un error de parseo JSON-RPC en vez de
+    // morir en silencio — si el proceso hubiera abortado, `recv()` fallaría
+    // al leer EOF inesperado.
+    let resp = client.recv();
+    assert_eq!(resp["error"]["code"], -32700);
+
+    // La sesión sigue viva: una llamada normal después del ataque funciona.
+    let health = client.call(99, "health", json!({}));
+    assert_eq!(health["result"]["isError"], false);
+}
+
+/// E7 hallazgo B — reproduce el ataque exacto: JSON sintácticamente
+/// malformado. Antes era indistinguible de EOF y terminaba la sesión
+/// persistente completa en silencio (exit 0, sin aviso al cliente).
+#[test]
+fn malformed_json_does_not_kill_the_persistent_session() {
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let body = b"{not valid json!!!";
+    client.send_raw(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes());
+    client.send_raw(body);
+
+    let resp = client.recv();
+    assert_eq!(
+        resp["error"]["code"], -32700,
+        "un mensaje malformado debe responder con parse error, no matar la sesión"
+    );
+
+    // La prueba definitiva: la sesión sigue viva y respondiendo con framing
+    // correcto después del mensaje malformado.
+    let health = client.call(100, "health", json!({}));
+    assert_eq!(health["result"]["isError"], false);
+}
+
+/// E7 hallazgo B (variante) — JSON válido pero por encima del límite de
+/// recursión de `serde_json` (128 niveles) tampoco debe matar la sesión.
+#[test]
+fn deeply_nested_json_does_not_kill_the_persistent_session() {
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let depth = 200;
+    let body = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
+    client.send_raw(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes());
+    client.send_raw(body.as_bytes());
+
+    let resp = client.recv();
+    assert_eq!(resp["error"]["code"], -32700);
+
+    let health = client.call(101, "health", json!({}));
+    assert_eq!(health["result"]["isError"], false);
 }

@@ -159,13 +159,16 @@ pub fn compile_packet(
         })
         .collect();
 
+    // E7 hallazgo E: `detect_conflict` es recall barato por solapamiento
+    // léxico, no un veredicto semántico — el mensaje lo dice explícitamente
+    // para que un consumidor no lo lea como una afirmación definitiva.
     let intent_conflicts: Vec<String> = match intent {
         Some(text) => selected
             .iter()
             .filter(|r| detect_conflict(text, &r.statement))
             .map(|r| {
                 format!(
-                    "La intención puede entrar en conflicto con '{}': {}",
+                    "Posible solapamiento léxico (no verificado semánticamente) entre la intención y '{}': {}",
                     r.id, r.statement
                 )
             })
@@ -179,7 +182,9 @@ pub fn compile_packet(
         .iter()
         .flat_map(|r| r.risks.iter().map(|risk| risk.statement.clone()))
         .collect();
+    let risks_after_selection = known_risks.len();
     known_risks.truncate(budget.max_risks);
+    let risks_dropped_by_max_risks = risks_after_selection.saturating_sub(known_risks.len());
 
     let mut affected_targets: Vec<String> = Vec::new();
     if let Some(t) = &resolved_target {
@@ -194,12 +199,13 @@ pub fn compile_packet(
             }
         }
     }
+    let affected_targets_before_budget = affected_targets.len();
 
     let total_critical_matching = records
         .iter()
         .filter(|r| r.kind == "constraint" && r.severity == "critical")
         .count();
-    let mut additional_history_available = total_critical_matching.saturating_sub(selected.len());
+    let critical_constraints_dropped = total_critical_matching.saturating_sub(selected.len());
 
     // Nivel 0-3 (salud, constraints críticas, conflictos, razón principal)
     // nunca se recortan por presupuesto — v0.5 §30.1.7: omitir una
@@ -228,19 +234,36 @@ pub fn compile_packet(
             break;
         }
     }
-    if known_risks.len()
-        < selected
-            .iter()
-            .flat_map(|r| r.risks.iter())
-            .count()
-            .min(budget.max_risks)
-    {
-        additional_history_available += 1;
-    }
+
+    // E7 hallazgo D: contar realmente cuántos elementos se recortaron por
+    // presupuesto (antes: un flag fijo `+1` para risks, y `affected_targets`
+    // recortados no se contaban en absoluto — un agente podía ver
+    // `additional_history_available == 0` con targets reales omitidos).
+    let risks_dropped_by_token_budget =
+        (risks_after_selection - risks_dropped_by_max_risks).saturating_sub(known_risks.len());
+    let targets_dropped_by_token_budget =
+        affected_targets_before_budget.saturating_sub(affected_targets.len());
+    let additional_history_available = critical_constraints_dropped
+        + risks_dropped_by_max_risks
+        + risks_dropped_by_token_budget
+        + targets_dropped_by_token_budget;
 
     let token_estimate_total = protected_tokens
         + token_estimate(&known_risks.join(" "))
         + token_estimate(&affected_targets.join(" "));
+
+    // E7 hallazgo C: si aun recortando todo lo recortable (niveles 4-6) el
+    // packet sigue excediendo el budget, decirlo explícitamente — nunca
+    // servir un packet sobre-presupuesto en silencio. Los niveles 0-3
+    // (protegidos) nunca se recortan por diseño (v0.5 §30.1.7); cuando ellos
+    // solos exceden el budget, no hay nada más que recortar.
+    let mut warnings = provider_warnings;
+    if token_estimate_total > budget.max_tokens {
+        warnings.push(format!(
+            "budget de tokens excedido: {token_estimate_total} > {} — el contenido protegido (niveles 0-3: constraints críticas, conflictos, razón principal) nunca se recorta",
+            budget.max_tokens
+        ));
+    }
 
     ContextPacket {
         snapshot: Snapshot {
@@ -256,7 +279,7 @@ pub fn compile_packet(
         affected_targets,
         additional_history_available,
         resolved_target,
-        warnings: provider_warnings,
+        warnings,
         token_estimate: token_estimate_total,
     }
 }

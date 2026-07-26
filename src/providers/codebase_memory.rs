@@ -70,7 +70,11 @@ impl CodebaseMemoryClient {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
-            while let Some(msg) = framing::read_message(&mut reader) {
+            // EOF real o un mensaje que Codebase Memory no pudo formar
+            // correctamente terminan el hilo por igual — el `recv_timeout`
+            // del caller ya trata un canal desconectado como `Unavailable`
+            // (fail open, Arquitectura §13.5).
+            while let framing::Frame::Message(msg) = framing::read_message(&mut reader) {
                 if tx.send(msg).is_err() {
                     break;
                 }

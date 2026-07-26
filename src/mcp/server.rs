@@ -31,7 +31,27 @@ pub fn run() {
     // llamada (ADR-0002 / ADR-0007).
     let mut provider = ProviderHandle::spawn();
 
-    while let Some(msg) = framing::read_message(&mut reader) {
+    loop {
+        let msg = match framing::read_message(&mut reader) {
+            framing::Frame::Message(msg) => msg,
+            // Fin real de la sesión — el cliente cerró stdin.
+            framing::Frame::Eof => break,
+            // E7 hallazgo B: antes esto era indistinguible de EOF y
+            // terminaba la sesión completa en silencio ante un mensaje
+            // simplemente malformado. Ahora se responde con el error
+            // JSON-RPC estándar de parseo y la sesión persistente —el
+            // activo que Fase E5 existe para amortizar— sigue viva.
+            framing::Frame::Invalid(reason) => {
+                let resp = json!({
+                    "jsonrpc": "2.0",
+                    "id": Value::Null,
+                    "error": {"code": -32700, "message": format!("parse error: {reason}")}
+                });
+                let _ = framing::write_message(&mut writer, &resp);
+                continue;
+            }
+        };
+
         let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
         let id = msg.get("id").cloned();
 
