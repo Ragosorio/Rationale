@@ -292,21 +292,45 @@ pub fn has_approved_authority(record: &Record) -> bool {
     record.approvals.iter().any(|a| a.status == "approved")
 }
 
-/// Lista todos los Records en un directorio `.rationale/records/`.
-pub fn list_records(records_dir: &Path) -> Result<Vec<Record>, StorageError> {
+/// Resultado detallado de listar Records: los que sí parsearon, y los que
+/// no (con el path y el error) — nunca se descartan en silencio. Ver
+/// `list_records_detailed`.
+pub struct RecordListResult {
+    pub records: Vec<Record>,
+    pub skipped: Vec<(std::path::PathBuf, StorageError)>,
+}
+
+/// Lista todos los Records en un directorio, reportando qué archivos no
+/// pudieron leerse (revisión adversarial de Fase F, hallazgo 1: la versión
+/// anterior abortaba TODA la lectura ante un solo archivo corrupto,
+/// apagando el Subject Resolver para el canon entero en silencio para
+/// cualquier caller que usara `.unwrap_or_default()`). Un archivo inválido
+/// se salta — nunca descarta los demás Records ya leídos.
+pub fn list_records_detailed(records_dir: &Path) -> Result<RecordListResult, StorageError> {
     let mut records = Vec::new();
+    let mut skipped = Vec::new();
     if !records_dir.is_dir() {
-        return Ok(records);
+        return Ok(RecordListResult { records, skipped });
     }
     let entries = std::fs::read_dir(records_dir).map_err(StorageError::Io)?;
     for entry in entries {
         let entry = entry.map_err(StorageError::Io)?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
-            records.push(read_record(&path)?);
+            match read_record(&path) {
+                Ok(record) => records.push(record),
+                Err(e) => skipped.push((path, e)),
+            }
         }
     }
-    Ok(records)
+    Ok(RecordListResult { records, skipped })
+}
+
+/// Variante simple para callers que no necesitan saber qué se saltó (la
+/// mayoría). Nunca fallar por UN archivo corrupto es la garantía real —
+/// solo falla si el directorio mismo no pudo leerse (I/O real).
+pub fn list_records(records_dir: &Path) -> Result<Vec<Record>, StorageError> {
+    Ok(list_records_detailed(records_dir)?.records)
 }
 
 #[cfg(test)]

@@ -30,6 +30,13 @@ pub struct PendingProposal {
     /// mejor aproximación disponible sin un campo `proposed_at` explícito
     /// en el schema.
     pub proposed_at: std::time::SystemTime,
+    /// Contenido crudo del archivo en el momento en que se listó — usado
+    /// por `approve()`/`reject()` para detectar si la propuesta cambió en
+    /// disco durante la ventana de revisión humana (revisión adversarial
+    /// de Fase F, hallazgo 2: TOCTOU real — una segunda `finalize_change`
+    /// sobre el mismo `record_id` mientras un humano decide se perdía en
+    /// silencio, sin quedar en `.rejected/` ni en ningún log).
+    original_content: String,
 }
 
 /// Lista propuestas pendientes en `.rationale/proposals/`, ordenadas por
@@ -48,6 +55,9 @@ pub fn list_pending(rationale_dir: &Path) -> Vec<PendingProposal> {
         if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
             continue;
         }
+        let Ok(original_content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         if let Ok(record) = storage::read_record(&path) {
             let proposed_at = entry
                 .metadata()
@@ -57,6 +67,7 @@ pub fn list_pending(rationale_dir: &Path) -> Vec<PendingProposal> {
                 path,
                 record,
                 proposed_at,
+                original_content,
             });
         }
     }
@@ -121,6 +132,32 @@ pub fn approve(
     // ver `storage::validate_safe_id`).
     storage::validate_safe_id(&proposal.record.id)?;
 
+    // TOCTOU real (hallazgo 2, revisión adversarial de Fase F): la
+    // propuesta se cargó en memoria al listar, y el humano pudo tardar
+    // minutos en decidir. Releer el archivo justo antes de promover reduce
+    // la ventana de milisegundos a lo que dura esta función — si el
+    // archivo ya no existe (otra sesión ya lo promovió/rechazó) o cambió
+    // (una nueva `finalize_change` lo sobrescribió mientras se revisaba),
+    // abortar con un error explícito en vez de promover a ciegas una copia
+    // obsoleta o perder en silencio lo que hay ahora en disco.
+    match std::fs::read_to_string(&proposal.path) {
+        Ok(current) if current == proposal.original_content => {}
+        Ok(_) => {
+            return Err(storage::StorageError::Parse(format!(
+                "la propuesta '{}' cambió en disco desde que se listó para revisión — \
+                 vuelve a correr 'rationale review' para ver la versión actual antes de aprobar",
+                proposal.record.id
+            )));
+        }
+        Err(_) => {
+            return Err(storage::StorageError::Parse(format!(
+                "la propuesta '{}' ya no existe en disco — probablemente otra sesión ya la \
+                 promovió, rechazó, o fue sobrescrita mientras se revisaba",
+                proposal.record.id
+            )));
+        }
+    }
+
     if let Some(s) = corrected_statement {
         proposal.record.statement = s;
     }
@@ -149,7 +186,21 @@ pub fn approve(
 
 /// Rechaza una propuesta — se mueve a `proposals/.rejected/`, nunca se
 /// borra en silencio (preserva evidencia de qué se propuso y se descartó).
+///
+/// Mismo chequeo TOCTOU que `approve()` (hallazgo 2, revisión adversarial de
+/// Fase F): si el contenido cambió desde que se listó, el humano rechazó
+/// algo que ya no es lo que hay en disco — mejor abortar y forzar una
+/// relectura que mover en silencio una versión distinta a la que se mostró.
 pub fn reject(rationale_dir: &Path, proposal: &PendingProposal) -> std::io::Result<PathBuf> {
+    let current = std::fs::read_to_string(&proposal.path)?;
+    if current != proposal.original_content {
+        return Err(std::io::Error::other(format!(
+            "la propuesta '{}' cambió en disco desde que se listó para revisión — \
+             vuelve a correr 'rationale review' antes de rechazarla",
+            proposal.record.id
+        )));
+    }
+
     let rejected_dir = rationale_dir.join("proposals").join(".rejected");
     std::fs::create_dir_all(&rejected_dir)?;
     let dest = rejected_dir.join(proposal.path.file_name().unwrap());
@@ -292,6 +343,9 @@ mod tests {
             path: dir.join("proposals/placeholder.yaml"),
             record,
             proposed_at: std::time::SystemTime::now(),
+            // Nunca se llega a comparar — validate_safe_id falla antes del
+            // chequeo TOCTOU.
+            original_content: String::new(),
         };
 
         let result = approve(&dir, proposal, None, "user:test-reviewer");
@@ -313,11 +367,13 @@ mod tests {
         let record = proposal_record("constraint.approve-test", "normal");
         let proposal_path = dir.join("proposals/constraint.approve-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
+        let original_content = std::fs::read_to_string(&proposal_path).unwrap();
 
         let proposal = PendingProposal {
             path: proposal_path.clone(),
             record,
             proposed_at: std::time::SystemTime::now(),
+            original_content,
         };
 
         let dest = approve(&dir, proposal, None, "user:test-reviewer").unwrap();
@@ -341,11 +397,13 @@ mod tests {
         let record = proposal_record("constraint.status-test", "normal");
         let proposal_path = dir.join("proposals/constraint.status-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
+        let original_content = std::fs::read_to_string(&proposal_path).unwrap();
 
         let proposal = PendingProposal {
             path: proposal_path,
             record,
             proposed_at: std::time::SystemTime::now(),
+            original_content,
         };
 
         let dest = approve(&dir, proposal, None, "user:test-reviewer").unwrap();
@@ -362,11 +420,13 @@ mod tests {
         let record = proposal_record("constraint.correct-test", "normal");
         let proposal_path = dir.join("proposals/constraint.correct-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
+        let original_content = std::fs::read_to_string(&proposal_path).unwrap();
 
         let proposal = PendingProposal {
             path: proposal_path,
             record,
             proposed_at: std::time::SystemTime::now(),
+            original_content,
         };
 
         let dest = approve(
@@ -389,11 +449,13 @@ mod tests {
         let record = proposal_record("constraint.reject-test", "normal");
         let proposal_path = dir.join("proposals/constraint.reject-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
+        let original_content = std::fs::read_to_string(&proposal_path).unwrap();
 
         let proposal = PendingProposal {
             path: proposal_path.clone(),
             record,
             proposed_at: std::time::SystemTime::now(),
+            original_content,
         };
 
         let dest = reject(&dir, &proposal).unwrap();
@@ -403,6 +465,86 @@ mod tests {
             "el rechazo debe preservar evidencia, no borrar"
         );
         assert!(dest.starts_with(dir.join("proposals/.rejected")));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Reproduce el hallazgo 2a de la revisión adversarial de Fase F: una
+    /// segunda escritura sobre la misma propuesta MIENTRAS un humano la
+    /// tiene cargada en memoria ya no debe perderse en silencio — debe
+    /// rechazar la aprobación explícitamente.
+    #[test]
+    fn approve_detects_proposal_overwritten_during_review_window() {
+        let dir = temp_rationale_dir();
+        let record = proposal_record("constraint.toctou-test", "normal");
+        let proposal_path = dir.join("proposals/constraint.toctou-test.yaml");
+        storage::write_record(&proposal_path, &record).unwrap();
+
+        // Simula `list_pending()`: se carga en memoria ANTES del cambio.
+        let original_content = std::fs::read_to_string(&proposal_path).unwrap();
+        let proposal = PendingProposal {
+            path: proposal_path.clone(),
+            record,
+            proposed_at: std::time::SystemTime::now(),
+            original_content,
+        };
+
+        // Mientras el humano "piensa", otra finalize_change sobrescribe la
+        // propuesta con contenido distinto.
+        let mut overwritten = proposal_record("constraint.toctou-test", "normal");
+        overwritten.statement = "SECOND VERSION written during the review window".to_string();
+        storage::write_record(&proposal_path, &overwritten).unwrap();
+
+        let result = approve(&dir, proposal, None, "user:test-reviewer");
+        assert!(
+            result.is_err(),
+            "debe rechazar promover una copia obsoleta cuando el archivo cambió"
+        );
+        // La versión nueva (real) sigue intacta en proposals/ — nada se perdió.
+        let still_there = storage::read_record(&proposal_path).unwrap();
+        assert_eq!(
+            still_there.statement,
+            "SECOND VERSION written during the review window"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Reproduce el hallazgo 2b: una segunda aprobación sobre una propuesta
+    /// que YA fue promovida (y por tanto borrada de `proposals/`) por otra
+    /// sesión debe fallar explícitamente, no sobrescribir en silencio.
+    #[test]
+    fn approve_detects_proposal_already_promoted_by_another_session() {
+        let dir = temp_rationale_dir();
+        let record = proposal_record("constraint.double-approve-test", "normal");
+        let proposal_path = dir.join("proposals/constraint.double-approve-test.yaml");
+        storage::write_record(&proposal_path, &record).unwrap();
+        let original_content = std::fs::read_to_string(&proposal_path).unwrap();
+
+        let proposal_a = PendingProposal {
+            path: proposal_path.clone(),
+            record: storage::read_record(&proposal_path).unwrap(),
+            proposed_at: std::time::SystemTime::now(),
+            original_content: original_content.clone(),
+        };
+        let proposal_b = PendingProposal {
+            path: proposal_path.clone(),
+            record: storage::read_record(&proposal_path).unwrap(),
+            proposed_at: std::time::SystemTime::now(),
+            original_content,
+        };
+
+        // El revisor A aprueba primero — consume la propuesta.
+        approve(&dir, proposal_a, None, "user:reviewer-a").unwrap();
+        assert!(!proposal_path.exists());
+
+        // El revisor B, con la misma propuesta cargada ANTES de que A la
+        // promoviera, intenta aprobar también.
+        let result_b = approve(&dir, proposal_b, None, "user:reviewer-b");
+        assert!(
+            result_b.is_err(),
+            "debe rechazar una segunda aprobación sobre una propuesta ya promovida"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }

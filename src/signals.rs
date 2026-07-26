@@ -34,6 +34,24 @@ pub enum Signal {
 /// Palabras de dominio para cada señal basada en paths, en minúsculas.
 /// Coincidencia por substring sobre el path completo — barata, auditable,
 /// y explícitamente incompleta (nunca pretende ser una taxonomía cerrada).
+///
+/// Trade-off de precisión/recall evaluado y aceptado deliberadamente
+/// (revisión adversarial de Fase F, hallazgo 4): un archivo cosmético como
+/// `auth_helper_unrelated.rs` dispara `Authorization` por substring aunque
+/// no tenga relación real. Se evaluó cambiar a coincidencia por palabra
+/// completa sobre segmentos del path (mismo patrón que `contains_word`
+/// usa para `NORMATIVE_WORDS`) — **se descartó**: tokenizar
+/// `src/authorization.rs` da `["src", "authorization", "rs"]`, y ningún
+/// token es exactamente `"auth"`, así que ese archivo — un caso real y
+/// común de autorización genuina — dejaría de detectarse por completo.
+/// La coincidencia por palabra completa habría cambiado un falso positivo
+/// conocido por un falso negativo silencioso en el caso más común
+/// (perder recall en el nombre compuesto más típico del dominio), sin
+/// siquiera arreglar el caso que motivó el cambio (`auth_helper_unrelated`
+/// sí tiene `"auth"` como token propio, así que seguiría marcando).
+/// Mecanismo aditivo (nunca bloquea, `retrieval::detect_conflict` es el
+/// precedente) — el costo del ruido ocasional es menor que perder
+/// recall silenciosamente en el caso común.
 const PATH_KEYWORDS: &[(Signal, &[&str])] = &[
     (
         Signal::Authorization,
@@ -159,7 +177,22 @@ fn is_mechanical_only_path(path: &str) -> bool {
 /// Determina el nivel candidato — nunca el nivel final: `rationale review`
 /// (Fase F6) es quien decide si una propuesta de nivel `Decision` sube a
 /// `CriticalInvariant` con autoridad real.
-pub fn determine_level(changed_files: &[ChangedFile], signals: &[Signal]) -> CaptureLevel {
+///
+/// `declared_severity` (revisión adversarial de Fase F, hallazgo 5): un bug
+/// real de doble cobro en pagos, sin keyword de path ni lenguaje normativo
+/// en `intent`/`statement`, se clasificaba en `Intent` — el mismo nivel que
+/// un refactor trivial, aunque el caller ya había declarado
+/// `severity: "critical"`. Esa señal (barata, ya provista, nunca
+/// autoritativa por sí sola) ahora se usa como respaldo: si no hay ninguna
+/// señal de dominio ni lenguaje normativo pero el caller declaró severidad
+/// crítica, el nivel sube a `Decision` en vez de quedarse en el mínimo.
+/// Nunca sube a `OperationalKnowledge` solo por esto — esa combinación
+/// sigue exigiendo señal real de dominio o lenguaje normativo.
+pub fn determine_level(
+    changed_files: &[ChangedFile],
+    signals: &[Signal],
+    declared_severity: &str,
+) -> CaptureLevel {
     if signals.is_empty()
         && !changed_files.is_empty()
         && changed_files
@@ -188,6 +221,9 @@ pub fn determine_level(changed_files: &[ChangedFile], signals: &[Signal]) -> Cap
         return CaptureLevel::Decision;
     }
     if signals.is_empty() {
+        if declared_severity == "critical" {
+            return CaptureLevel::Decision;
+        }
         // Sin ninguna señal de alto valor pero tampoco puramente mecánico
         // (p. ej. cambios en código de aplicación sin lenguaje normativo):
         // Nivel 1, el mínimo que registra intención sin sobre-preguntar.
@@ -253,13 +289,17 @@ mod tests {
 
     #[test]
     fn mechanical_only_changes_with_no_signals_are_level_zero() {
-        let level = determine_level(&[changed("Cargo.lock"), changed("package-lock.json")], &[]);
+        let level = determine_level(
+            &[changed("Cargo.lock"), changed("package-lock.json")],
+            &[],
+            "normal",
+        );
         assert_eq!(level, CaptureLevel::GitOnly);
     }
 
     #[test]
     fn any_signal_prevents_level_zero_even_with_lockfile_changes() {
-        let level = determine_level(&[changed("Cargo.lock")], &[Signal::Security]);
+        let level = determine_level(&[changed("Cargo.lock")], &[Signal::Security], "normal");
         assert_ne!(level, CaptureLevel::GitOnly);
     }
 
@@ -268,6 +308,7 @@ mod tests {
         let level = determine_level(
             &[changed("src/auth/authorization.ts")],
             &[Signal::Authorization, Signal::NormativeLanguage],
+            "normal",
         );
         assert_eq!(level, CaptureLevel::OperationalKnowledge);
     }
@@ -277,14 +318,39 @@ mod tests {
         let level = determine_level(
             &[changed("src/auth/authorization.ts")],
             &[Signal::Authorization],
+            "normal",
         );
         assert_eq!(level, CaptureLevel::Decision);
     }
 
     #[test]
     fn plain_code_change_with_no_signals_is_at_least_intent() {
-        let level = determine_level(&[changed("src/utils/format.rs")], &[]);
+        let level = determine_level(&[changed("src/utils/format.rs")], &[], "normal");
         assert_eq!(level, CaptureLevel::Intent);
+    }
+
+    /// Revisión adversarial de Fase F, hallazgo 5: un bug real (doble cobro
+    /// en pagos) sin keyword de path ni lenguaje normativo se clasificaba en
+    /// `Intent` — el mismo nivel que un refactor trivial — aunque el caller
+    /// ya había declarado `severity: "critical"`. Esa señal ahora eleva el
+    /// nivel mínimo a `Decision`.
+    #[test]
+    fn declared_critical_severity_elevates_level_when_no_other_signal_present() {
+        let level = determine_level(&[changed("src/core/ledger_math.rs")], &[], "critical");
+        assert_eq!(
+            level,
+            CaptureLevel::Decision,
+            "severity: critical debe evitar que un cambio críticamente peligroso caiga en Intent"
+        );
+    }
+
+    #[test]
+    fn declared_critical_severity_never_reaches_operational_knowledge_alone() {
+        // La severidad declarada es una señal de respaldo barata, nunca
+        // autoritativa por sí sola — sin señal de dominio o lenguaje
+        // normativo real, nunca debe alcanzar OperationalKnowledge.
+        let level = determine_level(&[changed("src/core/ledger_math.rs")], &[], "critical");
+        assert_ne!(level, CaptureLevel::OperationalKnowledge);
     }
 
     #[test]
@@ -302,6 +368,7 @@ mod tests {
                 Signal::NormativeLanguage,
                 Signal::Security,
             ],
+            "critical",
         );
         assert_eq!(level, CaptureLevel::OperationalKnowledge);
     }

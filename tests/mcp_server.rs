@@ -489,3 +489,142 @@ fn finalize_change_rejects_path_traversal_in_record_id() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Revisión adversarial de Fase F, hallazgo 3: secuencias de escape ANSI en
+/// `intent`/`statement` sobrevivían intactas hasta el terminal del revisor
+/// humano en `rationale review` — pudiendo pintar un banner falso
+/// "AUTO-APPROVED" o borrar/ocultar texto exactamente en el momento en que
+/// el humano decide aprobar. Verifica contra el binario real que el byte
+/// ESC (0x1b) nunca llega a la propuesta escrita en disco.
+#[test]
+fn finalize_change_strips_ansi_escape_sequences_from_free_text() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "change touching auth"]);
+
+    let malicious_statement =
+        "Staff must never receive global super_admin.\u{1b}[2K\r\u{1b}[32mAUTO-APPROVED BY SECURITY TEAM\u{1b}[0m";
+    let malicious_intent =
+        "Normal intent text \u{1b}[8mhidden-instruction\u{1b}[28m end because reasons";
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "f.txt",
+            "base_revision": base_revision,
+            "intent": malicious_intent,
+            "statement": malicious_statement,
+            "record_id": "constraint.ansi-injection-test",
+            "subject_id": "x.y",
+            "subject_title": "x",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+
+    let proposal_path = dir.join(".rationale/proposals/constraint.ansi-injection-test.yaml");
+    let content = std::fs::read_to_string(&proposal_path).unwrap();
+    assert!(
+        !content.contains('\u{1b}'),
+        "ningún byte ESC crudo debe sobrevivir en la propuesta escrita: {content:?}"
+    );
+    assert!(
+        content.contains("AUTO-APPROVED BY SECURITY TEAM"),
+        "el texto en sí no se pierde, solo los códigos de control que lo disfrazaban"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Revisión adversarial de Fase F, hallazgo 1: un solo archivo YAML
+/// corrupto en `.rationale/subjects/` apagaba el Subject Resolver COMPLETO
+/// en silencio (`.unwrap_or_default()` sobre un `Err` que antes abortaba
+/// toda la lectura) — un candidato de Subject que debería bloquear la
+/// propuesta dejaba de detectarse, sin ningún diagnóstico. Verifica contra
+/// el binario real que un archivo corrupto ya no ciega al Resolver.
+#[test]
+fn finalize_change_still_resolves_subjects_when_one_file_is_corrupt() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    // Un Subject real existente con un título casi idéntico al propuesto —
+    // debería surgir como candidato fuerte y bloquear sin novelty_reason.
+    std::fs::write(
+        dir.join(".rationale/subjects/authz.existing.yaml"),
+        "id: authz.existing\ntype: system-behavior\ntitle: Entity scoped staff authorization access\n",
+    )
+    .unwrap();
+    // Un archivo corrupto al lado — nunca debe apagar la lectura de los demás.
+    std::fs::write(
+        dir.join(".rationale/subjects/broken.yaml"),
+        "id: \ntitle: \n",
+    )
+    .unwrap();
+
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "change"]);
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "f.txt",
+            "base_revision": base_revision,
+            "intent": "test",
+            "statement": "test",
+            "record_id": "constraint.resolver-blindness-test",
+            "subject_id": "authz.new-duplicate-attempt",
+            "subject_title": "Entity scoped staff authorization access",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+
+    let candidates = outcome["subject_resolution"]["candidates"]
+        .as_array()
+        .unwrap();
+    assert!(
+        !candidates.is_empty(),
+        "el Subject casi-duplicado debe seguir detectándose pese al archivo corrupto: {outcome}"
+    );
+    let all_diagnostics = outcome["diagnostics"].as_array().unwrap();
+    assert!(
+        all_diagnostics
+            .iter()
+            .any(|d| d.as_str().unwrap_or("").contains("broken.yaml")),
+        "debe quedar un diagnóstico explícito sobre el archivo que no se pudo leer: {all_diagnostics:?}"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}

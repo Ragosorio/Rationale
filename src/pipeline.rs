@@ -459,6 +459,23 @@ pub struct FinalizeOutcome {
     pub diagnostics: Vec<String>,
 }
 
+/// Elimina bytes de control (incluido ESC, 0x1b — la base de toda
+/// secuencia de escape ANSI) de texto que viene de un cliente MCP no
+/// confiable y que se va a persistir Y a mostrar más tarde en el terminal
+/// del revisor humano (`rationale review`, Fase F6). Preserva `\n`/`\t`
+/// para no romper texto multilínea legítimo. Revisión adversarial de
+/// Fase F, hallazgo 3: sin esto, un `intent`/`statement`/riesgo con
+/// secuencias ANSI puede pintar un banner falso ("AUTO-APPROVED") u
+/// ocultar texto exactamente en el momento en que el humano decide
+/// aprobar — el único control real contra autoaprobación en todo el
+/// sistema. Quitar solo el byte ESC ya neutraliza la secuencia completa
+/// (el resto queda como texto literal inofensivo).
+fn sanitize_control_chars(text: &str) -> String {
+    text.chars()
+        .filter(|c| *c == '\n' || *c == '\t' || !c.is_control())
+        .collect()
+}
+
 /// El cuerpo de `finalize_change`: captura mecánica → señales → nivel →
 /// resolución de Subject → escritura de la propuesta (nunca del Record
 /// aprobado — eso es `rationale review`, Fase F6). Sigue el flujo de
@@ -514,7 +531,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
     all_signals.extend(signals::signals_from_text(&req.statement));
     let signal_list: Vec<signals::Signal> = all_signals.into_iter().collect();
 
-    let level = signals::determine_level(&mechanical.changed_files, &signal_list);
+    let level = signals::determine_level(&mechanical.changed_files, &signal_list, &req.severity);
 
     if level == signals::CaptureLevel::GitOnly {
         diagnostics.push(
@@ -537,10 +554,49 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
 
     // Resolver el Subject contra el canon real (Fase F4) antes de escribir
     // nada — nunca se crea un Subject nuevo a ciegas.
+    //
+    // Revisión adversarial de Fase F, hallazgo 1: un solo archivo corrupto
+    // en subjects/ o records/ apagaba el Resolver completo en silencio
+    // (`.unwrap_or_default()` sobre un `Err` que antes abortaba TODA la
+    // lectura). Ahora `list_*_detailed` nunca aborta por un archivo — y
+    // cualquier archivo saltado se reporta explícitamente aquí, igual que
+    // ya hace `prepare` (Arquitectura §27: "no ocultar cobertura parcial").
     let subjects_dir = config.rationale_dir.join("subjects");
     let records_dir = config.rationale_dir.join("records");
-    let existing_subjects = subjects::list_subjects(&subjects_dir).unwrap_or_default();
-    let existing_records = storage::list_records(&records_dir).unwrap_or_default();
+
+    let subjects_result = subjects::list_subjects_detailed(&subjects_dir).unwrap_or_else(|e| {
+        diagnostics.push(format!(
+            "advertencia: no se pudo leer el directorio de Subjects: {e}"
+        ));
+        subjects::SubjectListResult {
+            subjects: vec![],
+            skipped: vec![],
+        }
+    });
+    for (path, e) in &subjects_result.skipped {
+        diagnostics.push(format!(
+            "advertencia: Subject no leído, el Resolver no lo considerará como candidato: {} ({e})",
+            path.display()
+        ));
+    }
+    let existing_subjects = subjects_result.subjects;
+
+    let records_result = storage::list_records_detailed(&records_dir).unwrap_or_else(|e| {
+        diagnostics.push(format!(
+            "advertencia: no se pudo leer el directorio de Records: {e}"
+        ));
+        storage::RecordListResult {
+            records: vec![],
+            skipped: vec![],
+        }
+    });
+    for (path, e) in &records_result.skipped {
+        diagnostics.push(format!(
+            "advertencia: Record no leído, no contará para overlap de bindings: {} ({e})",
+            path.display()
+        ));
+    }
+    let existing_records = records_result.records;
 
     let mut existing_bindings: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
@@ -627,7 +683,7 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
         .enumerate()
         .map(|(i, statement)| Risk {
             id: format!("risk.{}.{i}", req.record_id),
-            statement: statement.clone(),
+            statement: sanitize_control_chars(statement),
             epistemic_status: EpistemicStatus::Stated,
             extra: yaml_serde::Mapping::new(),
         })
@@ -651,8 +707,8 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
         id: req.record_id.clone(),
         kind: "constraint".to_string(),
         severity: req.severity.clone(),
-        statement: req.statement.clone(),
-        rationale: Some(req.intent.clone()),
+        statement: sanitize_control_chars(&req.statement),
+        rationale: Some(sanitize_control_chars(&req.intent)),
         epistemic_status: EpistemicStatus::Stated,
         // Nunca se autoaprueba — approvals vacío es la garantía estructural
         // de que ninguna propuesta nace aprobada (Proceso §21).
@@ -703,5 +759,38 @@ pub fn finalize(req: &FinalizeRequest, provider: &mut ProviderHandle) -> Finaliz
                 diagnostics,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Revisión adversarial de Fase F, hallazgo 3: un `intent`/`statement`
+    /// con secuencias de escape ANSI puede pintar un banner falso o borrar
+    /// texto en el terminal del revisor humano. Quitar el byte ESC (y otros
+    /// caracteres de control) neutraliza la secuencia completa.
+    #[test]
+    fn sanitize_control_chars_strips_ansi_escape_but_preserves_newlines_and_tabs() {
+        let malicious =
+            "Staff must never receive global super_admin.\x1b[2K\r\x1b[32mAUTO-APPROVED\x1b[0m";
+        let sanitized = sanitize_control_chars(malicious);
+        assert!(
+            !sanitized.contains('\x1b'),
+            "el byte ESC nunca debe sobrevivir"
+        );
+        assert!(!sanitized.contains('\r'));
+        assert!(sanitized.contains("Staff must never receive global super_admin."));
+        assert!(
+            sanitized.contains("AUTO-APPROVED"),
+            "el texto en sí no se borra, solo los códigos de control"
+        );
+
+        let multiline = "line one\n\tindented line two";
+        assert_eq!(
+            sanitize_control_chars(multiline),
+            multiline,
+            "\\n y \\t deben preservarse — no son el vector de ataque"
+        );
     }
 }

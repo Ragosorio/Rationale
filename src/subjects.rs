@@ -24,7 +24,7 @@
 
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Subject {
@@ -73,21 +73,46 @@ pub fn read_subject(path: &Path) -> Result<Subject, SubjectError> {
     Ok(subject)
 }
 
-/// Lista todos los Subjects en `.rationale/subjects/`.
-pub fn list_subjects(subjects_dir: &Path) -> Result<Vec<Subject>, SubjectError> {
+/// Resultado detallado de listar Subjects: los que sí parsearon, y los que
+/// no (con el path y el error) — nunca se descartan en silencio. Ver
+/// `list_subjects_detailed`.
+pub struct SubjectListResult {
+    pub subjects: Vec<Subject>,
+    pub skipped: Vec<(PathBuf, SubjectError)>,
+}
+
+/// Lista todos los Subjects en `.rationale/subjects/`, reportando qué
+/// archivos no pudieron leerse (E7/revisión adversarial de Fase F, hallazgo
+/// 1: la versión anterior abortaba la lectura COMPLETA ante un solo archivo
+/// corrupto — apagando el Subject Resolver entero para todo el canon
+/// existente, en silencio, para cualquier caller que usara
+/// `.unwrap_or_default()`). Un archivo que no parsea o le falta un campo
+/// obligatorio se salta — nunca descarta los demás Subjects ya leídos.
+pub fn list_subjects_detailed(subjects_dir: &Path) -> Result<SubjectListResult, SubjectError> {
     let mut subjects = Vec::new();
+    let mut skipped = Vec::new();
     if !subjects_dir.is_dir() {
-        return Ok(subjects);
+        return Ok(SubjectListResult { subjects, skipped });
     }
     let entries = std::fs::read_dir(subjects_dir).map_err(SubjectError::Io)?;
     for entry in entries {
         let entry = entry.map_err(SubjectError::Io)?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
-            subjects.push(read_subject(&path)?);
+            match read_subject(&path) {
+                Ok(subject) => subjects.push(subject),
+                Err(e) => skipped.push((path, e)),
+            }
         }
     }
-    Ok(subjects)
+    Ok(SubjectListResult { subjects, skipped })
+}
+
+/// Variante simple para callers que no necesitan saber qué se saltó (la
+/// mayoría). Nunca fallar por UN archivo corrupto es la garantía real —
+/// solo falla si el directorio mismo no pudo leerse (I/O real).
+pub fn list_subjects(subjects_dir: &Path) -> Result<Vec<Subject>, SubjectError> {
+    Ok(list_subjects_detailed(subjects_dir)?.subjects)
 }
 
 /// Resuelve un Subject por ID exacto o alias — paso 1 de
@@ -150,6 +175,28 @@ pub struct Resolution {
     pub novelty_reason: Option<String>,
 }
 
+// Umbrales sin calibrar contra datos reales — límite conocido, confirmado
+// con contraejemplos concretos por la revisión adversarial de Fase F
+// (`docs/work-items/adversarial-review-fase-f.md`, hallazgos 6 y 7):
+//
+// - Falso positivo (hallazgo 6): dos constraints reales y distintos que
+//   comparten una plantilla de redacción larga (común en organizaciones
+//   con convenciones de escritura consistentes) alcanzan 0.86 de Jaccard
+//   crudo — por encima de ALIAS_SIMILARITY_THRESHOLD — y BLOQUEAN la
+//   propuesta completa sin novelty_reason, aunque describan conceptos
+//   genuinamente distintos.
+// - Falso negativo (hallazgo 7): el mismo concepto real (ej. "no double
+//   billing") expresado con vocabulario distinto no supera
+//   CANDIDATE_MIN_THRESHOLD — no aparece como candidato, fragmentando el
+//   canon en silencio.
+//
+// Filtrar stopwords estructurales ("ensure", "that", "the", "never",
+// "allows"...) antes del Jaccard mitigaría el hallazgo 6 sin resolver el 7
+// (son fallas en direcciones opuestas del mismo mecanismo). No se aplica
+// sin evidencia real de cuán comunes son las plantillas repetidas en
+// Records reales — ajustar umbrales sin esa evidencia arriesga cambiar
+// un falso positivo conocido por un falso negativo nuevo sin poder medir
+// la mejora real. Ver revisit trigger.
 const SIGNIFICANT_SIMILARITY_THRESHOLD: f64 = 0.6;
 const ALIAS_SIMILARITY_THRESHOLD: f64 = 0.85;
 const CANDIDATE_MIN_THRESHOLD: f64 = 0.2;
