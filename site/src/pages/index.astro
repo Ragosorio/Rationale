@@ -1,0 +1,283 @@
+---
+import "../styles/global.css";
+
+const repo = "https://github.com/Ragosorio/Rationale";
+const branch = "release/v0.1.0-alpha.1";
+const docs = {
+  quickstart: `${repo}/blob/${branch}/docs/quickstart.md`,
+  architecture: `${repo}/blob/${branch}/docs/architecture/code-map.md`,
+  agents: `${repo}/blob/${branch}/docs/user-guide/agents-and-mcp.md`,
+  evidence: `${repo}/tree/${branch}/docs/work-items`,
+};
+const installCommand = "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh";
+const codebaseMemoryUrl = "https://github.com/DeusData/codebase-memory-mcp";
+const codebaseMemoryCommand = "curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash";
+---
+
+<!--
+THESIS: Make the causal context packet the protagonist and refuse the generic SaaS hero.
+OWN-WORLD: Causal Dispatch — mineral field, ink, cobalt signal, thin rules, authored code artifacts.
+STORY: A visitor sees where Rationale sits beside Git and code memory, then follows prepare → change → capture → review and chooses install or docs.
+FIRST VIEWPORT: Compact navigation and copy at left; a wide four-stage dispatch rail with packet, diff, pending proposal and human boundary immediately beneath.
+FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd6a1613.
+-->
+
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" content="#f0f1ed" />
+    <meta name="description" content="Rationale compiles the decisions, constraints, risks and evidence behind a codebase before an agent changes it." />
+    <link rel="icon" href="data:," />
+    <title>Rationale — Context behind the code</title>
+  </head>
+  <body>
+    <a class="sr-only fixed left-4 top-4 z-50 bg-[var(--signal)] px-4 py-3 text-white focus:not-sr-only" href="#main" data-i18n="skip">Skip to main content</a>
+
+    <div class="mx-auto max-w-[1440px] overflow-hidden border-x border-[var(--line)] bg-[var(--canvas)]">
+      <header class="border-b border-[var(--line)]" aria-label="Primary navigation">
+        <div class="mx-auto flex max-w-[1180px] items-center justify-between gap-5 px-5 py-4 sm:px-8 lg:px-10">
+          <a href="#top" class="flex min-w-0 items-center gap-3" aria-label="Rationale home">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center border border-[var(--ink)] font-mono text-xs font-bold">R/</span>
+            <span class="min-w-0">
+              <span class="block text-sm font-bold tracking-[-0.03em]">Rationale</span>
+              <span class="hidden font-mono text-[0.58rem] uppercase tracking-[0.12em] text-[var(--muted)] sm:block">Local causal context</span>
+            </span>
+          </a>
+
+          <nav class="hidden items-center gap-5 text-sm text-[var(--muted-strong)] lg:flex" aria-label="Page sections">
+            <a class="transition-colors hover:text-[var(--signal-strong)]" href="#how-it-works" data-i18n="navHow">How it works</a>
+            <a class="transition-colors hover:text-[var(--signal-strong)]" href="#proof" data-i18n="navProof">Proof</a>
+            <a class="transition-colors hover:text-[var(--signal-strong)]" href="#documentation" data-i18n="navDocs">Documentation</a>
+            <a class="font-semibold text-[var(--signal-strong)] transition-colors hover:text-[var(--signal)]" href="#install" data-i18n="navInstall">Install</a>
+          </nav>
+
+          <div class="flex items-center gap-2">
+            <button class="h-9 min-w-10 border border-[var(--line-strong)] px-2 font-mono text-[0.7rem] font-bold transition-colors hover:border-[var(--signal)]" type="button" data-language-toggle aria-label="Switch language">ES</button>
+            <button class="flex h-9 w-9 items-center justify-center border border-[var(--line-strong)] text-lg transition-colors hover:border-[var(--signal)]" type="button" data-theme-toggle aria-label="Dark mode" aria-pressed="false"><span aria-hidden="true" data-theme-icon>◐</span></button>
+          </div>
+        </div>
+      </header>
+
+      <main id="main">
+        <section id="top" class="mx-auto max-w-[1180px] px-5 pb-12 pt-12 sm:px-8 sm:pb-16 sm:pt-16 lg:px-10 lg:pt-24" aria-labelledby="hero-title">
+          <div class="grid min-w-0 items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(460px,1fr)] lg:gap-16">
+            <div class="reveal min-w-0 max-w-[640px]">
+              <p class="eyebrow mb-6" data-i18n="eyebrow">Local causal context / pre-flight</p>
+              <h1 id="hero-title" class="display max-w-full text-[clamp(2.55rem,3.8vw,4rem)] font-bold leading-[0.98] lg:max-w-[580px]" data-i18n="heroTitle">Give your coding agent the reason behind the code.</h1>
+              <p class="mt-7 max-w-[590px] text-[clamp(1.08rem,2vw,1.3rem)] leading-[1.45] text-[var(--muted-strong)]" data-i18n="heroBody">Rationale compiles the decisions, constraints, risks, and evidence that still govern a codebase — before an agent changes it.</p>
+              <div class="mt-8 flex flex-wrap gap-3">
+                <a class="button-primary" href="#install"><span data-i18n="installCta">Install the alpha</span><span aria-hidden="true">↗</span></a>
+                <a class="button-secondary" href="#documentation"><span data-i18n="quickstartCta">Read the 5-minute quickstart</span><span aria-hidden="true">→</span></a>
+              </div>
+              <p class="mt-6 font-mono text-[0.69rem] uppercase tracking-[0.08em] text-[var(--muted)]" data-i18n="stateLine">Local-first · Open source · No account · Human-approved</p>
+            </div>
+
+            <div class="reveal reveal-delay-2 artifact-flat p-3 sm:p-4" aria-label="Four stage dispatch demonstration">
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-3 font-mono text-[0.66rem] uppercase tracking-[0.08em] text-[var(--muted)]">
+                <span data-i18n="boardLabel">Live change / synthetic demonstration</span>
+                <span data-i18n="boardRevision">revision 2f6d1e4</span>
+              </div>
+              <div class="grid gap-3 sm:grid-cols-4 sm:gap-0">
+                <article class="dispatch-stage px-2 pb-3 pt-1 sm:px-3 sm:pb-1">
+                  <span class="stage-number">1</span>
+                  <p class="mt-5 font-mono text-[0.72rem] font-bold text-[var(--ink)]">prepare_change</p>
+                  <p class="mt-2 text-[0.78rem] leading-[1.45] text-[var(--muted)]" data-i18n="boardPacketBody">Constraints, risks, evidence and authority before the edit.</p>
+                  <span class="signal-chip mt-4 inline-flex px-2 py-1 font-mono text-[0.6rem] font-bold" data-i18n="boardReady">READY</span>
+                </article>
+                <article class="dispatch-stage px-2 pb-3 pt-1 sm:px-3 sm:pb-1">
+                  <span class="stage-number">2</span>
+                  <p class="mt-5 font-mono text-[0.72rem] font-bold text-[var(--ink)]" data-i18n="step2">Change</p>
+                  <p class="mt-2 text-[0.78rem] leading-[1.45] text-[var(--muted)]" data-i18n="boardDiffBody">The agent changes code with the why still visible.</p>
+                  <span class="signal-chip mt-4 inline-flex px-2 py-1 font-mono text-[0.6rem] font-bold" data-i18n="boardObserved">OBSERVED</span>
+                </article>
+                <article class="dispatch-stage px-2 pb-3 pt-1 sm:px-3 sm:pb-1">
+                  <span class="stage-number">3</span>
+                  <p class="mt-5 font-mono text-[0.72rem] font-bold text-[var(--ink)]">finalize_change</p>
+                  <p class="mt-2 text-[0.78rem] leading-[1.45] text-[var(--muted)]" data-i18n="boardPendingBody">Observed facts are captured. No decision is approved here.</p>
+                  <span class="warning-chip mt-4 inline-flex px-2 py-1 font-mono text-[0.6rem] font-bold" data-i18n="boardWaiting">WAITING</span>
+                </article>
+                <article class="dispatch-stage px-2 pb-1 pt-1 sm:px-3">
+                  <span class="stage-number">4</span>
+                  <p class="mt-5 font-mono text-[0.72rem] font-bold text-[var(--ink)]" data-i18n="boardApproval">Human approval</p>
+                  <p class="mt-2 text-[0.78rem] leading-[1.45] text-[var(--muted)]" data-i18n="boardApprovalBody">A person approves, corrects, disputes, revokes or supersedes.</p>
+                  <span class="signal-chip mt-4 inline-flex px-2 py-1 font-mono text-[0.6rem] font-bold" data-i18n="boardHuman">HUMAN</span>
+                </article>
+              </div>
+              <div class="mt-4 border-t border-[var(--line)] pt-3 font-mono text-[0.66rem] text-[var(--muted)]" data-i18n="boardFooter">The packet travels with the change. The approval boundary stays visible.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="proof" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="bridge-title">
+          <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
+            <div>
+              <p class="eyebrow" data-i18n="bridgeEyebrow">Three systems / one clearer boundary</p>
+              <h2 id="bridge-title" class="display mt-5 max-w-[530px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="bridgeTitle">Structure tells you where. Git tells you what. Rationale protects why.</h2>
+              <p class="mt-5 max-w-[420px] text-[var(--muted-strong)]" data-i18n="bridgeBody">Rationale joins the tools teams already use without pretending to replace them.</p>
+            </div>
+            <div class="grid border-y border-[var(--line)] sm:grid-cols-3 sm:border-y-0">
+              <article class="border-b border-[var(--line)] py-6 sm:border-b-0 sm:border-r sm:px-6 sm:py-0">
+                <p class="font-mono text-xs font-bold text-[var(--muted)]">01 / GIT</p>
+                <h3 class="mt-5 text-xl font-bold">Git</h3>
+                <p class="mt-3 text-[0.94rem] leading-[1.5] text-[var(--muted-strong)]" data-i18n="gitQuestion">What changed, when, and in which revision?</p>
+              </article>
+              <article class="border-b border-[var(--line)] py-6 sm:border-b-0 sm:border-r sm:px-6 sm:py-0">
+                <p class="font-mono text-xs font-bold text-[var(--muted)]">02 / STRUCTURE</p>
+                <h3 class="mt-5 text-xl font-bold"><a class="hover:text-[var(--signal-strong)]" href={codebaseMemoryUrl} target="_blank" rel="noreferrer">Codebase Memory ↗</a></h3>
+                <p class="mt-3 text-[0.94rem] leading-[1.5] text-[var(--muted-strong)]" data-i18n="memoryQuestion">Where is it, and how is it connected?</p>
+              </article>
+              <article class="py-6 sm:px-6 sm:py-0">
+                <p class="font-mono text-xs font-bold text-[var(--signal-strong)]">03 / CAUSAL</p>
+                <h3 class="mt-5 text-xl font-bold">Rationale</h3>
+                <p class="mt-3 text-[0.94rem] leading-[1.5] text-[var(--muted-strong)]" data-i18n="rationaleQuestion">Why does it exist, what must survive, and who approved it?</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="how-it-works" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="works-title">
+          <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
+            <div>
+              <p class="eyebrow" data-i18n="worksEyebrow">The dispatch rail</p>
+              <h2 id="works-title" class="display mt-5 max-w-[470px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="worksTitle">A preflight that becomes a durable record.</h2>
+              <p class="mt-5 max-w-[430px] text-[var(--muted-strong)]" data-i18n="worksBody">The flow is deliberately split: MCP prepares and captures; the interactive CLI keeps normative decisions with a human.</p>
+            </div>
+            <div class="artifact-flat p-5 sm:p-7">
+              <div class="grid gap-7 sm:grid-cols-4 sm:gap-4">
+                <article class="route-mark pb-1 sm:pb-0">
+                  <div><p class="font-mono text-[0.68rem] font-bold text-[var(--signal-strong)]">01</p><h3 class="mt-2 text-xl font-bold" data-i18n="step1">Prepare</h3><p class="mt-2 text-sm text-[var(--muted)]" data-i18n="step1Body">Capture the why before code moves.</p></div>
+                </article>
+                <article class="route-mark pb-1 sm:pb-0">
+                  <div><p class="font-mono text-[0.68rem] font-bold text-[var(--signal-strong)]">02</p><h3 class="mt-2 text-xl font-bold" data-i18n="step2">Change</h3><p class="mt-2 text-sm text-[var(--muted)]" data-i18n="step2Body">Make the edit with constraints in view.</p></div>
+                </article>
+                <article class="route-mark pb-1 sm:pb-0">
+                  <div><p class="font-mono text-[0.68rem] font-bold text-[var(--signal-strong)]">03</p><h3 class="mt-2 text-xl font-bold" data-i18n="step3">Finalize</h3><p class="mt-2 text-sm text-[var(--muted)]" data-i18n="step3Body">Bundle the diff and observed facts.</p></div>
+                </article>
+                <article class="route-mark pb-1 sm:pb-0">
+                  <div><p class="font-mono text-[0.68rem] font-bold text-[var(--signal-strong)]">04</p><h3 class="mt-2 text-xl font-bold" data-i18n="step4">Review</h3><p class="mt-2 text-sm text-[var(--muted)]" data-i18n="step4Body">Confirm the decision with explicit authority.</p></div>
+                </article>
+              </div>
+              <div class="mt-8 border-t border-[var(--line)] pt-5 font-mono text-[0.7rem] text-[var(--muted)]"><span class="text-[var(--signal-strong)]">$</span> rationale prepare src/retry/policy.ts <span class="text-[var(--signal-strong)]">→ packet ready</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="packet-title">
+          <div class="mb-10 max-w-[680px]">
+            <p class="eyebrow" data-i18n="packetEyebrow">The artifact</p>
+            <h2 id="packet-title" class="display mt-5 text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="packetTitle">Make the context impossible to lose.</h2>
+            <p class="mt-5 text-lg text-[var(--muted-strong)]" data-i18n="packetBody">A compact packet gives the agent the decision, the trade-offs and the evidence before it reaches for a simplification.</p>
+          </div>
+
+          <div class="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
+            <article class="artifact p-5 sm:p-7">
+              <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4">
+                <div><p class="font-mono text-[0.68rem] text-[var(--muted)]">.rationale/subjects/retry-policy.yaml</p><h3 class="mt-1 text-xl font-bold" data-i18n="packetSummary">Exponential backoff for outbound retries</h3></div>
+                <span class="signal-chip px-2 py-1 font-mono text-[0.62rem] font-bold" data-i18n="packetApproval">human-approved</span>
+              </div>
+              <dl class="mt-5">
+                <div class="packet-line"><dt>why_it_matters</dt><dd data-i18n="packetWhy">Reduces cascading failures under transient upstream errors.</dd></div>
+                <div class="packet-line"><dt>decision</dt><dd data-i18n="packetDecision">Use exponential backoff with jitter. Cap at 30s, 5 attempts.</dd></div>
+                <div class="packet-line"><dt>trade-offs</dt><dd data-i18n="packetTradeoffs">Higher tail latency vs. improved success rate and stability.</dd></div>
+                <div class="packet-line"><dt>authority</dt><dd>platform / human review</dd></div>
+                <div class="packet-line"><dt>evidence</dt><dd>ADR-042 · incident-2024-04-11</dd></div>
+              </dl>
+              <p class="mt-5 font-mono text-[0.66rem] text-[var(--muted)]"><span class="text-[var(--signal-strong)]">observed</span> · bound to src/retry/policy.ts · reviewed 2024-05-17</p>
+            </article>
+
+            <article class="artifact-flat p-5 sm:p-7">
+              <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4">
+                <div><p class="font-mono text-[0.68rem] text-[var(--muted)]" data-i18n="diffTitle">src/retry/policy.ts</p><h3 class="mt-1 text-xl font-bold">+48 / −17</h3></div>
+                <span class="font-mono text-[0.66rem] text-[var(--muted)]" data-i18n="synthetic">Synthetic demonstration</span>
+              </div>
+              <p class="mt-5 text-sm text-[var(--muted-strong)]" data-i18n="diffBody">The change is legible beside the reason it exists.</p>
+              <div class="mt-5 overflow-x-auto border-y border-[var(--line)] py-4">
+                <div class="code-line"><span class="line-number">42</span><span>export function retry(request) &#123;</span></div>
+                <div class="code-line removed"><span class="line-number">43</span><span>- return send(request, RETRY_DELAY_MS)</span></div>
+                <div class="code-line added"><span class="line-number">43</span><span>+ return sendWithBackoff(request, jitter)</span></div>
+                <div class="code-line added"><span class="line-number">44</span><span>+ // see: .rationale/records/retry-policy.yaml</span></div>
+              </div>
+              <div class="mt-5 space-y-2 font-mono text-[0.68rem]"><p class="text-[var(--signal-strong)]">+ <span data-i18n="diffAdded">export const MAX_ATTEMPTS = 5</span></p><p class="text-[var(--signal-strong)]">+ <span data-i18n="diffAdded2">export const BASE_DELAY_MS = 250</span></p><p class="text-[var(--warning)]">− <span data-i18n="diffRemoved">export const RETRY_DELAY_MS = 500</span></p></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="documentation" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="docs-title">
+          <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
+            <div>
+              <p class="eyebrow" data-i18n="docsEyebrow">Documentation / start with the work</p>
+              <h2 id="docs-title" class="display mt-5 max-w-[480px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="docsTitle">Everything you need to verify the claim.</h2>
+              <p class="mt-5 max-w-[440px] text-[var(--muted-strong)]" data-i18n="docsBody">Use the landing to orient yourself; use the repository docs to inspect the real behavior, limits and evidence.</p>
+            </div>
+            <div class="divide-y divide-[var(--line)] border-y border-[var(--line)]">
+              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.quickstart} target="_blank" rel="noreferrer">
+                <span class="eyebrow" data-i18n="docsStart">Start</span><span><strong class="block text-lg"> <span data-i18n="docsQuickstart">Five-minute quickstart</span> <span aria-hidden="true" class="text-[var(--signal-strong)]">↗</span></strong><span class="mt-1 block text-sm text-[var(--muted)]" data-i18n="docsQuickstartBody">Install, initialize a project, inspect health and run the first preflight.</span></span><span class="hidden font-mono text-xs text-[var(--muted)] sm:block">01</span>
+              </a>
+              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.architecture} target="_blank" rel="noreferrer">
+                <span class="eyebrow" data-i18n="docsUnderstand">Understand</span><span><strong class="block text-lg"><span data-i18n="docsArchitecture">Factual architecture</span> <span aria-hidden="true" class="text-[var(--signal-strong)]">↗</span></strong><span class="mt-1 block text-sm text-[var(--muted)]" data-i18n="docsArchitectureBody">See the real modules and the prepare → capture → review flow.</span></span><span class="hidden font-mono text-xs text-[var(--muted)] sm:block">02</span>
+              </a>
+              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.agents} target="_blank" rel="noreferrer">
+                <span class="eyebrow" data-i18n="docsOperate">Operate</span><span><strong class="block text-lg"><span data-i18n="docsAgents">Agents and MCP</span> <span aria-hidden="true" class="text-[var(--signal-strong)]">↗</span></strong><span class="mt-1 block text-sm text-[var(--muted)]" data-i18n="docsAgentsBody">Connect the tools without handing approval to the protocol.</span></span><span class="hidden font-mono text-xs text-[var(--muted)] sm:block">03</span>
+              </a>
+              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.evidence} target="_blank" rel="noreferrer">
+                <span class="eyebrow" data-i18n="docsVerify">Verify</span><span><strong class="block text-lg"><span data-i18n="docsEvidence">Dogfood and pilot evidence</span> <span aria-hidden="true" class="text-[var(--signal-strong)]">↗</span></strong><span class="mt-1 block text-sm text-[var(--muted)]" data-i18n="docsEvidenceBody">Read the evidence with its coverage, gates and uncertainty attached.</span></span><span class="hidden font-mono text-xs text-[var(--muted)] sm:block">04</span>
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="trust-title">
+          <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
+            <div>
+              <p class="eyebrow" data-i18n="trustEyebrow">Trust is a product behavior</p>
+              <h2 id="trust-title" class="display mt-5 max-w-[450px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="trustTitle">Local by default. Explicit about uncertainty.</h2>
+            </div>
+            <div class="grid divide-y divide-[var(--line)] border-y border-[var(--line)] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+              <article class="py-6 sm:pr-8 sm:py-0"><p class="font-mono text-xs font-bold text-[var(--signal-strong)]">CANON / LOCAL</p><h3 class="mt-5 text-xl font-bold" data-i18n="trustLocal">What stays local</h3><p class="mt-3 text-[var(--muted-strong)]" data-i18n="trustLocalBody">The `.rationale/` canon is versioned with the project. Logs stay local. Derived SQLite/FTS can be rebuilt and is never the only copy.</p></article>
+              <article class="py-6 sm:pl-8 sm:py-0"><p class="font-mono text-xs font-bold text-[var(--signal-strong)]">BOUNDARY / HUMAN</p><h3 class="mt-5 text-xl font-bold" data-i18n="trustHuman">What stays human</h3><p class="mt-3 text-[var(--muted-strong)]" data-i18n="trustHumanBody">MCP can prepare and capture. It cannot approve, revoke, supersede or change authority. Those actions require `rationale review`.</p></article>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="status-title">
+          <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
+            <div><p class="eyebrow" data-i18n="statusEyebrow">Release truth</p><h2 id="status-title" class="display mt-5 max-w-[450px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="statusTitle">Useful now, honest about what is still open.</h2></div>
+            <div class="warning-chip p-5 sm:p-7"><p class="font-mono text-xs font-bold" data-i18n="statusAlpha">pre-1.0 / dogfood</p><p class="mt-5 max-w-[620px] text-lg font-semibold leading-[1.4]" data-i18n="statusBody">Rationale is pre-1.0. The core and full capture/review cycle are functional; pilot gates and human review remain visible work.</p><div class="mt-6 grid gap-3 border-t border-[color-mix(in_srgb,var(--warning)_35%,transparent)] pt-5 font-mono text-[0.72rem]"><p>✓ <span data-i18n="statusEvidence">Current public evidence: v0.0.0-dogfood.7</span></p><p>! <span data-i18n="statusOpen">Open: alpha promotion, platform matrix, provider coverage and pilot gates.</span></p></div></div>
+          </div>
+        </section>
+
+        <section id="install" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="install-title">
+          <div class="artifact grid gap-8 p-5 sm:p-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-16 lg:p-10">
+            <div><p class="eyebrow" data-i18n="installEyebrow">Install / then initialize</p><h2 id="install-title" class="display mt-5 max-w-[520px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="installTitle">Protect the why before the next change.</h2><p class="mt-5 max-w-[500px] text-[var(--muted-strong)]" data-i18n="installBody">The installer places the binary locally. `rationale init` creates the project canon and detects the agent configuration.</p></div>
+            <div class="space-y-5">
+              <div class="companion-note border border-[var(--line-strong)] bg-[var(--signal-soft)] p-4 sm:p-5">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                  <div class="min-w-0"><p class="eyebrow" data-i18n="cbmEyebrow">Companion / structural coverage</p><h3 class="mt-2 text-xl font-bold" data-i18n="cbmTitle">Install Codebase Memory first.</h3><p class="mt-2 max-w-[620px] text-sm leading-[1.5] text-[var(--muted-strong)]" data-i18n="cbmBody">Codebase Memory maps where and how the code connects; Rationale carries why. The full path uses both. Rationale can still run alone with degraded coverage.</p></div>
+                  <a class="shrink-0 font-mono text-[0.68rem] font-bold text-[var(--signal-strong)] hover:underline" href={codebaseMemoryUrl} target="_blank" rel="noreferrer"><span data-i18n="cbmLink">Open Codebase Memory</span> ↗</a>
+                </div>
+                <p class="mb-2 mt-4 font-mono text-xs text-[var(--muted)]" data-i18n="cbmCommandLabel">macOS + Linux</p>
+                <div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="overflow-x-auto whitespace-nowrap px-3 py-3 text-[0.7rem] text-[var(--ink)] sm:px-4 sm:text-xs">{codebaseMemoryCommand}</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value={codebaseMemoryCommand}><span data-copy-status data-i18n="installCopy">Copy command</span></button></div>
+              </div>
+              <div><p class="mb-2 font-mono text-xs text-[var(--muted)]">01 / macOS + Linux</p><div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="overflow-x-auto whitespace-nowrap px-3 py-3 text-[0.7rem] text-[var(--ink)] sm:px-4 sm:text-xs">{installCommand}</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value={installCommand}><span data-copy-status data-i18n="installCopy">Copy command</span></button></div></div>
+              <div><p class="mb-2 font-mono text-xs text-[var(--muted)]" data-i18n="installStep2">Then, inside the repository:</p><div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="px-3 py-3 text-xs text-[var(--ink)] sm:px-4">rationale init</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value="rationale init"><span data-copy-status data-i18n="installCopy">Copy command</span></button></div></div>
+              <div><p class="mb-2 font-mono text-xs text-[var(--muted)]" data-i18n="installStep3">Check the project health:</p><div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="px-3 py-3 text-xs text-[var(--ink)] sm:px-4">rationale health</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value="rationale health"><span data-copy-status data-i18n="installCopy">Copy command</span></button></div></div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="mx-auto flex max-w-[1180px] flex-col gap-5 border-t border-[var(--line)] px-5 py-8 text-sm text-[var(--muted)] sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-10">
+        <div><p class="font-semibold text-[var(--ink)]" data-i18n="footerLine">Your repo. Your process. Your context.</p><p class="mt-1 font-mono text-[0.65rem]" data-i18n="footerStatus">No remote telemetry by default</p></div>
+        <nav class="flex flex-wrap gap-5 font-mono text-[0.7rem]" aria-label="Footer navigation"><a class="hover:text-[var(--signal-strong)]" href={docs.quickstart} target="_blank" rel="noreferrer" data-i18n="footerDocs">Docs</a><a class="hover:text-[var(--signal-strong)]" href={repo} target="_blank" rel="noreferrer" data-i18n="footerGithub">GitHub</a><span data-i18n="footerLicense">MIT License</span></nav>
+      </footer>
+    </div>
+
+    <script>
+      import { boot } from "../scripts/site.js";
+      boot();
+    </script>
+  </body>
+</html>

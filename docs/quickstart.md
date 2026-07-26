@@ -70,4 +70,4 @@ Ninguno de los dos toca `.rationale/` — es tu canon, y borrarlo es una decisi�
 
 ## Siguiente paso
 
-Si vas a construir sobre Rationale (no solo usarlo), sigue con [`docs/runbooks/README.md`](runbooks/README.md) y los tres documentos fundacionales listados en el [`README`](../README.md#documentos-fundacionales-leer-en-este-orden) principal.
+Si vas a construir sobre Rationale (no solo usarlo), sigue con el [índice de documentación](README.md), [CONTRIBUTING.md](../CONTRIBUTING.md) y los tres documentos fundacionales listados en el [`README`](../README.md#documentos-fundacionales-leer-en-este-orden) principal.

@@ -12,7 +12,8 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/rel
 
 Variables soportadas:
 
-- `RATIONALE_VERSION=v0.1.0-alpha.1` fija una versión concreta.
+- `RATIONALE_VERSION=v0.0.0-dogfood.7` fija una versión concreta (sustitúyela
+  por el tag publicado que quieras usar).
 - `RATIONALE_INSTALL_DIR=$HOME/.local/bin` cambia el destino.
 - `RATIONALE_SKIP_AGENT_CONFIG=1` evita editar la configuración MCP de Codex.
 
@@ -72,7 +73,7 @@ proyecto automáticamente. Ver [`uninstall.md`](uninstall.md).
 ## Verificar la instalación
 
 ```bash
-target/release/rationale health
+rationale health
 ```
 
 Debe imprimir JSON con `project_id`, `git_revision`, `provider_status`. Ver [`diagnostics.md`](diagnostics.md) si algo falla.

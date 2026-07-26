@@ -2,7 +2,7 @@
 
 ## Gate de entrada
 
-- Fase G completa y Release dogfood vigente `v0.0.0-dogfood.6` publicada.
+- Fase G completa y Release dogfood vigente `v0.0.0-dogfood.7` publicada.
 - Security baseline revisado y sin P0/P1 abiertos.
 - Instalador probado en una máquina limpia.
 - El dueño del proyecto autoriza expresamente los paths de Rationale,

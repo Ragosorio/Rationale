@@ -1,46 +1,160 @@
 # Rationale
 
-Rationale es un compilador local de contexto causal y una capa de procedencia, autoridad y vigencia para agentes de programación. Conserva por qué se hicieron cambios importantes, qué decisiones y restricciones gobiernan el comportamiento del sistema, quién podía aprobarlas y qué evidencia las respalda — y compila únicamente el contexto confiable, relevante y accionable que una tarea concreta necesita.
+Rationale es un compilador local de contexto causal para agentes de
+programación. Combina la memoria estructural del código con decisiones,
+restricciones, autoridad y evidencia para que un agente sepa no solo **dónde**
+está el código, sino también **por qué** debe seguir funcionando así.
 
 > Git remembers what changed. Rationale remembers why it still matters.
 
-## Estado real del proyecto
+## Elige tu recorrido
 
-**Pre-1.0, núcleo funcional con ciclo de captura y lifecycle de revisión.** El lenguaje del núcleo está decidido (Rust, `docs/adr/ADR-0001-core-language.md`) y ya existe un binario real en `src/` que implementa el modelo canónico completo (`Subject`, `Evidence`, `Assessment`, `Record`), una capa derivada local (SQLite + FTS, invalidada por revisión de Git), un Context Compiler con niveles de prioridad y presupuesto explícito, y una superficie MCP con cuatro herramientas: `prepare_change`, `explain_target`, `health` y `finalize_change`. `finalize_change` captura mecánicamente un cambio (diff, señales de alto valor, Subject candidato) y escribe una propuesta **pendiente** — nunca aprobada automáticamente; `rationale review` y `rationale review-record` en la CLI son las únicas vías de mutación humana, con confirmación explícita y eventos auditables.
+- **Solo quiero usarlo:** empieza por [Quickstart](docs/quickstart.md).
+- **Quiero conectarlo a un agente:** sigue [Agentes y MCP](docs/user-guide/agents-and-mcp.md).
+- **Quiero contribuir:** lee [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Quiero investigar una decisión:** consulta [Conceptos](docs/user-guide/concepts.md) y los [ADRs](docs/adr/).
+- **Tengo un problema:** abre un issue siguiendo [SUPPORT.md](SUPPORT.md).
 
-**Ningún ADR completo está `accepted` todavía** — los 12 ADRs propuestos y la decisión parcial de ADR-0011 siguen pendientes de revisión cruzada y aprobación humana (`docs/adr/index.md`, Subject `evaluation.no-self-certification`). El empaquetado de la alfa se genera para GitHub Releases; la Release dogfood vigente es `v0.0.0-dogfood.7` y precede al tag instalable `v0.1.0-alpha.1`.
+## Estado actual
 
-## Instalación
+La rama de alfa (`release/v0.1.0-alpha.1`) contiene el núcleo funcional y el
+ciclo completo de captura y revisión. La Release pública verificable actual es
+`v0.0.0-dogfood.7`; el tag `v0.1.0-alpha.1` se publicará después de cerrar la
+revisión humana del piloto y los gates de promoción documentados en
+[`docs/runbooks/release.md`](docs/runbooks/release.md).
+
+El núcleo implementa `Subject`, `Evidence`, `Assessment` y `Record`, un store
+canónico YAML, una capa derivada SQLite + FTS, el compilador de contexto y un
+servidor MCP. Ningún agente aprueba decisiones automáticamente: MCP consulta y
+prepara; la CLI interactiva es la frontera humana de aprobación y lifecycle.
+
+## Instalación rápida
+
+### macOS y Linux
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh
-rationale init   # dentro de tu proyecto: crea .rationale/ y avisa solo a tu agente de código (Claude Code, Codex, Cursor)
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh
+rationale --help
 ```
 
-Guía completa de cinco minutos, con el flujo real de uso: [`docs/quickstart.md`](docs/quickstart.md).
+### Windows PowerShell
 
-El instalador coloca el binario en `~/.local/bin` (o `RATIONALE_INSTALL_DIR`), verifica SHA-256 y conserva `.rationale/` al actualizar o desinstalar. `rationale init` detecta y configura automáticamente el agente presente en el proyecto — desactivable con `--skip-agent-config` o `RATIONALE_SKIP_AGENT_CONFIG=1`; re-ejecutable a mano con `rationale install-agent` (y reversible con `rationale uninstall-agent`).
+```powershell
+$installer = Join-Path $env:TEMP "rationale-installer.ps1"
+Invoke-WebRequest https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.ps1 -OutFile $installer
+& $installer
+rationale.exe --help
+```
 
-Requiere, opcionalmente, [`codebase-memory-mcp`](docs/research/codebase-memory/) en el `PATH` como proveedor estructural — sin él, Rationale sigue funcionando pero con cobertura degradada (`provider_status: unavailable`), nunca bloquea.
+Después, desde la raíz del proyecto que quieres gobernar:
 
-Para compilar desde fuente en vez de usar el binario, ver [`docs/runbooks/install.md`](docs/runbooks/install.md).
+```bash
+rationale init
+rationale health
+```
+
+El instalador verifica SHA-256, instala el binario y conserva el canon
+`.rationale/` al actualizar o desinstalar. La guía completa está en
+[`docs/runbooks/install.md`](docs/runbooks/install.md).
+
+## Primer flujo en cinco minutos
+
+1. Instala Rationale y ejecuta `rationale init`.
+2. Comprueba `rationale health`.
+3. Configura el agente con `rationale install-agent --dry-run` y luego
+   `rationale install-agent` si quieres aplicar la integración.
+4. Antes de un cambio, el agente llama a `prepare_change` y recibe contexto
+   relevante, restricciones, autoridad, vigencia y conflictos con la intención.
+5. Después del cambio, el agente llama a `finalize_change`. Si el cambio tiene
+   señales suficientes, se escribe una propuesta pendiente en
+   `.rationale/proposals/`.
+6. Una persona ejecuta `rationale review`, corrige, rechaza o aprueba la
+   propuesta con confirmación explícita.
+7. En cambios futuros, `prepare_change` puede recuperar el Record aprobado.
+
+El recorrido guiado está en [`docs/quickstart.md`](docs/quickstart.md); el
+flujo diario detallado está en [`docs/user-guide/daily-workflow.md`](docs/user-guide/daily-workflow.md).
+
+## Cómo funciona
+
+```text
+Codebase Memory (dónde/cómo) ─┐
+                              ├─> Context Compiler ─> packet para el agente
+Canon .rationale (por qué) ───┘
+
+agente cambia código ─> finalize_change ─> propuesta pendiente
+                                              │
+                                      review humana por CLI
+                                              │
+                                      Record versionado
+```
+
+Codebase Memory es un proveedor estructural opcional. Sin él, Rationale sigue
+funcionando con cobertura degradada y lo informa mediante `health`; nunca lee
+la base interna del proveedor ni lo trata como fuente de autoridad.
+
+Rationale no es otro indexador de código, no reemplaza Git, no es un SaaS, no
+guarda conversaciones, no usa embeddings remotos obligatorios y no decide por
+sí solo que una afirmación es verdadera.
+
+## Comandos y MCP
+
+| Necesidad | CLI | MCP |
+|---|---|---|
+| Inicializar | `rationale init` | — |
+| Salud y revisión | `rationale health` | `health` |
+| Preparar contexto | `rationale prepare <target>` | `prepare_change` |
+| Explicar un target | — | `explain_target` |
+| Capturar una propuesta | — | `finalize_change` |
+| Revisar propuestas | `rationale review` | — |
+| Lifecycle de Records | `rationale review-record <id>` | — |
+| Registrar/revertir agente | `install-agent` / `uninstall-agent` | — |
+
+Las mutaciones humanas son deliberadamente interactivas. MCP no aprueba,
+revoca, supersede ni cambia autoridad.
 
 ## Documentos fundacionales (leer en este orden)
 
-1. [`Rationale_v0.5.md`](Rationale_v0.5.md) — contrato de producto: qué es, qué problema resuelve, modelo de entidades, modelo de confianza, roadmap.
-2. [`Rationale_Arquitectura_Conceptual_v0.1.md`](Rationale_Arquitectura_Conceptual_v0.1.md) — contrato técnico: fronteras, componentes, qué está decidido y qué requiere investigación.
-3. [`Rationale_Proceso_Construccion_Agentes_v0.1.md`](Rationale_Proceso_Construccion_Agentes_v0.1.md) — manual operativo para agentes que construyen el proyecto.
+1. [`Rationale_v0.5.md`](Rationale_v0.5.md) — contrato de producto: problema,
+   entidades, confianza y roadmap.
+2. [`Rationale_Arquitectura_Conceptual_v0.1.md`](Rationale_Arquitectura_Conceptual_v0.1.md)
+   — fronteras técnicas y decisiones de arquitectura.
+3. [`Rationale_Proceso_Construccion_Agentes_v0.1.md`](Rationale_Proceso_Construccion_Agentes_v0.1.md)
+   — proceso de trabajo, revisión cruzada y gates de calidad.
 
-## Para agentes
+## Datos, privacidad y archivos
 
-Empezar por [`AGENTS.md`](AGENTS.md), no por estos tres documentos completos. `AGENTS.md` indica qué leer según el tipo de tarea, en qué fase está el proyecto ahora mismo, y qué NO hacer.
+| Capa | Ubicación | Git |
+|---|---|---|
+| Subjects, Records y propuestas | `<proyecto>/.rationale/` | Sí |
+| Logs de ejecución | `<proyecto>/.rationale-local/` | No |
+| SQLite/FTS derivado | `~/.cache/rationale/projects/<id>/` | No |
+| Binario | `~/.local/bin/rationale` o destino configurado | No |
 
-## Más documentación
+Rationale es local-first: no sube código, prompts, Records o secretos por
+defecto. Revisa [`docs/user-guide/configuration.md`](docs/user-guide/configuration.md)
+antes de usarlo en repositorios con datos sensibles.
 
-- [`docs/quickstart.md`](docs/quickstart.md) — guía de cinco minutos: qué hace, qué se instala, el flujo real de uso, cómo se quita.
-- [`docs/architecture/code-map.md`](docs/architecture/code-map.md) — mapa de los módulos reales de `src/` y cómo fluyen `prepare`/`serve` de punta a punta.
-- [`docs/runbooks/`](docs/runbooks/) — build, test, instalación, reseteo de cache, fallo de proveedor, diagnóstico, desinstalación.
-- [`docs/adr/`](docs/adr/) — decisiones arquitectónicas con su evidencia, todas en estado `proposed`.
+## Documentación
+
+El índice por audiencia está en [`docs/README.md`](docs/README.md).
+
+- [Quickstart](docs/quickstart.md) — primera ejecución.
+- [Guía de usuario](docs/user-guide/) — conceptos, flujo diario, CLI, MCP y configuración.
+- [Runbooks](docs/runbooks/) — instalación, diagnóstico, proveedor, cache y release.
+- [Arquitectura factual](docs/architecture/code-map.md) — módulos y flujos reales.
+- [ADRs](docs/adr/) — decisiones y estado de aprobación.
+- [Seguridad](docs/security/) — límites y baseline.
+- [Investigación Codebase Memory](docs/research/codebase-memory/) — integración y límites.
+
+## Contribuir y obtener ayuda
+
+- Contribuciones: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- Vulnerabilidades: [`SECURITY.md`](SECURITY.md).
+- Soporte y bugs: [`SUPPORT.md`](SUPPORT.md).
+- Conducta comunitaria: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+- Historial de cambios: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Licencia
 
