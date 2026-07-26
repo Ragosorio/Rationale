@@ -32,7 +32,7 @@ risks:
 - id: risk.constraint.f8-project-authority.0
   statement: Pending proposal requires human review before becoming normative.
   epistemic_status: stated
-bound_revision: a534d5de0d2cc4292df04c366248bfffd75b06ff
+bound_revision: ffd7104b77bc4094ebdc8ee08d0fd8bd89b7c0c1
 subject:
   id: governance.project-declared-authority
 schema_version: rationale/0.1
