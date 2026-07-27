@@ -17,9 +17,10 @@ está el código, sino también **por qué** debe seguir funcionando así.
 
 ## Estado actual
 
-La rama `release/v0.1.0-alpha.1` contiene el núcleo funcional y el ciclo
-completo de captura y revisión. La Release pública verificable actual es
-`v0.1.0-alpha.7`. Consulta los
+`main` contiene el núcleo funcional y el ciclo completo de captura y
+revisión (la rama `release/v0.1.0-alpha.1` desarrolló hasta alpha.6 y ya se
+fusionó ahí). La Release pública verificable actual es `v0.1.0-alpha.7`.
+Consulta los
 gates y la historia en [`CHANGELOG.md`](CHANGELOG.md) y
 [`docs/runbooks/release.md`](docs/runbooks/release.md).
 

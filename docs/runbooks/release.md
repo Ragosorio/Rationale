@@ -1,14 +1,14 @@
 # Release runbook
 
-La Release pública vigente es `v0.1.0-alpha.7`, construida desde la rama
-`release/v0.1.0-alpha.1`. Los tags `dogfood.*` quedan como iteraciones
-históricas de hardening y no deben usarse para validar el flujo actual. Los
-cambios posteriores de gobernanza y landing permanecen en `Unreleased` hasta
-que pasen los gates de esta guía.
+La Release pública vigente es `v0.1.0-alpha.7`, construida directamente desde
+`main`. La rama `release/v0.1.0-alpha.1` contuvo el desarrollo hasta alpha.6 y
+ya se fusionó a `main`; el trabajo activo no vive ahí. Los tags `dogfood.*`
+quedan como iteraciones históricas de hardening y no deben usarse para validar
+el flujo actual.
 
 ## Antes del tag
 
-- PR desde `release/fase-g-mvp-local` revisado y CI verde.
+- PR o commit directo a `main` con CI verde.
 - `cargo fmt --check`.
 - `cargo clippy --all-targets -- -D warnings`.
 - `cargo test --release`.
