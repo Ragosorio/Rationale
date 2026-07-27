@@ -9,9 +9,11 @@
 
 mod agents;
 mod assessment;
+mod binding_match;
 mod cache;
 mod capture;
 mod configuration;
+mod doctor;
 mod evaluation;
 mod mascot;
 mod mcp;
@@ -54,6 +56,7 @@ fn main() {
                 | "install-agent"
                 | "uninstall-agent"
                 | "update"
+                | "doctor"
         )
     {
         print_command_help(command);
@@ -75,6 +78,7 @@ fn main() {
         "install-agent" => cmd_install_agent(command_args),
         "uninstall-agent" => cmd_uninstall_agent(command_args),
         "update" => cmd_update(command_args),
+        "doctor" => cmd_doctor(command_args),
         _ => {
             eprintln!("comando desconocido: {command}");
             print_usage();
@@ -85,61 +89,67 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "Uso: rationale <init|health|prepare|serve|review|review-record|install-agent|uninstall-agent|update> [opciones]"
+        "Uso: rationale <init|health|prepare|serve|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
     );
     println!("  rationale --help");
     println!("  rationale --version");
-    println!("  rationale init [--skip-agent-config]");
-    println!("  rationale health [--project-root <path>]");
+    println!("  rationale init [--skip-agent-config] [--no-mascot]");
+    println!("  rationale health [--project-root <path>] [--no-mascot]");
     println!(
-        "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]"
+        "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--no-mascot]"
     );
     println!(
         "  rationale serve   # servidor MCP (prepare_change, explain_target, health, finalize_change)"
     );
     println!(
-        "  rationale review [--project-root <path>]   # confirma propuestas pendientes, una a la vez"
+        "  rationale review [--project-root <path>] [--no-mascot]   # confirma propuestas pendientes, una a la vez"
     );
     println!(
-        "  rationale review-record <record-id> [--project-root <path>]   # lifecycle humano de un Record aprobado"
+        "  rationale review-record <record-id> [--project-root <path>] [--no-mascot]   # lifecycle humano de un Record aprobado"
     );
     println!(
-        "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
+        "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-mascot]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
     );
     println!(
-        "  rationale uninstall-agent [--project-root <path>]   # revierte exactamente lo que install-agent escribió"
+        "  rationale uninstall-agent [--project-root <path>] [--no-mascot]   # revierte exactamente lo que install-agent escribió"
     );
     println!("  rationale update   # descarga e instala la última Release disponible");
+    println!(
+        "  rationale doctor [--project-root <path>] [--check] [--repair] [--json]   # detecta (y opcionalmente repara) defectos de integridad en el canon"
+    );
 }
 
 fn print_command_help(command: &str) {
     match command {
         "init" => println!(
-            "Uso: rationale init [--skip-agent-config]\n\nCrea el canon .rationale/ del proyecto."
+            "Uso: rationale init [--skip-agent-config] [--no-mascot]\n\nCrea el canon .rationale/ del proyecto."
         ),
         "health" => println!(
-            "Uso: rationale health [--project-root <path>]\n\nReporta el estado del proyecto y del proveedor."
+            "Uso: rationale health [--project-root <path>] [--no-mascot]\n\nReporta el estado del proyecto y del proveedor."
         ),
         "prepare" => println!(
-            "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"]\n\nCompila un ContextPacket antes de un cambio."
+            "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--no-mascot]\n\nCompila un ContextPacket antes de un cambio."
         ),
         "serve" => println!(
             "Uso: rationale serve\n\nInicia el servidor MCP persistente por stdin/stdout. El proceso permanece abierto esperando mensajes del agente."
         ),
         "review" => println!(
-            "Uso: rationale review [--project-root <path>]\n\nRevisa propuestas pendientes con confirmación humana."
+            "Uso: rationale review [--project-root <path>] [--no-mascot]\n\nRevisa propuestas pendientes con confirmación humana."
         ),
         "review-record" => println!(
-            "Uso: rationale review-record <record-id> [--project-root <path>]\n\nEjecuta lifecycle sobre un Record aprobado."
+            "Uso: rationale review-record <record-id> [--project-root <path>] [--no-mascot]\n\nEjecuta lifecycle sobre un Record aprobado."
         ),
         "install-agent" => println!(
-            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only]\n\nRegistra MCP e instrucciones de invocación de forma idempotente."
+            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-mascot]\n\nRegistra MCP e instrucciones de invocación de forma idempotente."
         ),
         "uninstall-agent" => println!(
-            "Uso: rationale uninstall-agent [--project-root <path>]\n\nRevierte exactamente lo que install-agent escribió."
+            "Uso: rationale uninstall-agent [--project-root <path>] [--no-mascot]\n\nRevierte exactamente lo que install-agent escribió."
         ),
         "update" => println!(
             "Uso: rationale update\n\nDescarga e instala la última Release mediante el helper instalado junto al binario."
+        ),
+        "doctor" => println!(
+            "Uso: rationale doctor [--project-root <path>] [--check] [--repair] [--json]\n\nDetecta severidades inválidas, Records sin bindings, path_hint rotos, Subjects colgantes y Records sin aprobación. Solo lectura por defecto; --check sale con código 1 si hay hallazgos; --repair pide confirmación por hallazgo."
         ),
         _ => unreachable!("solo se solicita ayuda para comandos conocidos"),
     }
@@ -151,25 +161,31 @@ fn wants_help(args: &[String]) -> bool {
 
 fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
     match command {
-        "init" => validate_flags(command, args, &["--skip-agent-config"], &[]),
-        "health" => validate_flags(command, args, &[], &["--project-root"]),
+        "init" => validate_flags(command, args, &["--skip-agent-config", "--no-mascot"], &[]),
+        "health" => validate_flags(command, args, &["--no-mascot"], &["--project-root"]),
         "prepare" => validate_flags(
             command,
             args,
-            &[],
+            &["--no-mascot"],
             &["--project-root", "--repo-path", "--intent"],
         ),
         "serve" => validate_flags(command, args, &[], &[]),
-        "review" => validate_flags(command, args, &[], &["--project-root"]),
-        "review-record" => validate_flags(command, args, &[], &["--project-root"]),
+        "review" => validate_flags(command, args, &["--no-mascot"], &["--project-root"]),
+        "review-record" => validate_flags(command, args, &["--no-mascot"], &["--project-root"]),
         "install-agent" => validate_flags(
             command,
             args,
-            &["--dry-run", "--global-only"],
+            &["--dry-run", "--global-only", "--no-mascot"],
             &["--project-root"],
         ),
-        "uninstall-agent" => validate_flags(command, args, &[], &["--project-root"]),
+        "uninstall-agent" => validate_flags(command, args, &["--no-mascot"], &["--project-root"]),
         "update" => validate_flags(command, args, &[], &[]),
+        "doctor" => validate_flags(
+            command,
+            args,
+            &["--check", "--repair", "--json"],
+            &["--project-root"],
+        ),
         _ => Ok(()),
     }
 }
@@ -246,14 +262,12 @@ fn cmd_init(args: &[String]) {
         );
         return;
     }
-    for sub in [
-        "subjects",
-        "records",
-        "bindings",
-        "approvals",
-        "schemas",
-        "migrations",
-    ] {
+    // `bindings/` deliberadamente NO está en esta lista: ningún código lee
+    // o escribe ahí — los bindings viven embebidos en
+    // `Record.binding_declarations` (ver `.rationale/bindings/README.md`
+    // en proyectos que ya lo tenían). Mantenerlo era una falsa afordancia
+    // que costó tiempo real de diagnóstico durante un dogfood.
+    for sub in ["subjects", "records", "approvals", "schemas", "migrations"] {
         std::fs::create_dir_all(rationale_dir.join(sub))
             .unwrap_or_else(|e| fail(format!("no se pudo crear .rationale/{sub}: {e}")));
     }
@@ -264,8 +278,10 @@ fn cmd_init(args: &[String]) {
 
     // Todo lo que sigue es decoración y conveniencia para humanos — va a
     // stderr para no tocar el contrato de stdout de arriba.
-    eprintln!("{}", mascot::art(mascot::Mood::Happy));
-    eprintln!("  Soy Chestie — cuido las vallas de este proyecto: por qué existe el código, no solo qué hace.");
+    mascot::print_stderr(args, mascot::Mood::Happy);
+    if mascot::stderr_enabled(args) {
+        eprintln!("  Soy Chestie — cuido las vallas de este proyecto: por qué existe el código, no solo qué hace.");
+    }
 
     let skip_agent_config = args.iter().any(|a| a == "--skip-agent-config")
         || std::env::var("RATIONALE_SKIP_AGENT_CONFIG").as_deref() == Ok("1");
@@ -273,26 +289,36 @@ fn cmd_init(args: &[String]) {
         return;
     }
 
-    eprintln!();
-    eprintln!("{}", mascot::art(mascot::Mood::Searching));
-    eprintln!("  Buscando agentes de código en este proyecto para avisarles de mí...");
+    if mascot::stderr_enabled(args) {
+        eprintln!();
+    }
+    mascot::print_stderr(args, mascot::Mood::Searching);
+    if mascot::stderr_enabled(args) {
+        eprintln!("  Buscando agentes de código en este proyecto para avisarles de mí...");
+    }
     let rationale_local = find_rationale_local(&cwd);
     let binary_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("rationale"));
     match agents::install(&cwd, &rationale_local, &binary_path, false) {
         Ok(report) if report.detected.is_empty() => {
-            eprintln!(
-                "  No encontré ningún agente conocido todavía — corre 'rationale install-agent' cuando tengas uno."
-            );
+            if mascot::stderr_enabled(args) {
+                eprintln!(
+                    "  No encontré ningún agente conocido todavía — corre 'rationale install-agent' cuando tengas uno."
+                );
+            }
         }
         Ok(report) => {
-            eprintln!("{}", mascot::art(mascot::Mood::Happy));
-            eprintln!("  Avisé a: {}", report.detected.join(", "));
-            for line in &report.actions {
-                eprintln!("  - {line}");
+            mascot::print_stderr(args, mascot::Mood::Happy);
+            if mascot::stderr_enabled(args) {
+                eprintln!("  Avisé a: {}", report.detected.join(", "));
+                for line in &report.actions {
+                    eprintln!("  - {line}");
+                }
             }
         }
         Err(error) => {
-            eprintln!("  advertencia: no pude avisar a los agentes automáticamente: {error}");
+            if mascot::stderr_enabled(args) {
+                eprintln!("  advertencia: no pude avisar a los agentes automáticamente: {error}");
+            }
         }
     }
 }
@@ -302,6 +328,19 @@ fn cmd_health(args: &[String]) {
 
     let mut provider = providers::ProviderHandle::spawn();
     let outcome = pipeline::health(&project_root, &mut provider).unwrap_or_else(fail);
+
+    match outcome.provider_status {
+        providers::ProviderStatus::Successful => {
+            mascot::print_stderr(args, mascot::Mood::Happy);
+        }
+        providers::ProviderStatus::Degraded | providers::ProviderStatus::Unavailable => {
+            let message = outcome
+                .provider_error
+                .as_deref()
+                .unwrap_or("El proveedor necesita atención; el canon local sigue disponible.");
+            mascot::print_guarding_stderr(args, message);
+        }
+    }
 
     let provider_line = match &outcome.provider_error {
         Some(e) => format!("\"provider_status\":\"unreachable\",\"provider_error\":\"{e}\""),
@@ -359,10 +398,10 @@ fn cmd_prepare(args: &[String]) {
 
     match outcome.packet.critical_constraints.first() {
         Some(constraint) => {
-            eprintln!("{}", mascot::guarding_with_message(&constraint.statement));
+            mascot::print_guarding_stderr(args, &constraint.statement);
         }
         None => {
-            eprintln!("{}", mascot::art(mascot::Mood::Happy));
+            mascot::print_stderr(args, mascot::Mood::Happy);
         }
     }
 
@@ -416,6 +455,7 @@ fn cmd_review(args: &[String]) {
             path.display()
         );
     }
+    mascot::print_stdout(args, mascot::Mood::Base);
     let pending = pending_result.pending;
     if pending.is_empty() {
         println!("No hay propuestas pendientes en .rationale/proposals/.");
@@ -431,7 +471,6 @@ fn cmd_review(args: &[String]) {
         "{} propuesta(s) pendiente(s). Una por pantalla — nunca el YAML completo (v0.5 §15.5).",
         pending.len()
     );
-
     for proposal in pending {
         let record_id = proposal.record.id.clone();
         let elapsed_ms = proposal
@@ -442,6 +481,7 @@ fn cmd_review(args: &[String]) {
 
         println!("\n=== Propuesta: {record_id} ===");
         println!("{}", review::describe_effect(&proposal.record));
+        mascot::print_guarding_stdout(args, &proposal.record.statement);
 
         let word = review::required_confirmation_word(&proposal.record);
         println!(
@@ -471,6 +511,7 @@ fn cmd_review(args: &[String]) {
                 reviewer_authority.domain.as_deref(),
             ) {
                 Ok(dest) => {
+                    mascot::print_stdout(args, mascot::Mood::Happy);
                     println!("Aprobado -> {}", dest.display());
                     "approved"
                 }
@@ -498,6 +539,7 @@ fn cmd_review(args: &[String]) {
                     reviewer_authority.domain.as_deref(),
                 ) {
                     Ok(dest) => {
+                        mascot::print_stdout(args, mascot::Mood::Happy);
                         println!("Aprobado (corregido) -> {}", dest.display());
                         "approved-corrected"
                     }
@@ -725,7 +767,7 @@ fn cmd_install_agent(args: &[String]) {
     let project_root = resolve_project_root(args).unwrap_or_else(fail);
     let rationale_local = find_rationale_local(&project_root);
 
-    println!("{}", mascot::art(mascot::Mood::Searching));
+    mascot::print_stdout(args, mascot::Mood::Searching);
     println!("Buscando agentes de código en este proyecto...");
 
     match agents::install(&project_root, &rationale_local, &binary_path, dry_run) {
@@ -734,10 +776,10 @@ fn cmd_install_agent(args: &[String]) {
                 println!("(dry-run — no se escribió nada)");
             }
             if report.detected.is_empty() {
-                println!("{}", mascot::art(mascot::Mood::Base));
+                mascot::print_stdout(args, mascot::Mood::Base);
                 println!("No se detectó ningún agente conocido (claude, codex, cursor-agent).");
             } else {
-                println!("{}", mascot::art(mascot::Mood::Happy));
+                mascot::print_stdout(args, mascot::Mood::Happy);
                 println!("Agentes detectados: {}", report.detected.join(", "));
             }
             for line in &report.actions {
@@ -759,6 +801,7 @@ fn cmd_uninstall_agent(args: &[String]) {
 
     match agents::uninstall(&project_root, &rationale_local) {
         Ok(actions) => {
+            mascot::print_stdout(args, mascot::Mood::Happy);
             for line in &actions {
                 println!("- {line}");
             }
@@ -811,6 +854,103 @@ fn cmd_update(args: &[String]) {
 
     if !status.success() {
         fail::<()>(format!("la actualización terminó con {status}"));
+    }
+}
+
+/// `rationale doctor` (Fase 1.5) — detecta defectos de integridad que el
+/// productor roto (ya corregido en Fase 1.1-1.4) dejó en `.rationale/`.
+/// Solo lectura por defecto; `--repair` exige confirmación humana por
+/// hallazgo, nunca en lote (mismo principio que `rationale review`).
+fn cmd_doctor(args: &[String]) {
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let config = configuration::load(&project_root).unwrap_or_else(fail);
+    let report = doctor::check(&config.rationale_dir, &project_root);
+
+    if args.iter().any(|a| a == "--json") {
+        println!(
+            "{}",
+            serde_json::to_string(&report)
+                .unwrap_or_else(|e| fail(format!("no se pudo serializar el reporte: {e}")))
+        );
+    } else if report.findings.is_empty() {
+        println!(
+            "Sin hallazgos — el canon en {} está sano.",
+            config.rationale_dir.display()
+        );
+    } else {
+        println!(
+            "{} hallazgo(s) en {}:",
+            report.findings.len(),
+            config.rationale_dir.display()
+        );
+        for finding in &report.findings {
+            println!("- {}", finding.describe());
+        }
+    }
+
+    let repair_mode = args.iter().any(|a| a == "--repair");
+    if !repair_mode {
+        if args.iter().any(|a| a == "--check") && !report.findings.is_empty() {
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    let reviewer_actor = git_reviewer_actor(&project_root);
+    let reviewer_authority = config.authority_for_actor(&reviewer_actor);
+    let repairable: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|f| f.is_repairable())
+        .collect();
+    if repairable.is_empty() {
+        println!("\nNingún hallazgo de este reporte es reparable automáticamente.");
+        return;
+    }
+
+    println!(
+        "\n{} hallazgo(s) reparable(s). Uno por pantalla — Actor: {reviewer_actor}, autoridad: {}",
+        repairable.len(),
+        reviewer_authority.role
+    );
+    for finding in repairable {
+        println!("\n=== {} ===", finding.describe());
+        println!("Escribe 'repair' para aplicar, cualquier otra cosa para saltar:");
+        let Some(confirm) = read_interactive_line() else {
+            println!("EOF — no se repara nada más.");
+            break;
+        };
+        if confirm != "repair" {
+            println!("Saltado.");
+            continue;
+        }
+
+        let result = match finding {
+            doctor::Finding::InvalidSeverity { record_id, .. } => {
+                println!(
+                    "Nueva severidad para '{record_id}' ({}):",
+                    storage::Severity::ALL.join(", ")
+                );
+                let Some(new_severity) = read_interactive_line() else {
+                    break;
+                };
+                doctor::repair_severity(
+                    &config.rationale_dir,
+                    record_id,
+                    &new_severity,
+                    "corregido por rationale doctor --repair",
+                    &reviewer_actor,
+                    reviewer_authority.role,
+                    reviewer_authority.declared,
+                )
+            }
+            _ => doctor::repair(&config.rationale_dir, finding, &reviewer_actor),
+        };
+
+        match result {
+            Ok(path) => println!("Reparado -> {}", path.display()),
+            Err(e) => eprintln!("no se pudo reparar: {e}"),
+        }
     }
 }
 

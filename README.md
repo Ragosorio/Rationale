@@ -17,10 +17,10 @@ está el código, sino también **por qué** debe seguir funcionando así.
 
 ## Estado actual
 
-La rama de alfa (`release/v0.1.0-alpha.1`) contiene el núcleo funcional y el
-ciclo completo de captura y revisión. La Release pública verificable actual es
-`v0.0.0-dogfood.7`; el tag `v0.1.0-alpha.1` se publicará después de cerrar la
-revisión humana del piloto y los gates de promoción documentados en
+La rama `release/v0.1.0-alpha.1` contiene el núcleo funcional y el ciclo
+completo de captura y revisión. La Release pública verificable actual es
+`v0.1.0-alpha.6`. Consulta los
+gates y la historia en [`CHANGELOG.md`](CHANGELOG.md) y
 [`docs/runbooks/release.md`](docs/runbooks/release.md).
 
 El núcleo implementa `Subject`, `Evidence`, `Assessment` y `Record`, un store

@@ -35,6 +35,7 @@ fn help_is_successful_and_non_mutating_for_every_command() {
         &["install-agent", "--help"],
         &["uninstall-agent", "--help"],
         &["update", "--help"],
+        &["doctor", "--help"],
     ];
 
     for args in commands {
@@ -68,6 +69,7 @@ fn invalid_project_root_is_a_clean_cli_error() {
         &["review-record", "record-id", "--project-root", "/tmp"],
         &["install-agent", "--project-root", "/tmp"],
         &["uninstall-agent", "--project-root", "/tmp"],
+        &["doctor", "--project-root", "/tmp"],
     ];
     for args in cases {
         let output = run(&project, args);

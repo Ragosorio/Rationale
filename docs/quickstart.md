@@ -11,7 +11,7 @@ Es local-first: sin servidor, sin cuenta, sin API de pago. La memoria de código
 ## Instalar
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.4/rationale-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.6/rationale-installer.sh | sh
 ```
 
 Esto coloca el binario en `~/.local/bin` (o `$RATIONALE_INSTALL_DIR`) y, si detecta `codex` en el `PATH`, registra el servidor MCP globalmente. Todavía no toca ningún proyecto — eso ocurre en el siguiente paso.
@@ -53,6 +53,14 @@ Sin que lo menciones, el agente (guiado por las instrucciones que `install-agent
 2. Llama a `prepare_change(target, intent)` de Rationale — que devuelve restricciones críticas conocidas, conflictos con tu intención declarada, la razón por la que `assignSeller` está hecho así, y riesgos ya documentados.
 
 El agente ahora sabe dónde está, cómo funciona, por qué es así y qué no debe romper — sin que tú lo hayas escrito en el prompt. Si en el camino toca código que se ve innecesariamente raro, puede llamar a `explain_target` antes de "simplificarlo".
+
+## Prompt maestro
+
+Para que el flujo sea repetible entre sesiones, pega el [prompt maestro](prompt-master.md)
+o su [versión en español](prompt-master.es.md) al inicio de cada conversación.
+La landing cambia entre ambos al cambiar de idioma. `rationale install-agent`
+escribe por defecto la versión inglesa en `AGENTS.md`, `CLAUDE.md` o la regla de
+Cursor; ambas fuentes viven juntas y se actualizan deliberadamente.
 
 ## Sin memoria de código
 

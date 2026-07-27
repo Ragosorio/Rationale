@@ -235,12 +235,13 @@ pub fn determine_level(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capture::ChangeType;
+    use crate::capture::{ChangeOrigin, ChangeType};
 
     fn changed(path: &str) -> ChangedFile {
         ChangedFile {
             path: path.to_string(),
             change_type: ChangeType::Modified,
+            origin: ChangeOrigin::Committed,
         }
     }
 

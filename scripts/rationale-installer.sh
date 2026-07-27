@@ -70,5 +70,12 @@ fi
 
 echo "Rationale $tag instalado en $PREFIX/rationale"
 echo "Versión verificada: $("$PREFIX/rationale" --version)"
+if [[ -t 1 && -z "${NO_COLOR+x}" && -z "${CI+x}" && "${RATIONALE_NO_MASCOT:-0}" != "1" ]]; then
+  printf '%s\n' '      (\__/)' \
+    '     ( ˶>ᴗ<˶)  ✨' \
+    '    ╭/  R  \╮' \
+    '  ━━┿━━━━━━━┿━━'
+  printf '%s\n' 'Chestie dice: ¡ya está! La versión quedó verificada y lista para usar.'
+fi
 echo "Ejecuta 'rationale init' dentro de un proyecto: crea .rationale/ y avisa"
 echo "automáticamente a los agentes de código presentes (usa --skip-agent-config para omitirlo)."

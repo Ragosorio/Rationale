@@ -1,0 +1,141 @@
+---
+import "../styles/global.css";
+import { DOC_GROUPS, docHref, docsRoot, homeHref } from "../lib/docs";
+
+interface DocEntry {
+  data: {
+    lang: "en" | "es";
+    slug: string;
+    title: string;
+    description: string;
+    section: string;
+    order: number;
+  };
+}
+
+interface Props {
+  lang: "en" | "es";
+  title: string;
+  description: string;
+  slug?: string;
+  entries: DocEntry[];
+  headings?: Array<{ depth: number; slug: string; text: string }>;
+  previous?: DocEntry;
+  next?: DocEntry;
+}
+
+const { lang, title, description, slug = "", entries, headings = [], previous, next } = Astro.props;
+const isSpanish = lang === "es";
+const languageHref = slug ? (isSpanish ? docHref("en", slug) : docHref("es", slug)) : (isSpanish ? "/docs" : "/es/docs");
+const languageLabel = isSpanish ? "EN" : "ES";
+const languageAria = isSpanish ? "Cambiar a inglés" : "Switch to Spanish";
+const entryBySlug = new Map(entries.map((entry) => [entry.data.slug, entry]));
+---
+
+<!doctype html>
+<html lang={lang} data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" content="#f0f1ed" />
+    <meta name="description" content={description} />
+    <meta property="og:title" content={`Rationale — ${title}`} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="article" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{`Rationale — ${title}`}</title>
+  </head>
+  <body>
+    <div class="docs-frame">
+      <header class="docs-header">
+        <div class="docs-header-inner">
+          <a class="docs-brand" href={homeHref(lang)} aria-label={isSpanish ? "Inicio de Rationale" : "Rationale home"}>
+            <span class="docs-brand-mark">R/</span>
+            <span><strong>Rationale</strong><small>Local causal context</small></span>
+          </a>
+          <nav class="docs-header-actions" aria-label={isSpanish ? "Acciones del sitio" : "Site actions"}>
+            <a href={docsRoot(lang)} class="docs-header-link">{isSpanish ? "Docs" : "Docs"}</a>
+            <a href={languageHref} class="docs-language" aria-label={languageAria}>{languageLabel}</a>
+            <button class="docs-theme" type="button" data-docs-theme-toggle aria-label={isSpanish ? "Modo oscuro" : "Dark mode"} aria-pressed="false"><span data-docs-theme-icon aria-hidden="true">◐</span></button>
+            <a class="docs-github" href="https://github.com/Ragosorio/Rationale" target="_blank" rel="noreferrer">GitHub ↗</a>
+          </nav>
+        </div>
+      </header>
+
+      <div class="docs-layout">
+        <aside class="docs-sidebar" aria-label={isSpanish ? "Navegación de documentación" : "Documentation navigation"}>
+          <p class="eyebrow">{isSpanish ? "Rationale / Manual" : "Rationale / Handbook"}</p>
+          {DOC_GROUPS.map((group) => (
+            <div class="docs-nav-group">
+              <p class="docs-nav-label">{isSpanish ? group.es : group.en}</p>
+              <nav>
+                {group.slugs.map((itemSlug) => {
+                  const entry = entryBySlug.get(itemSlug);
+                  return entry ? <a class:list={["docs-nav-link", { active: itemSlug === slug }]} href={docHref(lang, itemSlug)}>{entry.data.title}</a> : null;
+                })}
+              </nav>
+            </div>
+          ))}
+        </aside>
+
+        <main class="docs-main">
+          <div class="docs-breadcrumbs" aria-label={isSpanish ? "Migas de pan" : "Breadcrumbs"}>
+            <a href={homeHref(lang)}>Rationale</a><span aria-hidden="true">/</span><a href={docsRoot(lang)}>{isSpanish ? "Documentación" : "Documentation"}</a>{slug && <><span aria-hidden="true">/</span><span>{title}</span></>}
+          </div>
+          <div class="docs-content-grid">
+            <article class="docs-prose">
+              <header class="docs-article-header">
+                <p class="eyebrow">{isSpanish ? "Documentación" : "Documentation"}</p>
+                <h1>{title}</h1>
+                <p class="docs-lede">{description}</p>
+              </header>
+              <slot />
+              {(previous || next) && <nav class="docs-pager" aria-label={isSpanish ? "Paginación" : "Pagination"}>
+                {previous ? <a href={docHref(lang, previous.data.slug)}><small>← {isSpanish ? "Anterior" : "Previous"}</small><strong>{previous.data.title}</strong></a> : <span></span>}
+                {next ? <a class="next" href={docHref(lang, next.data.slug)}><small>{isSpanish ? "Siguiente" : "Next"} →</small><strong>{next.data.title}</strong></a> : <span></span>}
+              </nav>}
+            </article>
+            {headings.length > 0 && <aside class="docs-toc" aria-label={isSpanish ? "En esta página" : "On this page"}>
+              <p class="docs-nav-label">{isSpanish ? "En esta página" : "On this page"}</p>
+              {headings.filter((heading) => heading.depth <= 3).map((heading) => <a class:list={[{ nested: heading.depth === 3 }]} href={`#${heading.slug}`}>{heading.text}</a>)}
+            </aside>}
+          </div>
+        </main>
+      </div>
+
+      <footer class="docs-footer">
+        <span>{isSpanish ? "Tu repo. Tu proceso. Tu contexto." : "Your repo. Your process. Your context."}</span>
+        <a href={homeHref(lang)}>{isSpanish ? "Volver a la landing" : "Back to landing"} ↗</a>
+      </footer>
+    </div>
+    <script>
+      const root = document.documentElement;
+      const toggle = document.querySelector("[data-docs-theme-toggle]");
+      const icon = document.querySelector("[data-docs-theme-icon]");
+      const saved = window.localStorage.getItem("rationale-theme");
+      const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      const setTheme = (theme) => {
+        const selected = theme === "dark" ? "dark" : "light";
+        root.dataset.theme = selected;
+        window.localStorage.setItem("rationale-theme", selected);
+        if (toggle) toggle.setAttribute("aria-pressed", String(selected === "dark"));
+        if (icon) icon.textContent = selected === "dark" ? "☼" : "◐";
+      };
+      setTheme(saved || preferred);
+      toggle?.addEventListener("click", () => setTheme(root.dataset.theme === "dark" ? "light" : "dark"));
+      document.querySelectorAll("[data-docs-copy]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const original = button.textContent;
+          try {
+            await navigator.clipboard.writeText(button.dataset.copyValue || "");
+            button.textContent = root.lang === "es" ? "Copiado" : "Copied";
+          } catch {
+            button.textContent = root.lang === "es" ? "Selecciona y copia" : "Select and copy";
+          }
+          window.setTimeout(() => { button.textContent = original; }, 1800);
+        });
+      });
+    </script>
+  </body>
+</html>

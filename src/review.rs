@@ -269,6 +269,14 @@ pub enum RecordMutation {
         evidence: Evidence,
         reason: String,
     },
+    /// Usada por `rationale doctor --repair` (Fase 1.5) para corregir una
+    /// severidad fuera del enum del schema (legado, de antes de que
+    /// `finalize_change` la exigiera) — nunca automático, siempre con
+    /// confirmación humana por Record.
+    CorrectSeverity {
+        new_severity: String,
+        reason: String,
+    },
 }
 
 fn ensure_mapping<'a>(map: &'a mut yaml_serde::Mapping, key: &str) -> &'a mut yaml_serde::Mapping {
@@ -496,6 +504,28 @@ pub fn mutate_record(
                 vec![],
             );
         }
+        RecordMutation::CorrectSeverity {
+            new_severity,
+            reason,
+        } => {
+            if storage::Severity::parse(&new_severity).is_none() {
+                return Err(storage::StorageError::InvalidSeverity(new_severity));
+            }
+            let old_severity = record.severity.clone();
+            record.severity = new_severity.clone();
+            add_lifecycle_event(
+                &mut record,
+                None,
+                "severity-corrected",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![
+                    ("old_severity", old_severity),
+                    ("new_severity", new_severity),
+                ],
+            );
+        }
     }
 
     let current_content = std::fs::read_to_string(&path).map_err(storage::StorageError::Io)?;
@@ -579,6 +609,7 @@ mod tests {
                 provider: None,
                 structural_id: None,
                 path_hint: Some("src/foo.rs".to_string()),
+                provisional: false,
                 extra: yaml_serde::Mapping::new(),
             }],
             evidence: vec![],
@@ -616,7 +647,7 @@ mod tests {
     #[test]
     fn required_confirmation_word_differs_for_critical() {
         let critical = proposal_record("constraint.critical-test", "critical");
-        let normal = proposal_record("constraint.normal-test", "normal");
+        let normal = proposal_record("constraint.normal-test", "medium");
         assert_eq!(required_confirmation_word(&critical), "approve-critical");
         assert_eq!(required_confirmation_word(&normal), "approve");
         assert_ne!(
@@ -627,7 +658,7 @@ mod tests {
 
     #[test]
     fn describe_effect_shows_single_statement_not_whole_yaml() {
-        let record = proposal_record("constraint.test", "normal");
+        let record = proposal_record("constraint.test", "medium");
         let effect = describe_effect(&record);
         assert!(effect.contains("original statement"));
         assert!(effect.contains("src/foo.rs"));
@@ -643,7 +674,7 @@ mod tests {
     #[test]
     fn approve_rejects_path_traversal_in_record_id() {
         let dir = temp_rationale_dir();
-        let mut record = proposal_record("placeholder", "normal");
+        let mut record = proposal_record("placeholder", "medium");
         record.id = "../../../../tmp/pwned-by-rationale-test".to_string();
 
         let proposal = PendingProposal {
@@ -672,7 +703,7 @@ mod tests {
     #[test]
     fn approve_moves_proposal_to_records_with_approval() {
         let dir = temp_rationale_dir();
-        let record = proposal_record("constraint.approve-test", "normal");
+        let record = proposal_record("constraint.approve-test", "medium");
         let proposal_path = dir.join("proposals/constraint.approve-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
         let original_content = std::fs::read_to_string(&proposal_path).unwrap();
@@ -703,7 +734,7 @@ mod tests {
     #[test]
     fn approve_updates_stale_pending_status_to_approved() {
         let dir = temp_rationale_dir();
-        let record = proposal_record("constraint.status-test", "normal");
+        let record = proposal_record("constraint.status-test", "medium");
         let proposal_path = dir.join("proposals/constraint.status-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
         let original_content = std::fs::read_to_string(&proposal_path).unwrap();
@@ -727,7 +758,7 @@ mod tests {
     #[test]
     fn approve_applies_corrected_statement() {
         let dir = temp_rationale_dir();
-        let record = proposal_record("constraint.correct-test", "normal");
+        let record = proposal_record("constraint.correct-test", "medium");
         let proposal_path = dir.join("proposals/constraint.correct-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
         let original_content = std::fs::read_to_string(&proposal_path).unwrap();
@@ -758,7 +789,7 @@ mod tests {
     #[test]
     fn reject_moves_to_rejected_subdir_never_deletes() {
         let dir = temp_rationale_dir();
-        let record = proposal_record("constraint.reject-test", "normal");
+        let record = proposal_record("constraint.reject-test", "medium");
         let proposal_path = dir.join("proposals/constraint.reject-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
         let original_content = std::fs::read_to_string(&proposal_path).unwrap();
@@ -788,7 +819,7 @@ mod tests {
     #[test]
     fn approve_detects_proposal_overwritten_during_review_window() {
         let dir = temp_rationale_dir();
-        let record = proposal_record("constraint.toctou-test", "normal");
+        let record = proposal_record("constraint.toctou-test", "medium");
         let proposal_path = dir.join("proposals/constraint.toctou-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
 
@@ -803,7 +834,7 @@ mod tests {
 
         // Mientras el humano "piensa", otra finalize_change sobrescribe la
         // propuesta con contenido distinto.
-        let mut overwritten = proposal_record("constraint.toctou-test", "normal");
+        let mut overwritten = proposal_record("constraint.toctou-test", "medium");
         overwritten.statement = "SECOND VERSION written during the review window".to_string();
         storage::write_record(&proposal_path, &overwritten).unwrap();
 
@@ -836,7 +867,7 @@ mod tests {
     #[test]
     fn approve_detects_proposal_already_promoted_by_another_session() {
         let dir = temp_rationale_dir();
-        let record = proposal_record("constraint.double-approve-test", "normal");
+        let record = proposal_record("constraint.double-approve-test", "medium");
         let proposal_path = dir.join("proposals/constraint.double-approve-test.yaml");
         storage::write_record(&proposal_path, &record).unwrap();
         let original_content = std::fs::read_to_string(&proposal_path).unwrap();
@@ -877,12 +908,12 @@ mod tests {
         std::fs::write(dir.join("proposals/README.md"), "not a proposal").unwrap();
         storage::write_record(
             &dir.join("proposals/constraint.b.yaml"),
-            &proposal_record("constraint.b", "normal"),
+            &proposal_record("constraint.b", "medium"),
         )
         .unwrap();
         storage::write_record(
             &dir.join("proposals/constraint.a.yaml"),
-            &proposal_record("constraint.a", "normal"),
+            &proposal_record("constraint.a", "medium"),
         )
         .unwrap();
 

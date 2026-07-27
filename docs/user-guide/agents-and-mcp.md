@@ -17,6 +17,12 @@ rationale install-agent
 e idempotentes y registra el servidor MCP correspondiente. Reinicia la sesión
 del agente después de instalar una configuración nueva.
 
+El texto que `install-agent` escribe por defecto es el [prompt maestro](../prompt-master.md);
+la [versión en español](../prompt-master.es.md) está disponible para equipos que
+trabajan en español. La landing cambia entre ambos al cambiar de idioma y cada
+uno tiene una fuente canónica, para que la instrucción instalada, la
+documentación y el bloque copiable no se separen.
+
 `rationale serve` es un servidor stdio: permanece abierto y no muestra un
 banner en stdout. El agente debe enviarle JSON-RPC por líneas; una ejecución
 manual que parece silenciosa está esperando tráfico, no bloqueada.

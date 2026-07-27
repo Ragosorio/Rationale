@@ -152,10 +152,11 @@ fn tool_definitions() -> Value {
                     "base_revision": {"type": "string", "description": "Revisión Git desde la que capturar el diff — normalmente la que un prepare_change anterior reportó"},
                     "intent": {"type": "string", "description": "Por qué se hizo el cambio — nunca inferido, debe venir de quien hizo el cambio"},
                     "statement": {"type": "string", "description": "La afirmación normativa propuesta (solo se usa si el nivel resultante supera Git-only)"},
-                    "severity": {"type": "string", "default": "normal"},
+                    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"], "description": "Peso de la afirmación normativa — sin default: inventar uno oculta al Record en retrieval sin avisar"},
                     "record_id": {"type": "string", "description": "Slug único para la propuesta, ej. constraint.no-double-charge"},
                     "subject_id": {"type": "string", "description": "Subject candidato — el Subject Resolver contrasta contra el canon existente"},
                     "subject_title": {"type": "string"},
+                    "subject_type": {"type": "string", "description": "Clasificación libre del Subject (ver subject.schema.json); si se omite, se materializa como 'unclassified'"},
                     "novelty_reason": {
                         "type": "object",
                         "description": "Contraste estructurado requerido al no reutilizar un candidato fuerte (v0.5 §9.2)",
@@ -171,7 +172,7 @@ fn tool_definitions() -> Value {
                     "project_root": {"type": "string"},
                     "repo_path": {"type": "string"}
                 },
-                "required": ["target", "base_revision", "intent", "statement", "record_id", "subject_id", "subject_title"]
+                "required": ["target", "base_revision", "intent", "statement", "severity", "record_id", "subject_id", "subject_title"]
             }
         }
     ])
@@ -382,11 +383,22 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
     let record_id = require_str("record_id")?;
     let subject_id = require_str("subject_id")?;
     let subject_title = require_str("subject_title")?;
-    let severity = args
-        .get("severity")
+    // Antes defaulteaba a "normal" — un valor fuera del propio enum del
+    // schema (`critical|high|medium|low`), que hacía invisible el Record
+    // en retrieval sin ningún error (el defecto real de un dogfood). Un
+    // default de severidad es Rationale inventando el peso de una
+    // afirmación normativa ajena; ahora se exige explícita y se valida.
+    let severity = require_str("severity")?;
+    if crate::storage::Severity::parse(&severity).is_none() {
+        return Err(format!(
+            "severity '{severity}' inválida — valores válidos: {}",
+            crate::storage::Severity::ALL.join(", ")
+        ));
+    }
+    let subject_type = args
+        .get("subject_type")
         .and_then(|v| v.as_str())
-        .unwrap_or("normal")
-        .to_string();
+        .map(|s| s.to_string());
     let novelty_reason = args
         .get("novelty_reason")
         .map(|value| {
@@ -417,6 +429,7 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
             record_id,
             subject_id,
             subject_title,
+            subject_type,
             novelty_reason,
             risks,
         },

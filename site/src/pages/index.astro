@@ -1,18 +1,21 @@
 ---
 import "../styles/global.css";
+import masterPrompt from "../../../docs/prompt-master.md?raw";
+import masterPromptEs from "../../../docs/prompt-master.es.md?raw";
 
 const repo = "https://github.com/Ragosorio/Rationale";
-const branch = "release/v0.1.0-alpha.1";
-const previewVersion = "v0.1.0-alpha.4";
+const previewVersion = "v0.1.0-alpha.6";
 const docs = {
-  quickstart: `${repo}/blob/${branch}/docs/quickstart.md`,
-  architecture: `${repo}/blob/${branch}/docs/architecture/code-map.md`,
-  agents: `${repo}/blob/${branch}/docs/user-guide/agents-and-mcp.md`,
-  evidence: `${repo}/tree/${branch}/docs/work-items`,
+  quickstart: "/docs/quickstart",
+  architecture: "/docs/architecture",
+  agents: "/docs/agents-and-mcp",
+  evidence: "/docs/evidence",
+  prompt: "/docs/prompt-master",
 };
 const installCommand = `curl --proto '=https' --tlsv1.2 -LsSf ${repo}/releases/download/${previewVersion}/rationale-installer.sh | sh`;
 const codebaseMemoryUrl = "https://github.com/DeusData/codebase-memory-mcp";
 const codebaseMemoryCommand = "curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash";
+const githubStarsFallback = 0;
 ---
 
 <!--
@@ -30,16 +33,16 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
     <meta name="viewport" content="width=device-width" />
     <meta name="generator" content={Astro.generator} />
     <meta name="theme-color" content="#f0f1ed" />
-    <meta name="description" content="Rationale compiles the decisions, constraints, risks and evidence behind a codebase before an agent changes it." />
-    <meta property="og:title" content="Rationale — Context behind the code" />
-    <meta property="og:description" content="Rationale compiles the decisions, constraints, risks and evidence behind a codebase before an agent changes it." />
+    <meta name="description" content="Rationale keeps business rules and decisions available to coding agents before they change important code." />
+    <meta property="og:title" content="Rationale — Stop repeating your business rules to the AI" />
+    <meta property="og:description" content="Rationale keeps business rules and decisions available to coding agents before they change important code." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Rationale" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="Rationale — Context behind the code" />
-    <meta name="twitter:description" content="Rationale compiles the decisions, constraints, risks and evidence behind a codebase before an agent changes it." />
+    <meta name="twitter:title" content="Rationale — Stop repeating your business rules to the AI" />
+    <meta name="twitter:description" content="Rationale keeps business rules and decisions available to coding agents before they change important code." />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Rationale — Context behind the code</title>
+    <title>Rationale — Stop repeating your business rules to the AI</title>
   </head>
   <body>
     <a class="sr-only fixed left-4 top-4 z-50 bg-[var(--signal)] px-4 py-3 text-white focus:not-sr-only" href="#main" data-i18n="skip">Skip to main content</a>
@@ -63,6 +66,7 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
           </nav>
 
           <div class="flex items-center gap-2">
+            <a class="flex items-center gap-1 border border-[var(--line-strong)] px-2 py-2 font-mono text-[0.68rem] font-bold transition-colors hover:border-[var(--signal)]" href={repo} target="_blank" rel="noreferrer" aria-label="Rationale on GitHub"><span data-i18n="githubStar">GitHub</span><span aria-hidden="true">★</span><span data-github-stars>{githubStarsFallback}</span></a>
             <button class="h-9 min-w-10 border border-[var(--line-strong)] px-2 font-mono text-[0.7rem] font-bold transition-colors hover:border-[var(--signal)]" type="button" data-language-toggle aria-label="Switch language">ES</button>
             <button class="flex h-9 w-9 items-center justify-center border border-[var(--line-strong)] text-lg transition-colors hover:border-[var(--signal)]" type="button" data-theme-toggle aria-label="Dark mode" aria-pressed="false"><span aria-hidden="true" data-theme-icon>◐</span></button>
           </div>
@@ -73,14 +77,14 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
         <section id="top" class="mx-auto max-w-[1180px] px-5 pb-12 pt-12 sm:px-8 sm:pb-16 sm:pt-16 lg:px-10 lg:pt-24" aria-labelledby="hero-title">
           <div class="grid min-w-0 items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(460px,1fr)] lg:gap-16">
             <div class="reveal min-w-0 max-w-[640px]">
-              <p class="eyebrow mb-6" data-i18n="eyebrow">Local causal context / pre-flight</p>
-              <h1 id="hero-title" class="display max-w-full text-[clamp(2.55rem,3.8vw,4rem)] font-bold leading-[0.98] lg:max-w-[580px]" data-i18n="heroTitle">Give your coding agent the reason behind the code.</h1>
-              <p class="mt-7 max-w-[590px] text-[clamp(1.08rem,2vw,1.3rem)] leading-[1.45] text-[var(--muted-strong)]" data-i18n="heroBody">Rationale compiles the decisions, constraints, risks, and evidence that still govern a codebase — before an agent changes it.</p>
+              <p class="eyebrow mb-6" data-i18n="eyebrow">Decision context for coding agents / local-first</p>
+              <h1 id="hero-title" class="display max-w-full text-[clamp(2.55rem,3.8vw,4rem)] font-bold leading-[0.98] lg:max-w-[580px]" data-i18n="heroTitle">Stop repeating your business rules to the AI.</h1>
+              <p class="mt-7 max-w-[590px] text-[clamp(1.08rem,2vw,1.3rem)] leading-[1.45] text-[var(--muted-strong)]" data-i18n="heroBody">Rationale saves the decisions behind your code so a new conversation can retrieve them before it changes anything important.</p>
               <div class="mt-8 flex flex-wrap gap-3">
-                <a class="button-primary" href="#install"><span data-i18n="installCta">Install the alpha</span><span aria-hidden="true">↗</span></a>
-                <a class="button-secondary" href="#documentation"><span data-i18n="quickstartCta">Read the 5-minute quickstart</span><span aria-hidden="true">→</span></a>
+                <a class="button-primary" href="#install"><span data-i18n="installCta">Install Rationale</span><span aria-hidden="true">↗</span></a>
+                <a class="button-secondary" href="#prompt"><span data-i18n="quickstartCta">Get the master prompt</span><span aria-hidden="true">→</span></a>
               </div>
-              <p class="mt-6 font-mono text-[0.69rem] uppercase tracking-[0.08em] text-[var(--muted)]" data-i18n="stateLine">Local-first · Open source · No account · Human-approved</p>
+              <p class="mt-6 font-mono text-[0.69rem] uppercase tracking-[0.08em] text-[var(--muted)]" data-i18n="stateLine">Git + Codebase Memory · No account · Human-approved</p>
             </div>
 
             <div class="reveal reveal-delay-2 artifact-flat p-3 sm:p-4" aria-label="Four stage dispatch demonstration">
@@ -119,12 +123,26 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
           </div>
         </section>
 
+        <section id="problem" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="problem-title">
+          <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
+            <div>
+              <p class="eyebrow" data-i18n="problemEyebrow">The failure mode</p>
+              <h2 id="problem-title" class="display mt-5 max-w-[500px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="problemTitle">You explained the rule. The next chat never heard it.</h2>
+            </div>
+            <div class="artifact-flat p-5 sm:p-8">
+              <p class="text-xl font-semibold leading-[1.35] text-[var(--ink)]" data-i18n="problemQuote">“Do not send while the upload is still running.”</p>
+              <p class="mt-5 max-w-[650px] text-[var(--muted-strong)]" data-i18n="problemBody">It works in Monday’s conversation. Three days later, a fresh agent sees only the code, removes the guard, and confidently calls the change an improvement.</p>
+              <p class="mt-5 border-t border-[var(--line)] pt-5 font-mono text-[0.72rem] uppercase tracking-[0.08em] text-[var(--signal-strong)]" data-i18n="problemAnswer">Rationale keeps the rule next to the code it governs.</p>
+            </div>
+          </div>
+        </section>
+
         <section id="proof" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="bridge-title">
           <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
             <div>
               <p class="eyebrow" data-i18n="bridgeEyebrow">Three systems / one clearer boundary</p>
-              <h2 id="bridge-title" class="display mt-5 max-w-[530px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="bridgeTitle">Structure tells you where. Git tells you what. Rationale protects why.</h2>
-              <p class="mt-5 max-w-[420px] text-[var(--muted-strong)]" data-i18n="bridgeBody">Rationale joins the tools teams already use without pretending to replace them.</p>
+              <h2 id="bridge-title" class="display mt-5 max-w-[530px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="bridgeTitle">Git tells what. Codebase Memory tells where. Rationale tells why.</h2>
+              <p class="mt-5 max-w-[420px] text-[var(--muted-strong)]" data-i18n="bridgeBody">Install Codebase Memory first for structural coverage. Rationale is optional, local, and honest when that provider is unavailable.</p>
             </div>
             <div class="grid border-y border-[var(--line)] sm:grid-cols-3 sm:border-y-0">
               <article class="border-b border-[var(--line)] py-6 sm:border-b-0 sm:border-r sm:px-6 sm:py-0">
@@ -150,8 +168,8 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
           <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
             <div>
               <p class="eyebrow" data-i18n="worksEyebrow">The dispatch rail</p>
-              <h2 id="works-title" class="display mt-5 max-w-[470px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="worksTitle">A preflight that becomes a durable record.</h2>
-              <p class="mt-5 max-w-[430px] text-[var(--muted-strong)]" data-i18n="worksBody">The flow is deliberately split: MCP prepares and captures; the interactive CLI keeps normative decisions with a human.</p>
+              <h2 id="works-title" class="display mt-5 max-w-[470px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="worksTitle">The agent gets context before it gets clever.</h2>
+              <p class="mt-5 max-w-[430px] text-[var(--muted-strong)]" data-i18n="worksBody">Locate with Codebase Memory, preflight with Rationale, make the change, capture what happened, and leave approval with a person.</p>
             </div>
             <div class="artifact-flat p-5 sm:p-7">
               <div class="grid gap-7 sm:grid-cols-4 sm:gap-4">
@@ -213,6 +231,34 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
           </div>
         </section>
 
+        <section id="use-cases" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="use-cases-title">
+          <div class="mb-10 max-w-[680px]">
+            <p class="eyebrow" data-i18n="useCasesEyebrow">Where context pays for itself</p>
+            <h2 id="use-cases-title" class="display mt-5 text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="useCasesTitle">Four ordinary moments. One less thing to explain.</h2>
+          </div>
+          <div class="grid gap-px border border-[var(--line)] bg-[var(--line)] sm:grid-cols-2">
+            <article class="bg-[var(--surface)] p-5 sm:p-7"><p class="font-mono text-xs font-bold text-[var(--signal-strong)]">01 / ONBOARDING</p><h3 class="mt-5 text-xl font-bold" data-i18n="caseOnboarding">Start a new agent conversation</h3><p class="mt-3 text-[var(--muted-strong)]" data-i18n="caseOnboardingBody">The rules your team already settled survive the chat you opened today.</p></article>
+            <article class="bg-[var(--surface)] p-5 sm:p-7"><p class="font-mono text-xs font-bold text-[var(--signal-strong)]">02 / REFACTOR</p><h3 class="mt-5 text-xl font-bold" data-i18n="caseRefactor">Refactor without removing the fence</h3><p class="mt-3 text-[var(--muted-strong)]" data-i18n="caseRefactorBody">A strange branch gets an explanation before an agent turns it into a regression.</p></article>
+            <article class="bg-[var(--surface)] p-5 sm:p-7"><p class="font-mono text-xs font-bold text-[var(--signal-strong)]">03 / REVIEW</p><h3 class="mt-5 text-xl font-bold" data-i18n="caseReview">Review the change with its why attached</h3><p class="mt-3 text-[var(--muted-strong)]" data-i18n="caseReviewBody">See the constraint, evidence, authority and revision instead of reconstructing the story from memory.</p></article>
+            <article class="bg-[var(--surface)] p-5 sm:p-7"><p class="font-mono text-xs font-bold text-[var(--signal-strong)]">04 / TEAM</p><h3 class="mt-5 text-xl font-bold" data-i18n="caseTeam">Keep business rules with the code</h3><p class="mt-3 text-[var(--muted-strong)]" data-i18n="caseTeamBody">The reason remains versioned, reviewable and available after the person who explained it changes teams.</p></article>
+          </div>
+        </section>
+
+        <section id="prompt" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="prompt-title">
+          <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
+            <div>
+              <p class="eyebrow" data-i18n="promptEyebrow">The master prompt</p>
+              <h2 id="prompt-title" class="display mt-5 max-w-[480px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="promptTitle">Give every conversation the same starting line.</h2>
+              <p class="mt-5 max-w-[440px] text-[var(--muted-strong)]" data-i18n="promptBody">Install Codebase Memory, install Rationale, initialize the project, then paste this at the start of a conversation. `install-agent` writes this exact source into your agent instructions.</p>
+              <a class="mt-6 inline-flex font-mono text-[0.7rem] font-bold text-[var(--signal-strong)] hover:underline" href={docs.prompt} data-i18n="promptDocs">Open the prompt in the docs →</a>
+            </div>
+            <div class="prompt-panel artifact-flat">
+              <div class="flex items-center justify-between gap-4 border-b border-[var(--line)] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-[0.08em] text-[var(--muted)]"><span data-i18n="promptLabel">Paste at the start of each conversation</span><button class="font-bold text-[var(--signal-strong)] hover:underline" type="button" data-copy-kind="prompt" data-prompt-copy data-copy-value={masterPrompt.trim()}><span data-copy-status data-i18n="promptCopy">Copy prompt</span></button></div>
+              <pre class="prompt-text overflow-x-auto p-4 text-[0.73rem] leading-[1.65] text-[var(--ink)] sm:p-6"><code data-master-prompt data-prompt-en={masterPrompt.trim()} data-prompt-es={masterPromptEs.trim()}>{masterPrompt.trim()}</code></pre>
+            </div>
+          </div>
+        </section>
+
         <section id="documentation" class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="docs-title">
           <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
             <div>
@@ -221,16 +267,16 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
               <p class="mt-5 max-w-[440px] text-[var(--muted-strong)]" data-i18n="docsBody">Use the landing to orient yourself; use the repository docs to inspect the real behavior, limits and evidence.</p>
             </div>
             <div class="divide-y divide-[var(--line)] border-y border-[var(--line)]">
-              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.quickstart} target="_blank" rel="noreferrer">
+              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.quickstart}>
                 <span class="eyebrow" data-i18n="docsStart">Start</span><span><strong class="block text-lg"> <span data-i18n="docsQuickstart">Five-minute quickstart</span> <span aria-hidden="true" class="text-[var(--signal-strong)]">↗</span></strong><span class="mt-1 block text-sm text-[var(--muted)]" data-i18n="docsQuickstartBody">Install, initialize a project, inspect health and run the first preflight.</span></span><span class="hidden font-mono text-xs text-[var(--muted)] sm:block">01</span>
               </a>
-              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.architecture} target="_blank" rel="noreferrer">
+              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.architecture}>
                 <span class="eyebrow" data-i18n="docsUnderstand">Understand</span><span><strong class="block text-lg"><span data-i18n="docsArchitecture">Factual architecture</span> <span aria-hidden="true" class="text-[var(--signal-strong)]">↗</span></strong><span class="mt-1 block text-sm text-[var(--muted)]" data-i18n="docsArchitectureBody">See the real modules and the prepare → capture → review flow.</span></span><span class="hidden font-mono text-xs text-[var(--muted)] sm:block">02</span>
               </a>
-              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.agents} target="_blank" rel="noreferrer">
+              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.agents}>
                 <span class="eyebrow" data-i18n="docsOperate">Operate</span><span><strong class="block text-lg"><span data-i18n="docsAgents">Agents and MCP</span> <span aria-hidden="true" class="text-[var(--signal-strong)]">↗</span></strong><span class="mt-1 block text-sm text-[var(--muted)]" data-i18n="docsAgentsBody">Connect the tools without handing approval to the protocol.</span></span><span class="hidden font-mono text-xs text-[var(--muted)] sm:block">03</span>
               </a>
-              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.evidence} target="_blank" rel="noreferrer">
+              <a class="group grid gap-3 py-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center sm:gap-5" href={docs.evidence}>
                 <span class="eyebrow" data-i18n="docsVerify">Verify</span><span><strong class="block text-lg"><span data-i18n="docsEvidence">Dogfood and pilot evidence</span> <span aria-hidden="true" class="text-[var(--signal-strong)]">↗</span></strong><span class="mt-1 block text-sm text-[var(--muted)]" data-i18n="docsEvidenceBody">Read the evidence with its coverage, gates and uncertainty attached.</span></span><span class="hidden font-mono text-xs text-[var(--muted)] sm:block">04</span>
               </a>
             </div>
@@ -253,7 +299,7 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
         <section class="section-rule mx-auto max-w-[1180px] px-5 py-16 sm:px-8 sm:py-24 lg:px-10" aria-labelledby="status-title">
           <div class="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
             <div><p class="eyebrow" data-i18n="statusEyebrow">Release truth</p><h2 id="status-title" class="display mt-5 max-w-[450px] text-3xl font-bold leading-[1.05] sm:text-[2.65rem] lg:text-[3.15rem]" data-i18n="statusTitle">Useful now, honest about what is still open.</h2></div>
-            <div class="warning-chip p-5 sm:p-7"><p class="font-mono text-xs font-bold" data-i18n="statusAlpha">pre-1.0 / alpha</p><p class="mt-5 max-w-[620px] text-lg font-semibold leading-[1.4]" data-i18n="statusBody">Rationale is pre-1.0. The core and full capture/review cycle are functional; pilot gates and human review remain visible work.</p><div class="mt-6 grid gap-3 border-t border-[color-mix(in_srgb,var(--warning)_35%,transparent)] pt-5 font-mono text-[0.72rem]"><p>✓ <span data-i18n="statusEvidence">Current public evidence: v0.1.0-alpha.4</span></p><p>! <span data-i18n="statusOpen">Open: platform matrix, provider coverage and pilot gates.</span></p></div></div>
+            <div class="warning-chip p-5 sm:p-7"><p class="font-mono text-xs font-bold" data-i18n="statusAlpha">pre-1.0 / alpha</p><p class="mt-5 max-w-[620px] text-lg font-semibold leading-[1.4]" data-i18n="statusBody">Rationale is pre-1.0. The core and full capture/review cycle are functional; pilot gates and human review remain visible work.</p><div class="mt-6 grid gap-3 border-t border-[color-mix(in_srgb,var(--warning)_35%,transparent)] pt-5 font-mono text-[0.72rem]"><p>✓ <span data-i18n="statusEvidence">Current public evidence: v0.1.0-alpha.6</span></p><p>! <span data-i18n="statusOpen">Open: platform matrix, provider coverage and pilot gates.</span></p></div></div>
           </div>
         </section>
 
@@ -269,9 +315,10 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
                 <p class="mb-2 mt-4 font-mono text-xs text-[var(--muted)]" data-i18n="cbmCommandLabel">macOS + Linux</p>
                 <div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="overflow-x-auto whitespace-nowrap px-3 py-3 text-[0.7rem] text-[var(--ink)] sm:px-4 sm:text-xs">{codebaseMemoryCommand}</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value={codebaseMemoryCommand}><span data-copy-status data-i18n="installCopy">Copy command</span></button></div>
               </div>
-              <div><p class="mb-2 font-mono text-xs text-[var(--muted)]">01 / macOS + Linux</p><div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="overflow-x-auto whitespace-nowrap px-3 py-3 text-[0.7rem] text-[var(--ink)] sm:px-4 sm:text-xs">{installCommand}</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value={installCommand}><span data-copy-status data-i18n="installCopy">Copy command</span></button></div></div>
+              <div><p class="mb-2 font-mono text-xs text-[var(--muted)]" data-i18n="installStep1">01 / Install Rationale · macOS + Linux</p><div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="overflow-x-auto whitespace-nowrap px-3 py-3 text-[0.7rem] text-[var(--ink)] sm:px-4 sm:text-xs">{installCommand}</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value={installCommand}><span data-copy-status data-i18n="installCopy">Copy command</span></button></div></div>
               <div><p class="mb-2 font-mono text-xs text-[var(--muted)]" data-i18n="installStep2">Then, inside the repository:</p><div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="px-3 py-3 text-xs text-[var(--ink)] sm:px-4">rationale init</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value="rationale init"><span data-copy-status data-i18n="installCopy">Copy command</span></button></div></div>
               <div><p class="mb-2 font-mono text-xs text-[var(--muted)]" data-i18n="installStep3">Check the project health:</p><div class="command-row flex items-stretch border border-[var(--line-strong)] bg-[var(--surface-inset)]"><code class="px-3 py-3 text-xs text-[var(--ink)] sm:px-4">rationale health</code><button class="shrink-0 border-l border-[var(--line-strong)] px-3 font-mono text-[0.65rem] font-bold text-[var(--signal-strong)] transition-colors hover:bg-[var(--signal-soft)]" type="button" data-copy-value="rationale health"><span data-copy-status data-i18n="installCopy">Copy command</span></button></div></div>
+              <p class="border-t border-[var(--line)] pt-4 text-sm text-[var(--muted-strong)]" data-i18n="installStep4">04 / Paste the master prompt at the start of every agent conversation.</p>
             </div>
           </div>
         </section>
@@ -279,7 +326,7 @@ FORM: Four-stage dispatch rail, grounded candidate 6, wide-rail staging, seed dd
 
       <footer class="mx-auto flex max-w-[1180px] flex-col gap-5 border-t border-[var(--line)] px-5 py-8 text-sm text-[var(--muted)] sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-10">
         <div><p class="font-semibold text-[var(--ink)]" data-i18n="footerLine">Your repo. Your process. Your context.</p><p class="mt-1 font-mono text-[0.65rem]" data-i18n="footerStatus">No remote telemetry by default</p></div>
-        <nav class="flex flex-wrap gap-5 font-mono text-[0.7rem]" aria-label="Footer navigation"><a class="hover:text-[var(--signal-strong)]" href={docs.quickstart} target="_blank" rel="noreferrer" data-i18n="footerDocs">Docs</a><a class="hover:text-[var(--signal-strong)]" href={repo} target="_blank" rel="noreferrer" data-i18n="footerGithub">GitHub</a><span data-i18n="footerLicense">MIT License</span></nav>
+        <nav class="flex flex-wrap gap-5 font-mono text-[0.7rem]" aria-label="Footer navigation"><a class="hover:text-[var(--signal-strong)]" href={docs.quickstart} data-i18n="footerDocs">Docs</a><a class="hover:text-[var(--signal-strong)]" href={repo} target="_blank" rel="noreferrer" data-i18n="footerGithub">GitHub</a><span data-i18n="footerLicense">MIT License</span></nav>
       </footer>
     </div>
 

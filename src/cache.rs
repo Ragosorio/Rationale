@@ -235,6 +235,7 @@ mod tests {
                 linkage: Linkage::Current,
             },
             assessment_reason: "test reason".to_string(),
+            binding_resolution: vec![],
         }
     }
 

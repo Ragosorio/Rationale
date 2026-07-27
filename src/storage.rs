@@ -55,6 +55,60 @@ impl std::fmt::Display for AuthorityRole {
     }
 }
 
+/// Severidad de un Record — `.rationale/schemas/record.schema.json` declara
+/// exactamente estos cuatro valores. `Ord` ordena de menor a mayor peso
+/// (`Low < Medium < High < Critical`) para que el retrieval pueda rankear
+/// sin volver a tocar strings. Antes de este enum, la severidad se
+/// comparaba solo contra el literal `"critical"` en tres lugares distintos
+/// (schema, default del MCP, filtro de retrieval) sin que nada garantizara
+/// que coincidieran — el MCP llegó a defaultear a `"normal"`, un valor
+/// fuera del propio enum, y eso volvía el Record invisible en retrieval sin
+/// ningún error visible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+impl Severity {
+    pub const ALL: [&'static str; 4] = ["critical", "high", "medium", "low"];
+
+    pub fn parse(s: &str) -> Option<Severity> {
+        match s {
+            "critical" => Some(Severity::Critical),
+            "high" => Some(Severity::High),
+            "medium" => Some(Severity::Medium),
+            "low" => Some(Severity::Low),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Severity::Critical => "critical",
+            Severity::High => "high",
+            Severity::Medium => "medium",
+            Severity::Low => "low",
+        };
+        write!(f, "{s}")
+    }
+}
+
+/// La severidad declarada de un Record, o `None` si no coincide con el
+/// enum — nunca hace panic ni rechaza la lectura: un valor inválido (legado
+/// de antes de que `finalize_change` exigiera `severity`, o escrito a mano)
+/// debe seguir siendo *visible*, solo ordena al final. Ver
+/// `retrieval::select_constraints`.
+#[allow(dead_code)] // usado por retrieval::select_constraints (1.2)
+pub fn severity_of(record: &Record) -> Option<Severity> {
+    Severity::parse(&record.severity)
+}
+
 pub fn is_valid_authority(value: &str) -> bool {
     matches!(
         value,
@@ -83,6 +137,14 @@ pub struct BindingDeclaration {
     pub provider: Option<String>,
     pub structural_id: Option<String>,
     pub path_hint: Option<String>,
+    /// `true` cuando el binding se derivó de un archivo que no estaba
+    /// commiteado al momento de `finalize_change` (trabajo staged, unstaged
+    /// o untracked). Un cambio sin commitear no es verificable por un
+    /// tercero con el mismo repo — `epistemic_status: observed` exige
+    /// justo eso, así que el binding se marca provisional en vez de
+    /// pretender la misma certeza que un binding sobre HEAD.
+    #[serde(default)]
+    pub provisional: bool,
     /// Campos reales no modelados (p. ej. `scope`) — ver doc del módulo.
     #[serde(flatten)]
     pub extra: yaml_serde::Mapping,
@@ -221,6 +283,11 @@ pub enum StorageError {
     /// encontrado y corregido durante la verificación de fin de Fase F).
     UnsafeIdentifier(String),
     InvalidAuthority(String),
+    /// Solo se produce al escribir (`write_record`) — leer un Record con
+    /// severidad fuera de enum sigue funcionando (ver `severity_of`), pero
+    /// nada nuevo debe entrar al canon con un valor que el propio schema no
+    /// declara.
+    InvalidSeverity(String),
 }
 
 impl std::fmt::Display for StorageError {
@@ -237,6 +304,13 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::InvalidAuthority(authority) => {
                 write!(f, "autoridad inválida: '{authority}'")
+            }
+            StorageError::InvalidSeverity(severity) => {
+                write!(
+                    f,
+                    "severidad inválida: '{severity}' — valores válidos: {}",
+                    Severity::ALL.join(", ")
+                )
             }
         }
     }
@@ -303,6 +377,14 @@ pub fn read_record(path: &Path) -> Result<Record, StorageError> {
 /// queda intacto — nunca truncado ni a medio escribir.
 pub fn write_record(path: &Path, record: &Record) -> Result<(), StorageError> {
     validate(record)?;
+    // Estricto solo al escribir: nada nuevo entra al canon con una
+    // severidad que el schema no declara. Leer sigue siendo tolerante
+    // (`validate` arriba solo exige no-vacío) porque un valor legado o
+    // escrito a mano no debe volverse invisible ni bloquear la lectura del
+    // resto del canon.
+    if Severity::parse(&record.severity).is_none() {
+        return Err(StorageError::InvalidSeverity(record.severity.clone()));
+    }
 
     let yaml = yaml_serde::to_string(record).map_err(|e| StorageError::Serialize(e.to_string()))?;
 
@@ -815,6 +897,103 @@ mod tests {
             !path.exists(),
             "no debe crearse ningún archivo si el Record es inválido"
         );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn record_with_severity(severity: &str) -> Record {
+        Record {
+            id: "constraint.severity-test".to_string(),
+            kind: "constraint".to_string(),
+            severity: severity.to_string(),
+            statement: "a statement".to_string(),
+            rationale: None,
+            epistemic_status: EpistemicStatus::Stated,
+            approvals: vec![],
+            binding_declarations: vec![],
+            evidence: vec![],
+            risks: vec![],
+            bound_revision: None,
+            subject: None,
+            extra: yaml_serde::Mapping::new(),
+        }
+    }
+
+    #[test]
+    fn severity_of_parses_all_four_schema_values() {
+        assert_eq!(
+            severity_of(&record_with_severity("critical")),
+            Some(Severity::Critical)
+        );
+        assert_eq!(
+            severity_of(&record_with_severity("high")),
+            Some(Severity::High)
+        );
+        assert_eq!(
+            severity_of(&record_with_severity("medium")),
+            Some(Severity::Medium)
+        );
+        assert_eq!(
+            severity_of(&record_with_severity("low")),
+            Some(Severity::Low)
+        );
+        assert!(Severity::Critical > Severity::High);
+        assert!(Severity::High > Severity::Medium);
+        assert!(Severity::Medium > Severity::Low);
+    }
+
+    /// El defecto real que ocultó el Record del dogfood: el MCP defaulteaba
+    /// a `"normal"`, un valor fuera del enum — `severity_of` debe devolver
+    /// `None` para eso, nunca hacer panic ni inventar un valor.
+    #[test]
+    fn severity_of_returns_none_for_values_outside_the_schema_enum() {
+        assert_eq!(severity_of(&record_with_severity("normal")), None);
+        assert_eq!(severity_of(&record_with_severity("")), None);
+        assert_eq!(severity_of(&record_with_severity("urgent")), None);
+    }
+
+    /// Escritura estricta: nada nuevo entra al canon con una severidad que
+    /// el propio schema no declara.
+    #[test]
+    fn write_record_rejects_severity_outside_the_schema_enum() {
+        let dir = std::env::temp_dir().join(format!(
+            "rationale-storage-severity-write-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("invalid-severity.yaml");
+
+        let result = write_record(&path, &record_with_severity("normal"));
+        assert!(matches!(result, Err(StorageError::InvalidSeverity(s)) if s == "normal"));
+        assert!(!path.exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Lectura tolerante: un Record ya escrito con una severidad legada o
+    /// inválida (a mano, o de antes de que esto se validara) sigue siendo
+    /// legible — nunca se vuelve invisible por un error de parseo. Solo
+    /// `severity_of` (usado en retrieval para ordenar) lo trata como
+    /// desconocido; `read_record` no rechaza el archivo.
+    #[test]
+    fn read_record_still_accepts_a_legacy_invalid_severity() {
+        let dir = std::env::temp_dir().join(format!(
+            "rationale-storage-severity-read-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("legacy.yaml");
+        std::fs::write(
+            &path,
+            "id: constraint.legacy\nkind: constraint\nseverity: normal\nstatement: \"legacy record\"\n",
+        )
+        .unwrap();
+
+        let record = read_record(&path).expect("debe seguir siendo legible");
+        assert_eq!(record.severity, "normal");
+        assert_eq!(severity_of(&record), None);
 
         std::fs::remove_dir_all(&dir).ok();
     }

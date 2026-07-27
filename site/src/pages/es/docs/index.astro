@@ -1,0 +1,24 @@
+---
+import { getCollection } from "astro:content";
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { docHref } from "../../../lib/docs";
+
+const entries = (await getCollection("docs")).filter((entry) => entry.data.lang === "es").sort((a, b) => a.data.order - b.data.order);
+---
+
+<DocsLayout
+  lang="es"
+  title="Documentación"
+  description="Instala Rationale, entiende su modelo de gobernanza, opera la CLI y la frontera MCP, y verifica lo que el proyecto sabe."
+  entries={entries}
+>
+  <div class="docs-index-grid">
+    {entries.map((entry, index) => (
+      <a class="docs-index-card" href={docHref("es", entry.data.slug)}>
+        <span class="docs-index-number">{String(index + 1).padStart(2, "0")}</span>
+        <span><strong>{entry.data.title}</strong><small>{entry.data.description}</small></span>
+        <span aria-hidden="true">↗</span>
+      </a>
+    ))}
+  </div>
+</DocsLayout>

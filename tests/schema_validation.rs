@@ -83,6 +83,49 @@ fn binding_schema_required_matches_struct() {
     assert_eq!(required, vec!["id", "type"]);
 }
 
+/// Defecto real: `pipeline::finalize` escribe `kind: "file"` desde su
+/// primera versión, pero el schema nunca declaró `"file"` en el enum de
+/// `type` — el productor emitía un valor fuera de su propio contrato sin
+/// que ningún test lo detectara.
+#[test]
+fn binding_schema_type_enum_includes_file() {
+    let schema = read_schema("binding.schema.json");
+    let kinds: Vec<&str> = schema["properties"]["type"]["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        kinds.contains(&"file"),
+        "el productor real escribe bindings kind: \"file\" — el schema debe declararlo"
+    );
+}
+
+#[test]
+fn binding_schema_declares_provisional() {
+    let schema = read_schema("binding.schema.json");
+    assert_eq!(schema["properties"]["provisional"]["type"], "boolean");
+}
+
+/// La causa raíz del defecto de severidad: el schema y el retrieval deben
+/// coincidir siempre en qué valores son válidos. Este test no puede
+/// importar `storage::Severity` (el crate solo tiene binario, sin `[lib]`
+/// — mismo motivo documentado en `tests/mcp_server.rs`), así que fija el
+/// enum literal; si alguno de los dos lados cambia sin el otro, este test
+/// lo detecta.
+#[test]
+fn severity_enum_matches_the_four_values_rationale_actually_uses() {
+    let schema = read_schema("record.schema.json");
+    let severities: Vec<&str> = schema["properties"]["severity"]["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(severities, vec!["critical", "high", "medium", "low"]);
+}
+
 /// `evidence.schema.json` — Evidence (`src/storage.rs`): solo `type` es
 /// obligatorio; path/revision/content_hash/visibility son `Option` y
 /// `verified` tiene `#[serde(default)]`.
@@ -185,4 +228,49 @@ fn context_packet_schema_required_matches_struct() {
     let mut required = required_fields(&schema);
     required.sort();
     assert_eq!(required, vec!["critical_constraints", "snapshot"]);
+}
+
+/// Fase 1.2 — `intent_conflicts` pasó de `Vec<String>` a objetos tipados
+/// (`detection`/`polarity`/`shared_terms`...). El schema debe reflejar el
+/// contrato real, no el de antes.
+#[test]
+fn context_packet_intent_conflicts_items_are_objects() {
+    let schema = read_schema("context-packet.schema.json");
+    let items = &schema["properties"]["intent_conflicts"]["items"];
+    assert_eq!(items["type"], "object");
+    let mut required: Vec<&str> = items["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    required.sort_unstable();
+    assert_eq!(
+        required,
+        vec![
+            "detection",
+            "governs_target",
+            "polarity",
+            "record_id",
+            "statement"
+        ]
+    );
+    assert_eq!(
+        items["properties"]["detection"]["enum"],
+        serde_json::json!(["governs-target", "lexical-overlap"])
+    );
+}
+
+#[test]
+fn context_packet_critical_constraints_expose_governance_fields() {
+    let schema = read_schema("context-packet.schema.json");
+    let items = &schema["properties"]["critical_constraints"]["items"];
+    let required: Vec<&str> = items["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(required.contains(&"governs_target"));
+    assert!(required.contains(&"severity"));
 }
