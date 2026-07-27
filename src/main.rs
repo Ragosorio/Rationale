@@ -233,6 +233,28 @@ fn parse_string_flag(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
+/// El primer argumento posicional, saltando correctamente cualquier flag de
+/// `value_flags` junto con el valor que le sigue. Defecto real: tomar "el
+/// primer arg que no empieza con `--`" (sin saber cuáles llevan valor) hacía
+/// que `review-record --project-root /repo mi-record` atara `record_id` al
+/// VALOR del flag (`/repo`), no al id real — solo funcionaba en el orden
+/// documentado por casualidad.
+fn first_positional_arg<'a>(args: &'a [String], value_flags: &[&str]) -> Option<&'a String> {
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        if value_flags.contains(&arg.as_str()) {
+            index += 2;
+            continue;
+        }
+        if !arg.starts_with('-') {
+            return Some(arg);
+        }
+        index += 1;
+    }
+    None
+}
+
 fn resolve_project_root(args: &[String]) -> Result<PathBuf, String> {
     let start = match parse_flag(args, "--project-root") {
         Some(path) => path,
@@ -572,13 +594,75 @@ fn cmd_review(args: &[String]) {
     }
 }
 
+/// Auditar "quién aprobó y cuándo" exigía leer el YAML a mano — ningún
+/// comando imprimía `approvals[]` ni `lifecycle.events[]`; MCP solo expone
+/// el string colapsado `authority: approved|revoked|unreviewed`.
+/// Read-only: no muta nada, solo hace visible lo que ya está en el Record.
+fn print_approvals_and_lifecycle(record: &storage::Record) {
+    if record.approvals.is_empty() {
+        println!("Approvals: (ninguna)");
+    } else {
+        println!("Approvals ({}):", record.approvals.len());
+        for approval in &record.approvals {
+            let approved_at_key = yaml_serde::Value::String("approved_at".to_string());
+            let domain_key = yaml_serde::Value::String("domain".to_string());
+            let approved_at = approval
+                .extra
+                .get(&approved_at_key)
+                .and_then(|v| v.as_str())
+                .unwrap_or("desconocido");
+            let domain = approval
+                .extra
+                .get(&domain_key)
+                .and_then(|v| v.as_str())
+                .map(|d| format!(" domain={d}"))
+                .unwrap_or_default();
+            println!(
+                "  - actor={} authority={} status={} approved_at={approved_at}{domain}",
+                approval.actor, approval.authority, approval.status
+            );
+        }
+    }
+
+    let lifecycle_key = yaml_serde::Value::String("lifecycle".to_string());
+    let events_key = yaml_serde::Value::String("events".to_string());
+    let events = match record.extra.get(&lifecycle_key) {
+        Some(yaml_serde::Value::Mapping(lifecycle)) => match lifecycle.get(&events_key) {
+            Some(yaml_serde::Value::Sequence(events)) => Some(events),
+            _ => None,
+        },
+        _ => None,
+    };
+    match events {
+        Some(events) if !events.is_empty() => {
+            println!("Historial de lifecycle ({}):", events.len());
+            for event in events {
+                let yaml_serde::Value::Mapping(event) = event else {
+                    continue;
+                };
+                let field = |name: &str| -> &str {
+                    let key = yaml_serde::Value::String(name.to_string());
+                    event.get(&key).and_then(|v| v.as_str()).unwrap_or("?")
+                };
+                println!(
+                    "  - {} actor={} authority={} reason=\"{}\" timestamp={}",
+                    field("type"),
+                    field("actor"),
+                    field("authority"),
+                    field("reason"),
+                    field("timestamp"),
+                );
+            }
+        }
+        _ => println!("Historial de lifecycle: (sin eventos)"),
+    }
+}
+
 /// `rationale review-record` — mutaciones humanas sobre Records ya
 /// canónicos. MCP solo consulta/prepara; esta orden exige un actor declarado
 /// por el proyecto y confirma una acción concreta antes de escribir.
 fn cmd_review_record(args: &[String]) {
-    let record_id = args
-        .iter()
-        .find(|arg| !arg.starts_with("--"))
+    let record_id = first_positional_arg(args, &["--project-root"])
         .cloned()
         .unwrap_or_else(|| {
             eprintln!("uso: rationale review-record <record-id> [--project-root <path>]");
@@ -613,6 +697,7 @@ fn cmd_review_record(args: &[String]) {
         "Estado lifecycle: {}",
         storage::lifecycle_status(&record).unwrap_or("active")
     );
+    print_approvals_and_lifecycle(&record);
     println!(
         "Actor: {}\nAutoridad declarada: {}{}",
         reviewer_actor,

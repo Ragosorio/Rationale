@@ -153,6 +153,7 @@ fn tool_definitions() -> Value {
                     "intent": {"type": "string", "description": "Por qué se hizo el cambio — nunca inferido, debe venir de quien hizo el cambio"},
                     "statement": {"type": "string", "description": "La afirmación normativa propuesta (solo se usa si el nivel resultante supera Git-only)"},
                     "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"], "description": "Peso de la afirmación normativa — sin default: inventar uno oculta al Record en retrieval sin avisar"},
+                    "kind": {"type": "string", "enum": ["constraint", "decision", "risk", "exception"], "description": "Naturaleza de la afirmación — por defecto 'constraint' si se omite"},
                     "record_id": {"type": "string", "description": "Slug único para la propuesta, ej. constraint.no-double-charge"},
                     "subject_id": {"type": "string", "description": "Subject candidato — el Subject Resolver contrasta contra el canon existente"},
                     "subject_title": {"type": "string"},
@@ -403,6 +404,23 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
             crate::storage::Severity::ALL.join(", ")
         ));
     }
+    // `kind: "exception"` está en el enum del schema desde el principio
+    // (junto a constraint/decision/risk), pero nada lo escribía: el
+    // productor hardcodeaba "constraint" siempre. `None` sigue
+    // defaulteando a "constraint" — el comportamiento de antes, no un
+    // valor nuevo inventado — pero un caller ya puede declarar que una
+    // afirmación es una excepción real.
+    let kind = args.get("kind").and_then(|v| v.as_str());
+    if let Some(kind) = kind {
+        const VALID_KINDS: [&str; 4] = ["constraint", "decision", "risk", "exception"];
+        if !VALID_KINDS.contains(&kind) {
+            return Err(format!(
+                "kind '{kind}' inválido — valores válidos: {}",
+                VALID_KINDS.join(", ")
+            ));
+        }
+    }
+    let kind = kind.unwrap_or("constraint").to_string();
     let subject_type = args
         .get("subject_type")
         .and_then(|v| v.as_str())
@@ -434,6 +452,7 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
             intent,
             statement,
             severity,
+            kind,
             record_id,
             subject_id,
             subject_title,

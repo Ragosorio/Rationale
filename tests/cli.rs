@@ -97,6 +97,106 @@ fn invalid_project_root_is_a_clean_cli_error() {
     std::fs::remove_dir_all(project).ok();
 }
 
+/// Defecto real: `record_id` se tomaba como "el primer arg que no empieza
+/// con `--`", sin saber que `--project-root` consume un valor aparte.
+/// `review-record --project-root <path> mi-record` ataba `record_id` al
+/// VALOR del flag, no al id real — solo funcionaba en el orden documentado
+/// por casualidad. Este test pasa el flag ANTES del id, con un
+/// `--project-root` real (el proyecto mismo), y confirma que el error
+/// menciona el id real, no la ruta del proyecto.
+#[test]
+fn review_record_parses_the_positional_id_regardless_of_flag_order() {
+    let project = unique_temp_project("review-record-flag-order");
+    let init = run(&project, &["init"]);
+    assert!(init.status.success(), "init debe tener éxito: {init:?}");
+
+    let project_str = project.to_string_lossy().to_string();
+    let output = run(
+        &project,
+        &[
+            "review-record",
+            "--project-root",
+            &project_str,
+            "constraint.does-not-exist",
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("constraint.does-not-exist"),
+        "el error debe mencionar el record_id real, no la ruta del proyecto: {stderr}"
+    );
+    assert!(
+        !stderr.contains("panicked"),
+        "no debe hacer panic: {stderr}"
+    );
+
+    std::fs::remove_dir_all(project).ok();
+}
+
+/// Defecto real: auditar "quién aprobó y cuándo" exigía leer el YAML a
+/// mano — ningún comando imprimía `approvals[]` ni `lifecycle.events[]`.
+/// `review-record` ahora los muestra antes del menú de acción, de forma
+/// puramente informativa: con stdin cerrado (el caso aquí, `run()` no pasa
+/// ningún input) cae al camino de EOF y nunca muta el Record.
+#[test]
+fn review_record_prints_approvals_and_lifecycle_history_without_mutating() {
+    let project = unique_temp_project("audit-view");
+    // Identidad Git LOCAL explícita — sin esto, `git_reviewer_actor` cae al
+    // config global del host (que en una máquina de desarrollador real no
+    // está vacío), haciendo el test no determinista entre entornos.
+    Command::new("git")
+        .current_dir(&project)
+        .args(["init", "-q"])
+        .status()
+        .unwrap();
+    Command::new("git")
+        .current_dir(&project)
+        .args(["config", "user.name", "Test Reviewer"])
+        .status()
+        .unwrap();
+    Command::new("git")
+        .current_dir(&project)
+        .args(["config", "user.email", "test@example.com"])
+        .status()
+        .unwrap();
+    let init = run(&project, &["init"]);
+    assert!(init.status.success(), "init debe tener éxito: {init:?}");
+
+    std::fs::write(
+        project.join(".rationale/config.yaml"),
+        "authority:\n  \"user:Test Reviewer <test@example.com>\":\n    role: contributor\n",
+    )
+    .unwrap();
+    let record_yaml = "id: constraint.audit-view-test\nkind: constraint\nseverity: high\nstatement: \"test statement\"\napprovals:\n  - actor: \"user:alice\"\n    authority: contributor\n    status: approved\n    approved_at: \"2026-01-01T00:00:00Z\"\nlifecycle:\n  events:\n    - type: disputed\n      actor: \"user:bob\"\n      authority: architecture-owner\n      reason: \"needs review\"\n      timestamp: \"2026-01-02T00:00:00Z\"\n";
+    std::fs::write(
+        project.join(".rationale/records/constraint.audit-view-test.yaml"),
+        record_yaml,
+    )
+    .unwrap();
+
+    let output = run(&project, &["review-record", "constraint.audit-view-test"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("actor=user:alice"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("approved_at=2026-01-01T00:00:00Z"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("disputed actor=user:bob"),
+        "stdout: {stdout}"
+    );
+
+    let after =
+        std::fs::read_to_string(project.join(".rationale/records/constraint.audit-view-test.yaml"))
+            .unwrap();
+    assert_eq!(
+        after, record_yaml,
+        "una vista de auditoría nunca debe mutar el Record"
+    );
+
+    std::fs::remove_dir_all(project).ok();
+}
+
 #[test]
 fn version_is_available_without_a_project() {
     let project = unique_temp_project("version");

@@ -608,6 +608,80 @@ fn finalize_change_writes_pending_proposal_for_high_value_change() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// `kind: "exception"` está en el enum de `record.schema.json` desde el
+/// principio (Fase D2 del plan beta), pero `pipeline::finalize` hardcodeaba
+/// `kind: "constraint"` siempre y `finalize_change` no tenía parámetro
+/// `kind` — un valor declarado en el schema que ningún caller podía
+/// alcanzar nunca. Ahora un caller puede declararlo explícitamente, y
+/// omitirlo sigue produciendo "constraint" (el comportamiento de antes).
+#[test]
+fn finalize_change_honors_an_explicit_kind() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "f.txt",
+            "base_revision": base_revision,
+            "intent": "esta regla normalmente no aplica en este caso puntual",
+            "statement": "excepcion temporal a la regla de doble verificacion",
+            "record_id": "exception.temporary-double-check-waiver",
+            "subject_id": "double-check-waiver-test",
+            "subject_title": "Excepcion temporal",
+            "severity": "medium",
+            "kind": "exception",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(outcome["proposal_written"], true);
+
+    let proposal_path = outcome["proposal_path"].as_str().unwrap();
+    let content = std::fs::read_to_string(proposal_path).unwrap();
+    assert!(content.contains("kind: exception"));
+
+    // Invalido debe rechazarse, no escribirse en silencio como constraint.
+    let base_revision2 = base_revision.clone();
+    std::fs::write(dir.join("g.txt"), "changed2\n").unwrap();
+    let bad = client.call(
+        2,
+        "finalize_change",
+        json!({
+            "target": "g.txt",
+            "base_revision": base_revision2,
+            "intent": "x",
+            "statement": "y",
+            "record_id": "constraint.bad-kind-test",
+            "subject_id": "bad-kind-test",
+            "subject_title": "test",
+            "severity": "medium",
+            "kind": "not-a-real-kind",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(bad["result"]["isError"], true);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Defecto real (Fase B1 del plan beta): los bindings salían solo de
 /// `mechanical.changed_files`, nunca del target declarado. Si el archivo
 /// que el cambio de verdad afecta ya estaba commiteado ANTES de

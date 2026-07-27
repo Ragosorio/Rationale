@@ -60,6 +60,20 @@ cada cambio vive en commits, ADRs y work items enlazados.
   propio evento de lifecycle. Rescata la evidencia de dogfood en vez de
   descartarla.
 
+- **Fase D — observabilidad del ciclo de vida.** `rationale review-record`
+  imprime ahora `approvals[]` (actor, autoridad, estado, `approved_at`) y el
+  historial completo de `lifecycle.events[]` antes del menú de acción —
+  antes había que leer el YAML a mano para auditar quién aprobó una
+  decisión y cuándo. `kind: "exception"` estaba en el enum de
+  `record.schema.json` desde el principio pero era inalcanzable:
+  `finalize_change` no tenía parámetro `kind` y el productor hardcodeaba
+  `"constraint"` siempre; ahora es un parámetro opcional validado, con
+  `"constraint"` como default implícito (el comportamiento de antes).
+  `review-record --project-root <ruta> <id>` ataba `record_id` al VALOR del
+  flag en vez del id real cuando el flag venía primero — solo funcionaba en
+  el orden documentado por casualidad; ahora el parseo de posicionales sabe
+  qué flags llevan valor.
+
 ## v0.1.0-alpha.7 — 2026-07-27
 
 - Corrige el canal por defecto de `rationale-installer.sh/.ps1` y

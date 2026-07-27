@@ -469,6 +469,11 @@ pub struct FinalizeRequest {
     /// se usa si el nivel de captura resultante supera Nivel 0 (Git-only).
     pub statement: String,
     pub severity: String,
+    /// `record.schema.json` declara `constraint|decision|risk|exception`;
+    /// el caller de MCP ya valida el enum antes de llegar aquí. `"constraint"`
+    /// es el valor que este código escribió siempre, así que sigue siendo
+    /// el default implícito para cualquier caller que no lo declare.
+    pub kind: String,
     pub record_id: String,
     pub subject_id: String,
     pub subject_title: String,
@@ -1028,7 +1033,7 @@ pub fn finalize(
 
     let proposal = Record {
         id: req.record_id.clone(),
-        kind: "constraint".to_string(),
+        kind: req.kind.clone(),
         severity: req.severity.clone(),
         statement: sanitize_control_chars(&req.statement),
         rationale: Some(sanitize_control_chars(&req.intent)),
