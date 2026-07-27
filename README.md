@@ -19,8 +19,7 @@ está el código, sino también **por qué** debe seguir funcionando así.
 
 La rama `release/v0.1.0-alpha.1` contiene el núcleo funcional y el ciclo
 completo de captura y revisión. La Release pública verificable actual es
-`v0.1.0-alpha.4`; los cambios de gobernanza y la landing que siguen en este
-checkout están en `Unreleased` hasta su próxima publicación. Consulta los
+`v0.1.0-alpha.6`. Consulta los
 gates y la historia en [`CHANGELOG.md`](CHANGELOG.md) y
 [`docs/runbooks/release.md`](docs/runbooks/release.md).
 

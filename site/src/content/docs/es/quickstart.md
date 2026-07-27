@@ -17,7 +17,7 @@ degradada y sigue funcionando.
 ## Instalar
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.4/rationale-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.6/rationale-installer.sh | sh
 rationale --version
 ```
 

@@ -3,7 +3,7 @@
 Los cambios importantes se registran aquí por Release. El detalle técnico de
 cada cambio vive en commits, ADRs y work items enlazados.
 
-## Unreleased
+## v0.1.0-alpha.6 — 2026-07-27
 
 - Cadena de gobernanza completa: bindings de archivo y símbolo, Subjects
   materializados, severidad tolerante, captura de cambios sin commit,
@@ -13,6 +13,8 @@ cada cambio vive en commits, ADRs y work items enlazados.
   `--no-mascot`.
 - El prompt maestro vive en [`docs/prompt-master.md`](docs/prompt-master.md) y
   es la fuente que también consume `install-agent`.
+- El sitio documental Astro queda disponible en `/docs/*` y `/es/docs/*`, con
+  prompt maestro bilingüe, navegación, TOC y contenido operativo.
 
 ## v0.1.0-alpha.4 — 2026-07-26
 
@@ -69,4 +71,4 @@ al helper de actualización.
 
 Fue la última iteración dogfood antes de la alfa empaquetada. No debe usarse
 como referencia pública actual: la evidencia de Release vigente es
-`v0.1.0-alpha.4`.
+`v0.1.0-alpha.6`.
