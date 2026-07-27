@@ -16,6 +16,40 @@ cada cambio vive en commits, ADRs y work items enlazados.
   contradictoria pasaba sin que Rationale la señalara. `mode: "baseline"`
   explícito sigue forzando retrieval puro sin detección, como override.
 
+- **Fase A — instalación/actualización sin pérdida de datos.** Windows:
+  `package.ps1` empaquetaba el ZIP con los archivos en la raíz mientras
+  `rationale-installer.ps1` los buscaba en un subdirectorio (CI nunca lo
+  detectó: solo compilaba ubuntu+macOS); ahora se corrige y `windows-latest`
+  se agrega a CI con un smoke test real del layout del archivo. Un merge
+  conflict que invierte los marcadores `rationale:begin`/`rationale:end`
+  hacía panicar `install-agent`; ahora falla con un error legible sin tocar
+  el archivo. `uninstall-agent` borraba el archivo entero para toda entrada
+  que Rationale hubiera creado, incluso si el usuario le agregó contenido
+  propio después (otro servidor MCP en el mismo `.mcp.json`, texto bajo el
+  bloque de `CLAUDE.md`); ahora extirpa solo lo que Rationale escribió.
+  `.mcp.json` no se actualizaba si el binario cambiaba de ruta. Las
+  escrituras de `agents.rs` (`CLAUDE.md`, `AGENTS.md`, `.mcp.json`, el
+  manifest) pasan a ser atómicas, mismo patrón que el canon YAML.
+
+- **Fase B — corrección silenciosa en la cadena de gobernanza.**
+  `finalize_change` solo ataba bindings desde el diff mecánico, nunca desde
+  el target declarado — si el cambio real ya estaba commiteado antes de
+  `base_revision`, el Record resultante nunca podía gobernar su propio
+  target (mismo síntoma que el bug original del dogfood, causa distinta).
+  Ahora se ata también el target declarado cuando resuelve a un archivo
+  real. Además, `finalize_change` capturaba `AGENTS.md`/`CLAUDE.md`/
+  `.mcp.json` como si fueran parte del cambio del usuario cuando `init`/
+  `install-agent` los deja untracked (confirmado en dogfood real) — ahora
+  se excluyen, igual que `.rationale/`. `schema_version` se escribía pero
+  nunca se leía: `rationale doctor` ahora detecta versiones desconocidas.
+  `approved_at` nunca se escribía en una `Approval` — de una aprobación solo
+  quedaba el "quién", nunca el "cuándo". Una propuesta reclamada por
+  `rationale review` cuyo proceso muere antes de promoverla/rechazarla
+  quedaba huérfana para siempre en `.rationale/proposals/.in-review/`, sin
+  ningún camino de recuperación pese a que los comentarios prometían que
+  "queda recuperable"; `rationale doctor --repair` ahora la devuelve a
+  `proposals/`.
+
 ## v0.1.0-alpha.7 — 2026-07-27
 
 - Corrige el canal por defecto de `rationale-installer.sh/.ps1` y

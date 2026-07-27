@@ -608,6 +608,141 @@ fn finalize_change_writes_pending_proposal_for_high_value_change() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// Defecto real (Fase B1 del plan beta): los bindings salían solo de
+/// `mechanical.changed_files`, nunca del target declarado. Si el archivo
+/// que el cambio de verdad afecta ya estaba commiteado ANTES de
+/// `base_revision` — el escenario exacto aquí: se commitea el target, y
+/// `base_revision` es ESE mismo commit, así que el diff nunca lo incluye,
+/// aunque el cambio real (otro archivo) sí dispare la captura — el Record
+/// resultante nunca podría gobernar su propio target declarado. El mismo
+/// síntoma que el bug original del dogfood (`governs_target: false` para
+/// siempre), con una causa distinta y fácil de confundir con ella.
+#[test]
+fn finalize_change_binds_the_declared_target_even_when_the_diff_does_not_cover_it() {
+    let dir = make_test_project();
+
+    std::fs::create_dir_all(dir.join("app")).unwrap();
+    std::fs::write(
+        dir.join("app/upload.ts"),
+        "export function submit() { /* ... */ }\n",
+    )
+    .unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "add upload guard"]);
+
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    // Cambio real sin commitear en un archivo DISTINTO al target — dispara
+    // la captura, pero no toca app/upload.ts en absoluto.
+    std::fs::write(dir.join("README.md"), "proyecto de prueba actualizado\n").unwrap();
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "app/upload.ts",
+            "base_revision": base_revision,
+            "intent": "Documentar por que el envio se bloquea durante la carga.",
+            "statement": "El envio debe bloquearse mientras el archivo se esta subiendo.",
+            "record_id": "constraint.declared-target-binding-test",
+            "subject_id": "upload-guard-test",
+            "subject_title": "Bloqueo de envio durante carga",
+            "severity": "high",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(outcome["proposal_written"], true);
+
+    let proposal_path = outcome["proposal_path"].as_str().unwrap();
+    let content = std::fs::read_to_string(proposal_path).unwrap();
+    assert!(
+        content.contains("path_hint: app/upload.ts"),
+        "el target declarado debe quedar atado con un binding aunque el diff no lo cubra: {content}"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Defecto real encontrado en dogfood contra el binario publicado (Fase B5
+/// del plan beta): `rationale init` / `install-agent` dejan `AGENTS.md`,
+/// `CLAUDE.md` y `.mcp.json` como untracked; `finalize_change` los capturaba
+/// igual que cualquier otro archivo sin commitear y les ataba un binding —
+/// un Record sobre `app/upload.ts` terminaba "gobernando" también
+/// `AGENTS.md`, visible como tal en `rationale review`. Estos archivos son
+/// bookkeeping de Rationale, nunca parte del cambio que el usuario describe.
+#[test]
+fn finalize_change_excludes_agent_bookkeeping_files_from_bindings() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    std::fs::create_dir_all(dir.join("app")).unwrap();
+    std::fs::write(dir.join("app/upload.ts"), "export function submit() {}\n").unwrap();
+    // Simula lo que `rationale init` / `install-agent` acaban de dejar
+    // untracked, sin pasar por el instalador real.
+    std::fs::write(dir.join("AGENTS.md"), "instrucciones de agente\n").unwrap();
+    std::fs::write(dir.join("CLAUDE.md"), "instrucciones de agente\n").unwrap();
+    std::fs::write(dir.join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "app/upload.ts",
+            "base_revision": base_revision,
+            "intent": "Bloquear el envio mientras el archivo se esta subiendo.",
+            "statement": "El envio debe bloquearse mientras el archivo se esta subiendo.",
+            "record_id": "constraint.bookkeeping-exclusion-test",
+            "subject_id": "upload-guard-bookkeeping-test",
+            "subject_title": "Bloqueo de envio durante carga",
+            "severity": "high",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(outcome["proposal_written"], true);
+
+    let proposal_path = outcome["proposal_path"].as_str().unwrap();
+    let content = std::fs::read_to_string(proposal_path).unwrap();
+    assert!(content.contains("path_hint: app/upload.ts"));
+    assert!(
+        !content.contains("AGENTS.md")
+            && !content.contains("CLAUDE.md")
+            && !content.contains(".mcp.json"),
+        "archivos de bookkeeping de agentes no deben aparecer como binding: {content}"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn novelty_reason_is_structured_validated_and_persisted() {
     let dir = make_test_project();

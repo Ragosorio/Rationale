@@ -53,6 +53,18 @@ const TARGETS: &[AgentTarget] = &[
     },
 ];
 
+/// Rutas repo-relativas que `install-agent` administra — la misma lista que
+/// `capture::capture` necesita excluir del diff mecánico de `finalize`, para
+/// que sus propios archivos de bookkeeping nunca se aten como binding a un
+/// Record del usuario. Única fuente de verdad: si `TARGETS` gana un agente
+/// nuevo, esta lista lo hereda sin tocar `pipeline.rs`.
+pub fn managed_paths() -> Vec<&'static str> {
+    TARGETS
+        .iter()
+        .flat_map(|t| std::iter::once(t.instructions_file).chain(t.mcp_config_file))
+        .collect()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 enum FileAction {

@@ -191,20 +191,27 @@ pub fn approve(
     if let Some(s) = corrected_statement {
         proposal.record.statement = s;
     }
+    // `approval.schema.json` declara `approved_at`, pero nada lo escribía:
+    // de la aprobación se guardaba el "quién" y nunca el "cuándo". Sin
+    // esto, auditar cuándo se aprobó una decisión exige leer el mtime del
+    // archivo (que un `git checkout`/rebase puede alterar) en vez de un
+    // campo propio del dato.
+    let mut extra = yaml_serde::Mapping::new();
+    extra.insert(
+        yaml_serde::Value::String("approved_at".to_string()),
+        yaml_serde::Value::String(crate::evaluation::now_iso8601()),
+    );
+    if let Some(domain) = reviewer_domain {
+        extra.insert(
+            yaml_serde::Value::String("domain".to_string()),
+            yaml_serde::Value::String(domain.to_string()),
+        );
+    }
     proposal.record.approvals.push(Approval {
         actor: reviewer_actor.to_string(),
         authority: reviewer_role.to_string(),
         status: "approved".to_string(),
-        extra: reviewer_domain
-            .map(|domain| {
-                let mut extra = yaml_serde::Mapping::new();
-                extra.insert(
-                    yaml_serde::Value::String("domain".to_string()),
-                    yaml_serde::Value::String(domain.to_string()),
-                );
-                extra
-            })
-            .unwrap_or_default(),
+        extra,
     });
     // El `status: pending` que `finalize_change` escribió ya no es cierto —
     // el Record se está promoviendo con una Approval real. Dejarlo diría
@@ -725,6 +732,14 @@ mod tests {
         assert_eq!(approved.approvals[0].status, "approved");
         assert_eq!(approved.approvals[0].actor, "user:test-reviewer");
         assert!(storage::has_approved_authority(&approved));
+        // `approval.schema.json` declara `approved_at`; antes de este fix
+        // nada lo escribía — de la aprobación solo quedaba el "quién".
+        let approved_at = approved.approvals[0]
+            .extra
+            .get(yaml_serde::Value::String("approved_at".to_string()))
+            .and_then(|v| v.as_str())
+            .expect("approved_at debe escribirse al aprobar");
+        assert!(!approved_at.is_empty());
 
         std::fs::remove_dir_all(&dir).ok();
     }

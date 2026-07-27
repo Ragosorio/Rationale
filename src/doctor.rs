@@ -53,13 +53,38 @@ pub enum Finding {
     /// `.rationale/bindings/` ya no lo crea `cmd_init` (nada lo lee ni
     /// escribe) — si existe y está vacío, es seguro borrarlo a mano.
     EmptyBindingsDirectory { path: PathBuf },
+    /// `schema_version` se escribe (`pipeline.rs`, `subjects.rs`) pero
+    /// nunca se lee ni se compara — un Record de una versión futura se
+    /// parsearía hoy en silencio como si fuera la actual. No hay
+    /// migraciones implementadas (`.rationale/migrations/` es una
+    /// afordancia vacía), así que esto no se repara: es la puerta visible
+    /// que faltaba antes de que exista una migración real.
+    UnknownSchemaVersion {
+        record_id: String,
+        path: PathBuf,
+        found_version: String,
+    },
+    /// `review::approve`/`reject` reclaman una propuesta moviéndola a
+    /// `.rationale/proposals/.in-review/{id}.yaml.{pid}-{seq}` antes de
+    /// promoverla. Si el proceso muere entre el claim y la promoción, ese
+    /// archivo queda ahí para siempre: su extensión ya no es `.yaml` y vive
+    /// en una subcarpeta que `list_pending_detailed` no recorre, así que
+    /// ninguna vía normal (`rationale review`, `prepare_change`) vuelve a
+    /// verlo. Los comentarios que prometían "queda recuperable" no tenían
+    /// ningún camino real de recuperación hasta este finding.
+    OrphanedClaimedProposal {
+        path: PathBuf,
+        record_id: Option<String>,
+    },
 }
 
 impl Finding {
     pub fn is_repairable(&self) -> bool {
         matches!(
             self,
-            Finding::InvalidSeverity { .. } | Finding::DanglingSubject { .. }
+            Finding::InvalidSeverity { .. }
+                | Finding::DanglingSubject { .. }
+                | Finding::OrphanedClaimedProposal { .. }
         )
     }
 
@@ -105,8 +130,41 @@ impl Finding {
                  borrar a mano.",
                 path.display()
             ),
+            Finding::UnknownSchemaVersion {
+                record_id,
+                found_version,
+                ..
+            } => format!(
+                "'{record_id}' declara schema_version '{found_version}', distinto de la única \
+                 versión que este binario escribe ('{CURRENT_SCHEMA_VERSION}'). No hay \
+                 migraciones implementadas todavía — revisar a mano antes de confiar en cómo \
+                 Rationale interpreta sus campos."
+            ),
+            Finding::OrphanedClaimedProposal { path, record_id } => {
+                let label = record_id.as_deref().unwrap_or("desconocido");
+                format!(
+                    "propuesta reclamada y nunca promovida ni rechazada en {} (record: '{label}') \
+                     — un proceso murió entre el claim y la promoción. Se puede devolver a \
+                     proposals/ para que 'rationale review' vuelva a verla.",
+                    path.display()
+                )
+            }
         }
     }
+}
+
+/// La única versión de schema que este binario escribe hoy
+/// (`pipeline::finalize`, `subjects::materialize_proposed`). No existe
+/// lógica de migración (`.rationale/migrations/` es una afordancia vacía) —
+/// esta constante es la puerta de detección, no una promesa de que otras
+/// versiones sean incompatibles de verdad.
+const CURRENT_SCHEMA_VERSION: &str = "rationale/0.1";
+
+fn schema_version_of(extra: &yaml_serde::Mapping) -> Option<String> {
+    extra
+        .get(yaml_serde::Value::String("schema_version".to_string()))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 #[derive(Debug, Serialize)]
@@ -175,8 +233,18 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
         if record.approvals.is_empty() {
             findings.push(Finding::RecordInCanonWithoutApproval {
                 record_id: record.id.clone(),
-                path,
+                path: path.clone(),
             });
+        }
+
+        if let Some(found_version) = schema_version_of(&record.extra) {
+            if found_version != CURRENT_SCHEMA_VERSION {
+                findings.push(Finding::UnknownSchemaVersion {
+                    record_id: record.id.clone(),
+                    path,
+                    found_version,
+                });
+            }
         }
     }
 
@@ -187,6 +255,23 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
             .unwrap_or(false);
         if is_empty {
             findings.push(Finding::EmptyBindingsDirectory { path: bindings_dir });
+        }
+    }
+
+    let in_review_dir = rationale_dir.join("proposals").join(".in-review");
+    if let Ok(entries) = std::fs::read_dir(&in_review_dir) {
+        for entry in entries.flatten() {
+            let claimed_path = entry.path();
+            if !claimed_path.is_file() {
+                continue;
+            }
+            let record_id = storage::read_record(&claimed_path)
+                .ok()
+                .map(|r| r.id.clone());
+            findings.push(Finding::OrphanedClaimedProposal {
+                path: claimed_path,
+                record_id,
+            });
         }
     }
 
@@ -244,6 +329,27 @@ pub fn repair(
                 subjects::MaterializeOutcome::Created(path) => Ok(path),
                 subjects::MaterializeOutcome::AlreadyExists(path) => Ok(path),
             }
+        }
+        Finding::OrphanedClaimedProposal { path, record_id } => {
+            let record_id = record_id.as_ref().ok_or_else(|| {
+                format!(
+                    "{} no se pudo leer como Record — no hay id seguro para devolverlo a \
+                     proposals/; revisar a mano",
+                    path.display()
+                )
+            })?;
+            storage::validate_safe_id(record_id).map_err(|e| e.to_string())?;
+            let proposals_dir = rationale_dir.join("proposals");
+            let restored = proposals_dir.join(format!("{record_id}.yaml"));
+            if restored.exists() {
+                return Err(format!(
+                    "ya existe {} — una propuesta más nueva con el mismo id llegó después del \
+                     crash; resolver el conflicto a mano antes de devolver la reclamada",
+                    restored.display()
+                ));
+            }
+            std::fs::rename(path, &restored).map_err(|e| e.to_string())?;
+            Ok(restored)
         }
         _ => Err("este tipo de hallazgo no es reparable automáticamente — ver describe()".into()),
     }
@@ -313,6 +419,48 @@ mod tests {
         assert!(report.findings.iter().any(
             |f| matches!(f, Finding::InvalidSeverity { record_id, current, .. } if record_id == "constraint.legacy" && current == "normal")
         ));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// `schema_version` se escribe pero nunca se leía ni comparaba —
+    /// `doctor` es la puerta de detección visible hasta que exista una
+    /// migración real.
+    #[test]
+    fn detects_unknown_schema_version() {
+        let project = unique_dir("schema-version");
+        let rationale_dir = project.join(".rationale");
+        write_record_yaml(
+            &rationale_dir.join("records"),
+            "constraint.future-schema",
+            "id: constraint.future-schema\nkind: constraint\nseverity: high\nstatement: \"x\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\nschema_version: rationale/0.2\n",
+        );
+
+        let report = check(&rationale_dir, &project);
+        assert!(report.findings.iter().any(|f| matches!(
+            f,
+            Finding::UnknownSchemaVersion { record_id, found_version, .. }
+                if record_id == "constraint.future-schema" && found_version == "rationale/0.2"
+        )));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    #[test]
+    fn current_schema_version_is_not_flagged() {
+        let project = unique_dir("schema-version-current");
+        let rationale_dir = project.join(".rationale");
+        write_record_yaml(
+            &rationale_dir.join("records"),
+            "constraint.current-schema",
+            "id: constraint.current-schema\nkind: constraint\nseverity: high\nstatement: \"x\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\nschema_version: rationale/0.1\n",
+        );
+
+        let report = check(&rationale_dir, &project);
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| matches!(f, Finding::UnknownSchemaVersion { .. })));
 
         std::fs::remove_dir_all(&project).ok();
     }
@@ -488,6 +636,100 @@ mod tests {
             .findings
             .iter()
             .any(|f| matches!(f, Finding::DanglingSubject { .. })));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    fn write_claimed_proposal(rationale_dir: &Path, record_id: &str, suffix: &str) -> PathBuf {
+        let in_review = rationale_dir.join("proposals").join(".in-review");
+        std::fs::create_dir_all(&in_review).unwrap();
+        let path = in_review.join(format!("{record_id}.yaml.{suffix}"));
+        std::fs::write(
+            &path,
+            format!(
+                "id: {record_id}\nkind: constraint\nseverity: high\nstatement: \"x\"\napprovals: []\n"
+            ),
+        )
+        .unwrap();
+        path
+    }
+
+    /// Defecto real: un proceso que muere entre `claim_proposal` y la
+    /// promoción/rechazo deja el archivo en `.in-review/` para siempre —
+    /// invisible para `list_pending_detailed` (extensión ya no es `.yaml`)
+    /// y sin ningún finding hasta este.
+    #[test]
+    fn detects_orphaned_claimed_proposal() {
+        let project = unique_dir("orphaned-claim");
+        let rationale_dir = project.join(".rationale");
+        write_claimed_proposal(&rationale_dir, "constraint.orphaned", "12345-0");
+
+        let report = check(&rationale_dir, &project);
+        assert!(report.findings.iter().any(|f| matches!(
+            f,
+            Finding::OrphanedClaimedProposal { record_id, .. }
+                if record_id.as_deref() == Some("constraint.orphaned")
+        )));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    #[test]
+    fn repair_orphaned_claimed_proposal_restores_it_to_proposals() {
+        let project = unique_dir("repair-orphaned-claim");
+        let rationale_dir = project.join(".rationale");
+        write_claimed_proposal(&rationale_dir, "constraint.orphaned", "12345-0");
+
+        let report = check(&rationale_dir, &project);
+        let finding = report
+            .findings
+            .iter()
+            .find(|f| matches!(f, Finding::OrphanedClaimedProposal { .. }))
+            .unwrap();
+
+        let restored = repair(&rationale_dir, finding, "user:doctor-test").unwrap();
+        assert_eq!(
+            restored,
+            rationale_dir.join("proposals/constraint.orphaned.yaml")
+        );
+        assert!(restored.exists());
+
+        // Ahora la ve `rationale review` — comprobado con la misma función
+        // de listado que usa la interfaz humana.
+        let pending = review::list_pending_detailed(&rationale_dir);
+        assert!(pending
+            .pending
+            .iter()
+            .any(|p| p.record.id == "constraint.orphaned"));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// Nunca sobrescribir en silencio: si una propuesta más nueva con el
+    /// mismo id ya llegó después del crash, `repair` debe rechazar en vez
+    /// de decidir cuál de las dos gana.
+    #[test]
+    fn repair_orphaned_claimed_proposal_refuses_to_overwrite_a_newer_one() {
+        let project = unique_dir("repair-orphaned-conflict");
+        let rationale_dir = project.join(".rationale");
+        write_claimed_proposal(&rationale_dir, "constraint.orphaned", "12345-0");
+        write_record_yaml(
+            &rationale_dir.join("proposals"),
+            "constraint.orphaned",
+            "id: constraint.orphaned\nkind: constraint\nseverity: high\nstatement: \"y (mas nueva)\"\napprovals: []\n",
+        );
+
+        let report = check(&rationale_dir, &project);
+        let finding = report
+            .findings
+            .iter()
+            .find(|f| matches!(f, Finding::OrphanedClaimedProposal { .. }))
+            .unwrap();
+
+        assert!(repair(&rationale_dir, finding, "user:doctor-test").is_err());
+        assert!(rationale_dir
+            .join("proposals/constraint.orphaned.yaml")
+            .exists());
 
         std::fs::remove_dir_all(&project).ok();
     }

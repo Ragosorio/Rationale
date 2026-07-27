@@ -593,14 +593,22 @@ pub fn finalize(
     }
     let declared_symbol = declared_target.as_ref().ok().and_then(|t| t.symbol.clone());
 
-    // Excluir `.rationale/` del escaneo de untracked/staged — sin esto,
-    // las propuestas que esta misma llamada está a punto de escribir en
-    // `.rationale/proposals/` se atarían a sí mismas como si fueran parte
-    // del cambio que las originó.
+    // Excluir `.rationale/`, `.rationale-local/` y los archivos que
+    // `install-agent` administra (`CLAUDE.md`, `AGENTS.md`, `.mcp.json`...)
+    // del escaneo de untracked/staged. Sin la primera, las propuestas que
+    // esta misma llamada está a punto de escribir se atarían a sí mismas.
+    // Sin las otras dos: un `rationale init`/`install-agent` reciente deja
+    // esos archivos untracked, y el diff mecánico los capturaba como si
+    // fueran parte del cambio del usuario — un Record sobre una regla de
+    // negocio terminaba con bindings hacia `AGENTS.md` y `.mcp.json`,
+    // visibles como "Gobernará: ..." en `rationale review` (defecto real,
+    // encontrado en dogfood real contra el binario publicado).
+    let mut exclude_prefixes: Vec<&str> = vec![".rationale/", ".rationale-local/"];
+    exclude_prefixes.extend(crate::agents::managed_paths());
     let mechanical = capture::capture(
         &req.repo_path,
         &req.base_revision,
-        &[".rationale/"],
+        &exclude_prefixes,
         provider,
     );
 
@@ -873,6 +881,58 @@ pub fn finalize(
             provisional,
             extra: yaml_serde::Mapping::new(),
         });
+    }
+
+    // El target DECLARADO puede quedar sin ningún binding aunque
+    // `finalize_change` lo exija: los bindings de arriba salen solo de
+    // `mechanical.changed_files` (el diff contra `base_revision`), y ese
+    // diff no cubre el target cuando el cambio real ya estaba commiteado
+    // antes de `base_revision`, o cuando el caller declara un target que
+    // no tocó. El síntoma es idéntico al defecto original del dogfood
+    // (`governs_target: false` para siempre) pero con causa distinta — fácil
+    // de confundir con él. Si el target resuelve a un archivo real que
+    // existe en el árbol de trabajo, se ata con un binding adicional
+    // (`provisional: false`: no viene de un diff sin commitear, viene del
+    // árbol actual, tan verificable como HEAD). Si no resuelve a nada
+    // verificable, un diagnóstico explícito reemplaza una propuesta que de
+    // todas formas no podría gobernar su propio target declarado.
+    if let Ok(target) = &declared_target {
+        let declared_rel_path = binding_match::target_rel_path(&req.repo_path, target);
+        let already_covered = declared_rel_path
+            .as_deref()
+            .map(|p| {
+                binding_declarations
+                    .iter()
+                    .any(|b| b.path_hint.as_deref() == Some(p))
+            })
+            .unwrap_or(false);
+        if !already_covered {
+            match &declared_rel_path {
+                Some(rel_path) if req.repo_path.join(rel_path).is_file() => {
+                    diagnostics.push(format!(
+                        "target declarado '{rel_path}' no estaba en el diff mecánico — se añadió \
+                         un binding adicional verificado contra el árbol de trabajo actual"
+                    ));
+                    binding_declarations.push(BindingDeclaration {
+                        id: format!("binding.{}.declared-target", req.record_id),
+                        kind: "file".to_string(),
+                        provider: None,
+                        structural_id: None,
+                        path_hint: Some(rel_path.clone()),
+                        provisional: false,
+                        extra: yaml_serde::Mapping::new(),
+                    });
+                }
+                _ => {
+                    diagnostics.push(
+                        "advertencia: el target declarado no aparece en el diff mecánico ni se \
+                         pudo verificar como archivo real en el árbol de trabajo — el Record \
+                         resultante no lo gobernará por binding"
+                            .to_string(),
+                    );
+                }
+            }
+        }
     }
 
     // Materializar el Subject AHORA, no al aprobar: un Subject es
