@@ -3,7 +3,7 @@
 Los cambios importantes se registran aquí por Release. El detalle técnico de
 cada cambio vive en commits, ADRs y work items enlazados.
 
-## Sin publicar
+## v0.1.0-alpha.7 — 2026-07-27
 
 - Corrige el canal por defecto de `rationale-installer.sh/.ps1` y
   `rationale-update.sh/.ps1`: por defecto usaban `RATIONALE_CHANNEL=stable`,

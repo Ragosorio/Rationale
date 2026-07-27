@@ -21,7 +21,7 @@ environment artifacts unless your team deliberately versions them.
 
 ## Release truth
 
-The public preview currently documented here is `v0.1.0-alpha.6`. Changes in
+The public preview currently documented here is `v0.1.0-alpha.7`. Changes in
 the working tree remain Unreleased until a release is cut and its checksums,
 installers, tests, and human review gates are complete.
 
