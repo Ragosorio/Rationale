@@ -817,6 +817,80 @@ fn finalize_change_excludes_agent_bookkeeping_files_from_bindings() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// `project_root` (dónde vive `.rationale/`) y `repo_path` (dónde vive el
+/// código que cambió) están cableados como parámetros independientes desde
+/// el principio (`mcp/server.rs::resolve_roots`), pero nunca se ejercitaban
+/// con dos repos Git REALES distintos — todos los demás tests usan el mismo
+/// directorio para ambos. Este es el caso real: un repo de canon separado
+/// del repo de código.
+#[test]
+fn finalize_change_supports_project_root_and_repo_path_in_different_repos() {
+    let canon_dir = make_test_project();
+    let code_dir = make_test_project();
+
+    std::fs::create_dir_all(code_dir.join("app")).unwrap();
+    std::fs::write(
+        code_dir.join("app/upload.ts"),
+        "export function submit() {}\n",
+    )
+    .unwrap();
+    run_git(&code_dir, &["add", "-A"]);
+    run_git(&code_dir, &["commit", "-q", "-m", "add upload guard"]);
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&code_dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+    std::fs::write(
+        code_dir.join("app/upload.ts"),
+        "export function submit() { /* guard removed */ }\n",
+    )
+    .unwrap();
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "app/upload.ts",
+            "base_revision": base_revision,
+            "intent": "Documentar el guard de envio en el repo de canon separado",
+            "statement": "El envio debe bloquearse mientras el archivo se esta subiendo.",
+            "record_id": "constraint.multi-repo-test",
+            "subject_id": "upload-guard-multi-repo-test",
+            "subject_title": "Bloqueo de envio durante carga",
+            "severity": "high",
+            "project_root": canon_dir.to_string_lossy(),
+            "repo_path": code_dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false, "{resp:?}");
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(outcome["proposal_written"], true);
+
+    let proposal_path = outcome["proposal_path"].as_str().unwrap();
+    assert!(
+        proposal_path.starts_with(canon_dir.to_string_lossy().as_ref()),
+        "la propuesta debe escribirse en el canon (project_root), no en repo_path: {proposal_path}"
+    );
+    let content = std::fs::read_to_string(proposal_path).unwrap();
+    assert!(content.contains("path_hint: app/upload.ts"));
+    assert!(
+        !canon_dir.join("app").exists(),
+        "el archivo cambiado vive en repo_path, nunca debe copiarse a project_root"
+    );
+
+    std::fs::remove_dir_all(&canon_dir).ok();
+    std::fs::remove_dir_all(&code_dir).ok();
+}
+
 #[test]
 fn novelty_reason_is_structured_validated_and_persisted() {
     let dir = make_test_project();

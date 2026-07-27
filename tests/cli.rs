@@ -197,6 +197,92 @@ fn review_record_prints_approvals_and_lifecycle_history_without_mutating() {
     std::fs::remove_dir_all(project).ok();
 }
 
+/// Ambos instaladores (`rationale-uninstall.sh/.ps1`) y `uninstall-agent`
+/// *imprimen* la garantía de que `.rationale/` sobrevive, pero nada la
+/// probaba end-to-end. Aquí sí: canon real con un Record, `install-agent`
+/// para generar el manifest, `uninstall-agent`, y verificar que el canon
+/// sigue intacto mientras los archivos que Rationale escribió se revierten.
+#[test]
+fn uninstall_agent_preserves_the_rationale_canon() {
+    let project = unique_temp_project("uninstall-preserves-canon");
+    let init = run(&project, &["init"]);
+    assert!(init.status.success(), "init debe tener éxito: {init:?}");
+
+    let record_path = project.join(".rationale/records/constraint.canon-survives.yaml");
+    let record_yaml = "id: constraint.canon-survives\nkind: constraint\nseverity: high\nstatement: \"el canon debe sobrevivir a uninstall-agent\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\n";
+    std::fs::write(&record_path, record_yaml).unwrap();
+
+    let install = run(&project, &["install-agent"]);
+    assert!(
+        install.status.success(),
+        "install-agent debe tener éxito: {install:?}"
+    );
+
+    let uninstall = run(&project, &["uninstall-agent"]);
+    assert!(
+        uninstall.status.success(),
+        "uninstall-agent debe tener éxito: {uninstall:?}"
+    );
+
+    assert!(
+        project.join(".rationale").is_dir(),
+        ".rationale/ debe sobrevivir a uninstall-agent"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&record_path).unwrap(),
+        record_yaml,
+        "el Record no debe modificarse ni un byte"
+    );
+
+    std::fs::remove_dir_all(project).ok();
+}
+
+/// `doctor --check` no tenía prueba de su exit code, ni `--json` de la
+/// forma real de su salida — ninguno de los dos es evidente por lectura del
+/// código sin correrlo.
+#[test]
+fn doctor_check_exit_code_and_json_shape() {
+    let project = unique_temp_project("doctor-check-json");
+    let init = run(&project, &["init"]);
+    assert!(init.status.success(), "init debe tener éxito: {init:?}");
+
+    // Canon sano: --check debe salir 0 y no reportar hallazgos.
+    let clean = run(&project, &["doctor", "--check"]);
+    assert!(
+        clean.status.success(),
+        "doctor --check debe salir 0 sobre un canon sano: {clean:?}"
+    );
+
+    // Escribir un Record con severidad fuera de enum, un finding real y
+    // detectable sin depender del working tree.
+    std::fs::write(
+        project.join(".rationale/records/constraint.dirty.yaml"),
+        "id: constraint.dirty\nkind: constraint\nseverity: normal\nstatement: \"x\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\n",
+    )
+    .unwrap();
+
+    let dirty_check = run(&project, &["doctor", "--check"]);
+    assert_eq!(
+        dirty_check.status.code(),
+        Some(1),
+        "doctor --check debe salir 1 cuando hay hallazgos: {dirty_check:?}"
+    );
+
+    let json_output = run(&project, &["doctor", "--json"]);
+    assert!(json_output.status.success());
+    let stdout = String::from_utf8_lossy(&json_output.stdout);
+    let report: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("doctor --json debe emitir JSON válido: {e}\n{stdout}"));
+    let findings = report["findings"]
+        .as_array()
+        .expect("el reporte debe tener un array 'findings'");
+    assert!(findings
+        .iter()
+        .any(|f| { f["kind"] == "invalid-severity" && f["record_id"] == "constraint.dirty" }));
+
+    std::fs::remove_dir_all(project).ok();
+}
+
 #[test]
 fn version_is_available_without_a_project() {
     let project = unique_temp_project("version");

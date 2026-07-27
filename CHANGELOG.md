@@ -74,6 +74,14 @@ cada cambio vive en commits, ADRs y work items enlazados.
   el orden documentado por casualidad; ahora el parseo de posicionales sabe
   qué flags llevan valor.
 
+- **Fase E — cobertura que faltaba para poder afirmar beta con evidencia.**
+  Cuatro áreas sin ningún test: que `uninstall-agent` de verdad conserva
+  `.rationale/` (ambos instaladores lo *imprimían*, ninguno lo probaba);
+  el exit code de `doctor --check` y la forma real de `doctor --json`;
+  y `project_root` distinto de `repo_path` (canon en un repo, código en
+  otro) — cableado desde el principio pero nunca ejercitado con dos repos
+  Git reales. Las cuatro ya pasan.
+
 ## v0.1.0-alpha.7 — 2026-07-27
 
 - Corrige el canal por defecto de `rationale-installer.sh/.ps1` y
