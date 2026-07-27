@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 $Repository = if ($env:RATIONALE_REPOSITORY) { $env:RATIONALE_REPOSITORY } else { "Ragosorio/Rationale" }
 $Version = if ($env:RATIONALE_VERSION -and $env:RATIONALE_VERSION -ne "latest") { $env:RATIONALE_VERSION.TrimStart('v') } else {
-  $Channel = if ($env:RATIONALE_CHANNEL) { $env:RATIONALE_CHANNEL } else { "stable" }
+  $Channel = if ($env:RATIONALE_CHANNEL) { $env:RATIONALE_CHANNEL } else { "preview" }
   if ($Channel -eq "stable") {
     ((Invoke-RestMethod "https://api.github.com/repos/$Repository/releases/latest").tag_name).TrimStart('v')
   } elseif ($Channel -eq "preview") {

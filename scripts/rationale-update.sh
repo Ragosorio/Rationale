@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPOSITORY="${RATIONALE_REPOSITORY:-Ragosorio/Rationale}"
-DEFAULT_CHANNEL="stable"
+DEFAULT_CHANNEL="preview"
 CHANNEL="${RATIONALE_CHANNEL:-$DEFAULT_CHANNEL}"
 VERSION="${RATIONALE_VERSION:-}"
 tmp="$(mktemp "${TMPDIR:-/tmp}/rationale-update.XXXXXX")"

@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPOSITORY="${RATIONALE_REPOSITORY:-Ragosorio/Rationale}"
 VERSION="${RATIONALE_VERSION:-latest}"
-CHANNEL="${RATIONALE_CHANNEL:-stable}"
+CHANNEL="${RATIONALE_CHANNEL:-preview}"
 PREFIX="${RATIONALE_INSTALL_DIR:-$HOME/.local/bin}"
 
 case "$(uname -s):$(uname -m)" in

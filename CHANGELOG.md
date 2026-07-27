@@ -3,6 +3,19 @@
 Los cambios importantes se registran aquí por Release. El detalle técnico de
 cada cambio vive en commits, ADRs y work items enlazados.
 
+## Sin publicar
+
+- Corrige el canal por defecto de `rationale-installer.sh/.ps1` y
+  `rationale-update.sh/.ps1`: por defecto usaban `RATIONALE_CHANNEL=stable`,
+  que resuelve la versión vía `GET /releases/latest` de GitHub. Ese endpoint
+  excluye prereleases por diseño, y todas las alfas (incluida alpha.6) están
+  marcadas como prerelease — así que "stable" resolvía silenciosamente a
+  `v0.0.0-dogfood.7`, una Release anterior a `rationale-update.sh`. El
+  instalador fallaba con un 404 real al pedir ese archivo a esa Release
+  vieja. El canal por defecto pasa a `preview` mientras el proyecto sea
+  pre-1.0, tal como ya establecía `docs/work-items/alpha-release-mcp-cleanroom-hardening.md`.
+  Verificado end-to-end contra los assets reales de GitHub.
+
 ## v0.1.0-alpha.6 — 2026-07-27
 
 - Cadena de gobernanza completa: bindings de archivo y símbolo, Subjects
@@ -15,6 +28,11 @@ cada cambio vive en commits, ADRs y work items enlazados.
   es la fuente que también consume `install-agent`.
 - El sitio documental Astro queda disponible en `/docs/*` y `/es/docs/*`, con
   prompt maestro bilingüe, navegación, TOC y contenido operativo.
+
+## v0.1.0-alpha.5 — 2026-07-27
+
+Sin cambios funcionales sobre alpha.4 — release generada por el proceso de
+fusión de PRs de la rama de release; el contenido real llegó en alpha.6.
 
 ## v0.1.0-alpha.4 — 2026-07-26
 

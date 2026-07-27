@@ -19,8 +19,11 @@ derivada SQLite/FTS vive en `~/.cache/rationale/` y se puede regenerar.
 ## Variables del instalador
 
 - `RATIONALE_VERSION`: fija una versión de Release.
-- `RATIONALE_CHANNEL`: selecciona `stable` (por defecto) o `preview` para
-  que el instalador y `rationale update` resuelvan el canal correspondiente.
+- `RATIONALE_CHANNEL`: selecciona `preview` (por defecto mientras el proyecto
+  sea pre-1.0) o `stable` para que el instalador y `rationale update`
+  resuelvan el canal correspondiente. `stable` usa `GET /releases/latest` de
+  GitHub, que excluye prereleases — con solo alfas publicadas, resolvería a
+  una Release anterior a `install-agent` y al helper de actualización.
 - `RATIONALE_INSTALL_DIR`: cambia el directorio del binario.
 - `RATIONALE_SKIP_AGENT_CONFIG=1`: evita registrar el agente automáticamente.
 - `RATIONALE_REMOVE_AGENT_CONFIG=1`: permite quitar la entrada global de Codex

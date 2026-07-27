@@ -14,8 +14,12 @@ Variables soportadas:
 
 - `RATIONALE_VERSION=v0.1.0-alpha.6` fija una versión concreta (sustitúyela
   por el tag publicado que quieras usar).
-- `RATIONALE_CHANNEL=preview` hace que `rationale update` busque la
-  prerelease más reciente; el canal por defecto es `stable`.
+- `RATIONALE_CHANNEL=stable` hace que el instalador y `rationale update`
+  usen `GET /releases/latest` de GitHub en vez de la prerelease más
+  reciente; el canal por defecto es `preview` mientras el proyecto sea
+  pre-1.0, porque `stable` resolvería hoy a una Release anterior a
+  `install-agent` y al helper de actualización (todas las alfas están
+  marcadas como prerelease).
 - `RATIONALE_INSTALL_DIR=$HOME/.local/bin` cambia el destino.
 - `RATIONALE_SKIP_AGENT_CONFIG=1` evita editar la configuración MCP de Codex.
 
