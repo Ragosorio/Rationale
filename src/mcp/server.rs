@@ -108,8 +108,8 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "target": {"type": "string", "description": "path::symbol dentro del proyecto, ej. src/main.rs::cmd_prepare"},
-                    "intent": {"type": "string", "description": "Intención declarada opcional — solo se usa en modo intent-aware"},
-                    "mode": {"type": "string", "enum": ["baseline", "intent-aware"], "default": "baseline"},
+                    "intent": {"type": "string", "description": "Intención declarada opcional — si viene, activa detección de conflictos automáticamente (v0.5 §4.18)"},
+                    "mode": {"type": "string", "enum": ["baseline", "intent-aware"], "description": "Normalmente no hace falta: el modo se infiere de si viene 'intent'. Pasa 'baseline' explícito para forzar retrieval puro aunque venga 'intent'."},
                     "project_root": {"type": "string", "description": "Por defecto: el proyecto Rationale que contiene el cwd del servidor"},
                     "repo_path": {"type": "string"},
                     "max_tokens": {"type": "integer"},
@@ -282,15 +282,23 @@ fn call_prepare_change(args: &Value, provider: &mut ProviderHandle) -> Result<Va
         .get("intent")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    let mode = args
-        .get("mode")
-        .and_then(|v| v.as_str())
-        .unwrap_or("baseline");
+    let mode = args.get("mode").and_then(|v| v.as_str());
     let (project_root, repo_path) = resolve_roots(args)?;
 
-    // Modo baseline (v0.5 §4.18/§24.1): ignora la intención aunque venga —
-    // solo intent-aware activa la detección de conflictos.
-    let effective_intent = if mode == "intent-aware" { intent } else { None };
+    // v0.5 §4.18 define el modo por la presencia de intencion ("baseline:
+    // intencion ausente o incompleta" / "intent-aware: target + intencion"),
+    // no por un flag separado que el caller deba recordar ademas de `intent`.
+    // El prompt maestro documentado (docs/prompt-master.md) solo ensena
+    // `prepare_change(target, intent)` -- nunca `mode` -- asi que exigir
+    // `mode: "intent-aware"` aparte descartaba la intencion en silencio para
+    // todo caller que siguiera el protocolo oficial. `mode: "baseline"`
+    // explicito sigue siendo la manera de forzar retrieval puro sin
+    // deteccion de conflictos, aunque venga `intent`.
+    let effective_intent = if mode == Some("baseline") {
+        None
+    } else {
+        intent
+    };
 
     let default_budget = retrieval::Budget::default();
     let budget = retrieval::Budget {

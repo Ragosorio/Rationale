@@ -8,6 +8,7 @@ if [[ -f "$PREFIX/rationale" ]]; then
 else
   echo "no existe: $PREFIX/rationale"
 fi
+rm -f "$PREFIX/rationale-update"
 
 if [[ "${RATIONALE_REMOVE_AGENT_CONFIG:-0}" == "1" ]] && command -v codex >/dev/null 2>&1; then
   codex mcp remove rationale >/dev/null 2>&1 || true

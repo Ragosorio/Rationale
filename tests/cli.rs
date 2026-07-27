@@ -62,14 +62,24 @@ fn help_is_successful_and_non_mutating_for_every_command() {
 #[test]
 fn invalid_project_root_is_a_clean_cli_error() {
     let project = unique_temp_project("invalid-root");
+    // Un directorio real que existe pero no tiene `.rationale/` — el propio
+    // temp dir del sistema sirve en macOS, Linux y Windows sin asumir `/tmp`
+    // literal, que no existe como tal en Windows.
+    let no_rationale_dir = std::env::temp_dir();
+    let no_rationale_dir = no_rationale_dir.to_str().unwrap();
     let cases: &[&[&str]] = &[
-        &["health", "--project-root", "/tmp"],
-        &["prepare", "src/main.rs", "--project-root", "/tmp"],
-        &["review", "--project-root", "/tmp"],
-        &["review-record", "record-id", "--project-root", "/tmp"],
-        &["install-agent", "--project-root", "/tmp"],
-        &["uninstall-agent", "--project-root", "/tmp"],
-        &["doctor", "--project-root", "/tmp"],
+        &["health", "--project-root", no_rationale_dir],
+        &["prepare", "src/main.rs", "--project-root", no_rationale_dir],
+        &["review", "--project-root", no_rationale_dir],
+        &[
+            "review-record",
+            "record-id",
+            "--project-root",
+            no_rationale_dir,
+        ],
+        &["install-agent", "--project-root", no_rationale_dir],
+        &["uninstall-agent", "--project-root", no_rationale_dir],
+        &["doctor", "--project-root", no_rationale_dir],
     ];
     for args in cases {
         let output = run(&project, args);

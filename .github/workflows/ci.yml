@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -26,4 +26,19 @@ jobs:
         run: cargo install cargo-audit --locked
       - run: cargo audit
       - name: Documentation checks
+        if: runner.os != 'Windows'
         run: ./scripts/check-docs.sh
+      - name: Package smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/package.ps1
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          $archive = "target/packages/rationale-$version-x86_64-pc-windows-msvc.zip"
+          $extractTo = Join-Path ([System.IO.Path]::GetTempPath()) ("rationale-ci-extract-" + [guid]::NewGuid())
+          Expand-Archive $archive -DestinationPath $extractTo
+          $expected = Join-Path $extractTo "rationale-$version-x86_64-pc-windows-msvc/rationale.exe"
+          if (!(Test-Path $expected)) {
+            throw "el ZIP no tiene el layout que rationale-installer.ps1 espera: falta $expected"
+          }
+          Write-Host "layout del ZIP correcto: $expected existe"

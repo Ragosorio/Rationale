@@ -368,6 +368,39 @@ pub fn read_record(path: &Path) -> Result<Record, StorageError> {
     Ok(record)
 }
 
+/// Escribe bytes de forma atómica: temp file en el mismo directorio (mismo
+/// filesystem, condición necesaria para que `rename` sea atómico en POSIX),
+/// fuerza a disco con `sync_all`, y solo entonces renombra sobre el destino
+/// final. Si el proceso muere entre medio, el archivo original queda
+/// intacto — nunca truncado ni a medio escribir. Mismo patrón que
+/// `write_record` (`Arquitectura §11.6`/`§15.3`), extraído para que
+/// cualquier escritor fuera del canon YAML (`agents.rs`: `CLAUDE.md`,
+/// `AGENTS.md`, `.mcp.json`, el manifest de `install-agent`) tenga la misma
+/// garantía en vez de un `fs::write` plano que un `install-agent`
+/// interrumpido puede dejar truncado.
+pub fn atomic_write_bytes(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let dir = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{} no tiene directorio padre", path.display()),
+        )
+    })?;
+    std::fs::create_dir_all(dir)?;
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+    static WRITE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let unique = WRITE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = dir.join(format!(".{file_name}.tmp-{}-{unique}", std::process::id()));
+
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp_path)?;
+        file.write_all(contents)?;
+        file.sync_all()?;
+    }
+
+    std::fs::rename(&tmp_path, path)
+}
+
 /// Escribe un Record de forma atómica (`Arquitectura §11.6`/`§15.3`: "usar
 /// archivos temporales y rename atómico"). Nunca escribe in-place: serializa
 /// a un archivo temporal en el mismo directorio (garantiza mismo

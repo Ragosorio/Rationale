@@ -3,6 +3,19 @@
 Los cambios importantes se registran aquí por Release. El detalle técnico de
 cada cambio vive en commits, ADRs y work items enlazados.
 
+## Sin publicar
+
+- **Corrige que `prepare_change` descartaba `intent` en silencio.** El MCP
+  exigía `mode: "intent-aware"` explícito además de `intent` para activar
+  detección de conflictos; sin ese flag, `intent` se ignoraba sin ningún
+  diagnóstico. `Rationale_v0.5.md §4.18` define el modo por la presencia de
+  intención, no por un flag separado, y el prompt maestro documentado
+  (`docs/prompt-master.md`) solo enseña `prepare_change(target, intent)` —
+  nunca `mode`. Cualquier agente siguiendo el protocolo oficial reproducía
+  exactamente el síntoma del bug real que motivó el proyecto: una intención
+  contradictoria pasaba sin que Rationale la señalara. `mode: "baseline"`
+  explícito sigue forzando retrieval puro sin detección, como override.
+
 ## v0.1.0-alpha.7 — 2026-07-27
 
 - Corrige el canal por defecto de `rationale-installer.sh/.ps1` y

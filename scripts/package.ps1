@@ -18,7 +18,11 @@ Copy-Item $Binary (Join-Path $Bundle "rationale.exe")
 Copy-Item (Join-Path $Root "LICENSE"), (Join-Path $Root "README.md") $Bundle
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $Archive = Join-Path $OutDir "rationale-$Version-$Target.zip"
-Compress-Archive -Path (Join-Path $Bundle '*') -DestinationPath $Archive -Force
+# Sin el comodín '*': Compress-Archive incluye la carpeta $Bundle como
+# entrada de nivel superior del ZIP, así el archivo lleva el mismo prefijo
+# rationale-<version>-<target>/ que el .tar.xz de Unix (package.sh) y que
+# rationale-installer.ps1 espera al extraer.
+Compress-Archive -Path $Bundle -DestinationPath $Archive -Force
 Get-FileHash $Archive -Algorithm SHA256 | ForEach-Object {
   "{0}  {1}" -f $_.Hash.ToLowerInvariant(), (Split-Path $Archive -Leaf)
 } | Set-Content "$Archive.sha256"

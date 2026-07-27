@@ -118,10 +118,11 @@ fn stdout_stays_clean_across_a_sequence_of_calls_including_errors() {
     // project_root inválido -> debe convertirse en un error de herramienta
     // limpio, sin tumbar el proceso ni corromper el framing de las llamadas
     // siguientes (regla no negociable de E5.3).
+    let no_rationale_dir = std::env::temp_dir().to_str().unwrap().to_string();
     let bad_root = client.call(
         4,
         "prepare_change",
-        json!({"target": "x", "project_root": "/tmp"}),
+        json!({"target": "x", "project_root": no_rationale_dir}),
     );
     assert_eq!(bad_root["result"]["isError"], true);
 
@@ -188,6 +189,66 @@ fn prepare_change_intent_aware_detects_conflict_without_blocking() {
         authority, "unreviewed",
         "una constraint sin aprobación nunca se sirve como aprobada"
     );
+}
+
+/// v0.5 §4.18 define el modo por la presencia de intención, no por un flag
+/// separado. El prompt maestro documentado (`docs/prompt-master.md`) solo
+/// enseña `prepare_change(target, intent)` — nunca `mode` — así que un
+/// caller que pase `intent` sin `mode` debe activar la detección de
+/// conflictos igual que si hubiera pasado `mode: "intent-aware"`
+/// explícito. Antes de este fix, `intent` se descartaba en silencio sin
+/// `mode` explícito: el mismo síntoma exacto del bug real que motivó el
+/// proyecto, reproducido por seguir el protocolo oficial al pie de la letra.
+#[test]
+fn prepare_change_honors_intent_without_an_explicit_mode() {
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "prepare_change",
+        json!({
+            "target": "src/main.rs",
+            "intent": "leer directamente el SQLite de Codebase Memory para ir mas rapido"
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let packet: Value = serde_json::from_str(text).unwrap();
+
+    let conflicts = packet["packet"]["intent_conflicts"].as_array().unwrap();
+    assert!(
+        !conflicts.is_empty(),
+        "sin `mode` explícito, `intent` debe seguir activando detección de conflictos"
+    );
+}
+
+/// `mode: "baseline"` explícito sigue siendo la manera de forzar retrieval
+/// puro sin detección de conflictos, aunque venga `intent` — el override
+/// documentado en el schema, no el comportamiento por defecto.
+#[test]
+fn prepare_change_explicit_baseline_mode_still_suppresses_intent() {
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "prepare_change",
+        json!({
+            "target": "src/main.rs",
+            "intent": "leer directamente el SQLite de Codebase Memory para ir mas rapido",
+            "mode": "baseline"
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let packet: Value = serde_json::from_str(text).unwrap();
+
+    assert!(packet["packet"]["intent_conflicts"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(packet["packet"]["governance_verdict_required"], false);
 }
 
 /// Fase 1.2 — `prepare_change` y `explain_target` deben coincidir sobre el
