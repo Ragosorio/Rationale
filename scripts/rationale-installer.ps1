@@ -30,6 +30,13 @@ try {
   Copy-Item (Join-Path $Tmp "rationale-$Version-$Target/rationale.exe") (Join-Path $Prefix "rationale.exe") -Force
   Copy-Item (Join-Path $Tmp "rationale-update.ps1") (Join-Path $Prefix "rationale-update.ps1") -Force
   Write-Host "Rationale $Version instalado en $Prefix/rationale.exe"
+  if (-not [Console]::IsOutputRedirected -and $null -eq $env:NO_COLOR -and $null -eq $env:CI -and $env:RATIONALE_NO_MASCOT -ne "1") {
+    Write-Host "      (\__/)"
+    Write-Host "     ( ˶>ᴗ<˶)  ✨"
+    Write-Host "    ╭/  R  \╮"
+    Write-Host "  ━━┿━━━━━━━┿━━"
+    Write-Host "Chestie dice: ¡ya está! La versión quedó verificada y lista para usar."
+  }
 } finally {
   Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
 }

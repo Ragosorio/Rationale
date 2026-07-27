@@ -54,6 +54,14 @@ Sin que lo menciones, el agente (guiado por las instrucciones que `install-agent
 
 El agente ahora sabe dónde está, cómo funciona, por qué es así y qué no debe romper — sin que tú lo hayas escrito en el prompt. Si en el camino toca código que se ve innecesariamente raro, puede llamar a `explain_target` antes de "simplificarlo".
 
+## Prompt maestro
+
+Para que el flujo sea repetible entre sesiones, pega el [prompt maestro](prompt-master.md)
+o su [versión en español](prompt-master.es.md) al inicio de cada conversación.
+La landing cambia entre ambos al cambiar de idioma. `rationale install-agent`
+escribe por defecto la versión inglesa en `AGENTS.md`, `CLAUDE.md` o la regla de
+Cursor; ambas fuentes viven juntas y se actualizan deliberadamente.
+
 ## Sin memoria de código
 
 Rationale sigue funcionando. `rationale health` reporta `"provider_status":"unavailable"` y el contexto que entrega tiene menos cobertura (menos candidatos de vinculación automática), pero nunca bloquea ni falla. Instalar [`codebase-memory-mcp`](research/codebase-memory/) en el `PATH` sube esa cobertura; no es un requisito.

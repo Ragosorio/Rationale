@@ -22,11 +22,16 @@
 //! humano. Solo el paso 1 (coincidencia exacta) es lo bastante inequívoco
 //! para no necesitar candidatos.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize, Clone)]
+/// Campos reales no modelados (`schema_version`, `description`, `source`,
+/// `review`...) viajan en `extra` — mismo patrón que `storage::Record`
+/// (ver doc de ese módulo). Sin esto, un ciclo leer→escribir borraría en
+/// silencio el bloque `review` que todo Subject real trae (`status:
+/// unreviewed`, `proposed_by`, `proposed_at`).
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Subject {
     pub id: String,
     #[serde(rename = "type")]
@@ -38,13 +43,22 @@ pub struct Subject {
     pub aliases: Vec<String>,
     #[serde(default)]
     pub applies_to: Vec<String>,
+    #[serde(flatten)]
+    pub extra: yaml_serde::Mapping,
 }
 
 #[derive(Debug)]
 pub enum SubjectError {
     Io(std::io::Error),
     Parse(String),
+    #[allow(dead_code)] // usado por materialize_proposed (1.3)
+    Serialize(String),
     MissingRequiredField(&'static str),
+    /// Mismo motivo que `storage::StorageError::UnsafeIdentifier`: un `id`
+    /// que viene de un cliente MCP no confiable se convierte en nombre de
+    /// archivo real — nunca sin validar primero.
+    #[allow(dead_code)] // usado por materialize_proposed (1.3)
+    UnsafeIdentifier(String),
 }
 
 impl std::fmt::Display for SubjectError {
@@ -52,25 +66,173 @@ impl std::fmt::Display for SubjectError {
         match self {
             SubjectError::Io(e) => write!(f, "error de I/O leyendo Subject: {e}"),
             SubjectError::Parse(e) => write!(f, "Subject YAML inválido: {e}"),
+            SubjectError::Serialize(e) => write!(f, "no se pudo serializar el Subject: {e}"),
             SubjectError::MissingRequiredField(field) => {
                 write!(f, "Subject inválido: falta campo obligatorio '{field}'")
+            }
+            SubjectError::UnsafeIdentifier(id) => {
+                write!(f, "id inseguro para usar como nombre de archivo: '{id}'")
             }
         }
     }
 }
 
-pub fn read_subject(path: &Path) -> Result<Subject, SubjectError> {
-    let content = std::fs::read_to_string(path).map_err(SubjectError::Io)?;
-    let subject: Subject =
-        yaml_serde::from_str(&content).map_err(|e| SubjectError::Parse(e.to_string()))?;
-
+fn validate(subject: &Subject) -> Result<(), SubjectError> {
     if subject.id.is_empty() {
         return Err(SubjectError::MissingRequiredField("id"));
     }
     if subject.title.is_empty() {
         return Err(SubjectError::MissingRequiredField("title"));
     }
+    Ok(())
+}
+
+pub fn read_subject(path: &Path) -> Result<Subject, SubjectError> {
+    let content = std::fs::read_to_string(path).map_err(SubjectError::Io)?;
+    let subject: Subject =
+        yaml_serde::from_str(&content).map_err(|e| SubjectError::Parse(e.to_string()))?;
+    validate(&subject)?;
     Ok(subject)
+}
+
+/// Escribe un Subject de forma atómica — mismo patrón que
+/// `storage::write_record` (temp file en el mismo directorio + rename).
+/// Nunca sobrescribe un Subject existente con contenido distinto: el
+/// caller (`materialize_proposed`) decide qué hacer ante un conflicto,
+/// esta función solo garantiza que la escritura misma nunca deja un
+/// archivo a medio escribir.
+#[allow(dead_code)] // usado por materialize_proposed y finalize_change (1.3)
+pub fn write_subject(path: &Path, subject: &Subject) -> Result<(), SubjectError> {
+    validate(subject)?;
+
+    let yaml =
+        yaml_serde::to_string(subject).map_err(|e| SubjectError::Serialize(e.to_string()))?;
+
+    let dir = path.parent().ok_or_else(|| {
+        SubjectError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "el path del Subject no tiene directorio padre",
+        ))
+    })?;
+    std::fs::create_dir_all(dir).map_err(SubjectError::Io)?;
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("subject.yaml");
+    static WRITE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let unique = WRITE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = dir.join(format!(".{file_name}.tmp-{}-{unique}", std::process::id()));
+
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp_path).map_err(SubjectError::Io)?;
+        file.write_all(yaml.as_bytes()).map_err(SubjectError::Io)?;
+        file.sync_all().map_err(SubjectError::Io)?;
+    }
+
+    std::fs::rename(&tmp_path, path).map_err(SubjectError::Io)?;
+    Ok(())
+}
+
+/// Resultado de intentar materializar un Subject propuesto por
+/// `finalize_change` — nunca sobrescribe uno existente (v0.5 §9.1: la
+/// identidad conceptual de un Subject no se pisa por accidente).
+#[allow(dead_code)] // usado por finalize_change (1.3)
+pub enum MaterializeOutcome {
+    Created(std::path::PathBuf),
+    AlreadyExists(std::path::PathBuf),
+}
+
+/// Materializa un Subject propuesto en `.rationale/subjects/` — se llama
+/// desde `finalize_change` (Fase F5), no desde `rationale review`: un
+/// Subject es identidad conceptual, no una aprobación normativa (tiene su
+/// propio bloque `review.status: unreviewed`, ortogonal a
+/// `Record.approvals`). Escribirlo aquí es lo que permite que el Subject
+/// Resolver lo vea como candidato en la siguiente propuesta — hoy
+/// `existing_bindings` solo mira `records/`, así que un Subject invisible
+/// hasta la aprobación produce conceptos duplicados de forma fiable.
+#[allow(clippy::too_many_arguments, dead_code)] // usado por finalize_change (1.3)
+pub fn materialize_proposed(
+    subjects_dir: &Path,
+    id: &str,
+    title: &str,
+    subject_type: &str,
+    scope: &str,
+    applies_to: &[String],
+    proposed_by: &str,
+    proposed_at: &str,
+) -> Result<MaterializeOutcome, SubjectError> {
+    let is_unsafe = id.is_empty()
+        || id == "."
+        || id == ".."
+        || id.contains('/')
+        || id.contains('\\')
+        || id.contains('\0');
+    if is_unsafe {
+        return Err(SubjectError::UnsafeIdentifier(id.to_string()));
+    }
+
+    let path = subjects_dir.join(format!("{id}.yaml"));
+    if path.exists() {
+        return Ok(MaterializeOutcome::AlreadyExists(path));
+    }
+
+    let mut review = yaml_serde::Mapping::new();
+    review.insert(
+        yaml_serde::Value::String("status".to_string()),
+        yaml_serde::Value::String("unreviewed".to_string()),
+    );
+    let mut proposed_by_map = yaml_serde::Mapping::new();
+    proposed_by_map.insert(
+        yaml_serde::Value::String("type".to_string()),
+        yaml_serde::Value::String("agent".to_string()),
+    );
+    proposed_by_map.insert(
+        yaml_serde::Value::String("name".to_string()),
+        yaml_serde::Value::String(proposed_by.to_string()),
+    );
+    review.insert(
+        yaml_serde::Value::String("proposed_by".to_string()),
+        yaml_serde::Value::Mapping(proposed_by_map),
+    );
+    review.insert(
+        yaml_serde::Value::String("proposed_at".to_string()),
+        yaml_serde::Value::String(proposed_at.to_string()),
+    );
+    review.insert(
+        yaml_serde::Value::String("note".to_string()),
+        yaml_serde::Value::String(
+            "Propuesto por finalize_change. Sin autoridad hasta rationale review \
+             (evaluation.no-self-certification, Proceso §21)."
+                .to_string(),
+        ),
+    );
+
+    let mut extra = yaml_serde::Mapping::new();
+    extra.insert(
+        yaml_serde::Value::String("schema_version".to_string()),
+        yaml_serde::Value::String("rationale/0.1".to_string()),
+    );
+    extra.insert(
+        yaml_serde::Value::String("review".to_string()),
+        yaml_serde::Value::Mapping(review),
+    );
+
+    let subject = Subject {
+        id: id.to_string(),
+        subject_type: if subject_type.is_empty() {
+            "unclassified".to_string()
+        } else {
+            subject_type.to_string()
+        },
+        title: title.to_string(),
+        scope: scope.to_string(),
+        aliases: vec![],
+        applies_to: applies_to.to_vec(),
+        extra,
+    };
+    write_subject(&path, &subject)?;
+    Ok(MaterializeOutcome::Created(path))
 }
 
 /// Resultado detallado de listar Subjects: los que sí parsearon, y los que
@@ -396,6 +558,7 @@ mod tests {
             scope: scope.to_string(),
             aliases: vec![],
             applies_to: vec![],
+            extra: yaml_serde::Mapping::new(),
         }
     }
 
@@ -567,6 +730,7 @@ mod tests {
             scope: "project".to_string(),
             aliases: vec![],
             applies_to: vec![],
+            extra: yaml_serde::Mapping::new(),
         }];
         let resolution = resolve(
             &subjects,
@@ -595,5 +759,105 @@ mod tests {
             ..valid
         };
         assert!(validate_novelty_reason(&empty, &resolution.candidates).is_err());
+    }
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "rationale-subjects-test-{label}-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Mismo contrato de fidelidad que `storage::write_record`: un Subject
+    /// real completo (con `review`, `description`, `schema_version` — todo
+    /// lo que vive en `extra`) debe sobrevivir leer → escribir → releer sin
+    /// perder ningún campo no modelado.
+    #[test]
+    fn write_subject_roundtrip_preserves_unmodeled_fields() {
+        let original_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(".rationale/subjects/architecture.provider-boundary.yaml");
+        let subject = read_subject(&original_path).unwrap();
+        assert!(
+            !subject.extra.is_empty(),
+            "el Subject real debe traer campos no modelados (schema_version, description...)"
+        );
+
+        let dir = unique_temp_dir("roundtrip");
+        let written_path = dir.join("roundtrip.yaml");
+        write_subject(&written_path, &subject).unwrap();
+
+        let reread = read_subject(&written_path).unwrap();
+        assert_eq!(reread.id, subject.id);
+        assert_eq!(reread.extra, subject.extra);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn materialize_never_overwrites_an_existing_subject() {
+        let dir = unique_temp_dir("materialize");
+
+        let first = materialize_proposed(
+            &dir,
+            "payments.no-double-charge",
+            "Payments must never be processed twice",
+            "system-behavior",
+            "project",
+            &["src/payments/charge.rs".to_string()],
+            "mcp-client",
+            "2026-07-26T00:00:00Z",
+        )
+        .unwrap();
+        let path = match first {
+            MaterializeOutcome::Created(p) => p,
+            MaterializeOutcome::AlreadyExists(_) => panic!("debía crearse la primera vez"),
+        };
+        let first_content = std::fs::read_to_string(&path).unwrap();
+
+        let second = materialize_proposed(
+            &dir,
+            "payments.no-double-charge",
+            "A completely different title that should never land on disk",
+            "system-behavior",
+            "project",
+            &[],
+            "mcp-client",
+            "2026-07-26T01:00:00Z",
+        )
+        .unwrap();
+        assert!(matches!(second, MaterializeOutcome::AlreadyExists(_)));
+
+        let content_after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            first_content, content_after,
+            "un segundo materialize con el mismo id nunca debe pisar el archivo existente"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn materialize_rejects_unsafe_subject_id() {
+        let dir = unique_temp_dir("unsafe-id");
+        let result = materialize_proposed(
+            &dir,
+            "../../../etc/pwned",
+            "malicious",
+            "system-behavior",
+            "project",
+            &[],
+            "mcp-client",
+            "2026-07-26T00:00:00Z",
+        );
+        assert!(matches!(result, Err(SubjectError::UnsafeIdentifier(_))));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

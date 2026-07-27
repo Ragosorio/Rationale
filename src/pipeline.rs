@@ -13,8 +13,8 @@ use crate::storage::{
     Approval, BindingDeclaration, EpistemicStatus, Record, RecordSubjectRef, Risk,
 };
 use crate::{
-    assessment, cache, capture, configuration, project, retrieval, revision, signals, storage,
-    subjects,
+    assessment, binding_match, cache, capture, configuration, evaluation, project, retrieval,
+    revision, signals, storage, subjects,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -56,8 +56,7 @@ pub fn prepare(
 
     let config = configuration::load(&req.project_root).map_err(|e| e.to_string())?;
 
-    // 1. Leer el Record canónico (por ahora: el primero disponible que
-    // mencione el symbol solicitado; Fase E añade FTS/scope real).
+    // 1. Leer el Record canónico.
     let records_dir = config.rationale_dir.join("records");
     let records = storage::list_records(&records_dir)
         .map_err(|e| format!("no se pudieron leer Records: {e}"))?;
@@ -68,28 +67,31 @@ pub fn prepare(
     let target = project::resolve_target(&req.repo_path, &req.target_spec);
     let symbol = target.as_ref().ok().and_then(|t| t.symbol.clone());
 
-    let record = records
-        .iter()
-        .find(|r| {
-            symbol
-                .as_ref()
-                .map(|s| {
-                    r.binding_declarations.iter().any(|b| {
-                        b.structural_id
-                            .as_ref()
-                            .map(|sid| sid.ends_with(s.as_str()))
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(true)
-        })
-        .or_else(|| records.first());
+    // Único matcher compartido con `explain` (Fase 1.2): antes, cuando
+    // nada matcheaba, este caller caía a `records.first()` (un Record
+    // arbitrario sin relación real con el target) mientras `explain`
+    // devolvía vacío para la misma consulta — los dos tools se
+    // contradecían. Un vacío honesto reemplaza ese fallback.
+    let target_key = target
+        .as_ref()
+        .ok()
+        .map(|t| binding_match::target_key(&req.repo_path, t))
+        .unwrap_or_default();
+    let governing_matches = binding_match::governing(&target_key, &records);
+    let record = governing_matches.first().map(|m| m.record);
 
     if record.is_none() {
-        diagnostics.push(
-            "no hay Records en .rationale/records/; se devuelve un packet sin restricciones y sin assessment"
-                .to_string(),
-        );
+        if records.is_empty() {
+            diagnostics.push(
+                "no hay Records en .rationale/records/; se devuelve un packet sin restricciones y sin assessment"
+                    .to_string(),
+            );
+        } else {
+            diagnostics.push(format!(
+                "ningún Record de los {} existentes gobierna este target por binding; se devuelve un packet sin assessment de gobernanza directa",
+                records.len()
+            ));
+        }
     }
 
     // Resolver el Subject referenciado por el Record contra el canon real
@@ -213,6 +215,7 @@ pub fn prepare(
             &snap,
             provider_status.clone(),
             provider_coverage.clone(),
+            &req.repo_path,
         );
         diagnostics.push(format!(
             "assessment: applicability={} linkage={} authority={} — {}",
@@ -237,7 +240,16 @@ pub fn prepare(
     }
 
     // 5. + 6. Compilar el packet compacto — niveles de prioridad y budget
-    // reales (Fase E4), no una sola constraint fija.
+    // reales (Fase E4), no una sola constraint fija. `governing_by_kind`
+    // le dice a retrieval qué Records gobiernan el target (y con qué
+    // especificidad) para que nunca los trunque ni los oculte por
+    // severidad — el mismo conjunto que ya calculamos arriba para elegir
+    // `record`/`assessment`.
+    let governing_by_kind: std::collections::HashMap<String, binding_match::MatchKind> =
+        governing_matches
+            .iter()
+            .map(|m| (m.record.id.clone(), m.kind))
+            .collect();
     let packet = retrieval::compile_packet(
         snap.head.clone(),
         consistency,
@@ -248,6 +260,7 @@ pub fn prepare(
         resolved_target,
         provider_warnings,
         &req.budget,
+        &governing_by_kind,
     );
 
     Ok(PrepareOutcome {
@@ -307,6 +320,11 @@ pub struct GoverningRecord {
     pub rationale: Option<String>,
     pub authority: String,
     pub epistemic_status: String,
+    /// Cómo se determinó que este Record gobierna el target
+    /// (`binding_match::MatchKind`) — expuesto para que `prepare` y
+    /// `explain` sean auditablemente consistentes entre sí, nunca solo
+    /// "confía en que coinciden".
+    pub match_kind: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -348,26 +366,22 @@ pub fn explain(
         .map_err(|e| format!("no se pudieron leer Records: {e}"))?;
 
     let target = project::resolve_target(repo_path, target_spec);
-    let symbol = target.as_ref().ok().and_then(|t| t.symbol.clone());
     let resolved_target = target.as_ref().ok().map(|t| t.path.display().to_string());
     if let Err(e) = &target {
         diagnostics.push(format!("advertencia: {e}"));
     }
 
-    let governing: Vec<&Record> = match &symbol {
-        Some(sym) => records
-            .iter()
-            .filter(|r| {
-                r.binding_declarations.iter().any(|b| {
-                    b.structural_id
-                        .as_ref()
-                        .map(|sid| sid.ends_with(sym.as_str()))
-                        .unwrap_or(false)
-                })
-            })
-            .collect(),
-        None => Vec::new(),
-    };
+    // Único matcher compartido con `prepare` (Fase 1.2) — antes cada uno
+    // tenía su propia comparación y podían discrepar sobre el mismo
+    // target. Ya no requiere symbol: un binding de archivo también
+    // gobierna una consulta sobre el archivo entero.
+    let key = target
+        .as_ref()
+        .ok()
+        .map(|t| binding_match::target_key(repo_path, t))
+        .unwrap_or_default();
+    let governing_matches = binding_match::governing(&key, &records);
+    let governing: Vec<&Record> = governing_matches.iter().map(|m| m.record).collect();
 
     if governing.is_empty() {
         unknown.push(
@@ -382,14 +396,15 @@ pub fn explain(
         ));
     }
 
-    let governing_records: Vec<GoverningRecord> = governing
+    let governing_records: Vec<GoverningRecord> = governing_matches
         .iter()
-        .map(|r| GoverningRecord {
-            id: r.id.clone(),
-            statement: r.statement.clone(),
-            rationale: r.rationale.clone(),
-            authority: storage::authority_label(r).to_string(),
-            epistemic_status: r.epistemic_status.to_string(),
+        .map(|m| GoverningRecord {
+            id: m.record.id.clone(),
+            statement: m.record.statement.clone(),
+            rationale: m.record.rationale.clone(),
+            authority: storage::authority_label(m.record).to_string(),
+            epistemic_status: m.record.epistemic_status.to_string(),
+            match_kind: m.kind.as_str().to_string(),
         })
         .collect();
 
@@ -457,6 +472,11 @@ pub struct FinalizeRequest {
     pub record_id: String,
     pub subject_id: String,
     pub subject_title: String,
+    /// Clasificación libre del Subject (`.rationale/subjects/*.yaml`
+    /// `type:`, sin enum — ver `subject.schema.json`). `None` se
+    /// materializa como `"unclassified"`: un marcador explícito de "el
+    /// proponente no lo clasificó", nunca una adivinanza.
+    pub subject_type: Option<String>,
     /// Requerido por v0.5 §294 cuando el Subject Resolver sugiere un
     /// candidato fuerte (`Alias`/`MergeCandidate`) pero el caller insiste en
     /// que es un concepto nuevo. Sin esto, una propuesta contra un
@@ -499,6 +519,34 @@ fn sanitize_control_chars(text: &str) -> String {
         .collect()
 }
 
+/// Rechazo temprano, antes de que exista ningún dato mecánico real que
+/// mostrar (validación de `record_id`/`subject_id`, que ocurre antes de
+/// tocar Git). Evita repetir el `MechanicalCapture` vacío en cada punto de
+/// rechazo temprano.
+fn rejected_before_capture(diagnostics: Vec<String>, blocked_reason: String) -> FinalizeOutcome {
+    FinalizeOutcome {
+        level: signals::CaptureLevel::GitOnly,
+        signals: vec![],
+        capture: capture::MechanicalCapture {
+            base_revision: None,
+            final_revision: None,
+            working_tree_dirty: false,
+            changed_files: vec![],
+            committed_file_count: 0,
+            uncommitted_file_count: 0,
+            verifiability: capture::Verifiability::NoChanges,
+            provider_status: "unavailable".to_string(),
+            provider_coverage: "unknown".to_string(),
+        },
+        subject_resolution: None,
+        proposal_written: false,
+        proposal_path: None,
+        proposal_id: None,
+        blocked_reason: Some(blocked_reason),
+        diagnostics,
+    }
+}
+
 /// El cuerpo de `finalize_change`: captura mecánica → señales → nivel →
 /// resolución de Subject → escritura de la propuesta (nunca del Record
 /// aprobado — eso es `rationale review`, Fase F6). Sigue el flujo de
@@ -517,24 +565,20 @@ pub fn finalize(
     // traversal real, confirmado empíricamente y corregido aquí).
     if let Err(e) = storage::validate_safe_id(&req.record_id) {
         diagnostics.push(format!("record_id rechazado: {e}"));
-        return Ok(FinalizeOutcome {
-            level: signals::CaptureLevel::GitOnly,
-            signals: vec![],
-            capture: capture::MechanicalCapture {
-                base_revision: None,
-                final_revision: None,
-                working_tree_dirty: false,
-                changed_files: vec![],
-                provider_status: "unavailable".to_string(),
-                provider_coverage: "unknown".to_string(),
-            },
-            subject_resolution: None,
-            proposal_written: false,
-            proposal_path: None,
-            proposal_id: None,
-            blocked_reason: Some(format!("record_id inseguro: {e}")),
+        return Ok(rejected_before_capture(
             diagnostics,
-        });
+            format!("record_id inseguro: {e}"),
+        ));
+    }
+    // Mismo agujero, mismo fix: `subject_id` se convierte en nombre de
+    // archivo real en `.rationale/subjects/` en cuanto se materializa más
+    // abajo (defecto real: antes solo `record_id` se validaba aquí).
+    if let Err(e) = storage::validate_safe_id(&req.subject_id) {
+        diagnostics.push(format!("subject_id rechazado: {e}"));
+        return Ok(rejected_before_capture(
+            diagnostics,
+            format!("subject_id inseguro: {e}"),
+        ));
     }
 
     let config = configuration::load(&req.project_root).map_err(|e| e.to_string())?;
@@ -542,12 +586,83 @@ pub fn finalize(
     // Resolver el target principal es solo diagnóstico aquí — nunca decide
     // qué se captura (eso lo hace el diff mecánico completo); sirve para
     // que quien lea la propuesta vea contra qué target se declaró el cambio.
-    match project::resolve_target(&req.repo_path, &req.target_spec) {
+    let declared_target = project::resolve_target(&req.repo_path, &req.target_spec);
+    match &declared_target {
         Ok(t) => diagnostics.push(format!("target declarado: {}", t.path.display())),
         Err(e) => diagnostics.push(format!("advertencia: target declarado no resuelto: {e}")),
     }
+    let declared_symbol = declared_target.as_ref().ok().and_then(|t| t.symbol.clone());
 
-    let mechanical = capture::capture(&req.repo_path, &req.base_revision, provider);
+    // Excluir `.rationale/` del escaneo de untracked/staged — sin esto,
+    // las propuestas que esta misma llamada está a punto de escribir en
+    // `.rationale/proposals/` se atarían a sí mismas como si fueran parte
+    // del cambio que las originó.
+    let mechanical = capture::capture(
+        &req.repo_path,
+        &req.base_revision,
+        &[".rationale/"],
+        provider,
+    );
+
+    // Guarda de "nada que capturar" — distinta de Nivel 0 (Git-only):
+    // Nivel 0 significa "hay cambios, pero son mecánicos y no ameritan un
+    // Record"; esto significa "no hay ningún cambio en absoluto". Antes de
+    // capturar staged/unstaged/untracked (Fase 1.3), un diff vacío
+    // producía `changed_files: []` pero `determine_level` solo trata
+    // Nivel 0 cuando `!changed_files.is_empty()` — con la lista vacía, esa
+    // condición es falsa y el flujo caía a `Intent`, escribiendo feliz una
+    // propuesta con `binding_declarations: []`. Un `blocked_reason`
+    // explícito aquí lo cierra en la raíz.
+    if mechanical.changed_files.is_empty() {
+        diagnostics.push(
+            "no hay ningún cambio (commiteado, staged, unstaged ni untracked) desde \
+             base_revision — no hay nada que enlazar"
+                .to_string(),
+        );
+        return Ok(FinalizeOutcome {
+            level: signals::CaptureLevel::GitOnly,
+            signals: vec![],
+            capture: mechanical,
+            subject_resolution: None,
+            proposal_written: false,
+            proposal_path: None,
+            proposal_id: None,
+            blocked_reason: Some(
+                "no hay ningún cambio desde base_revision — no hay nada que enlazar".to_string(),
+            ),
+            diagnostics,
+        });
+    }
+
+    // Vínculo de símbolo: SOLO si el proveedor estructural confirmó que el
+    // símbolo existe — nunca se sintetiza un `structural_id` concatenando
+    // el spec del target a mano. Un `structural_id` hecho a mano es
+    // indistinguible, para un lector futuro, de uno que el proveedor
+    // confirmó de verdad — eso es exactamente el tipo de inferencia
+    // disfrazada de hecho que `policy.no-inferred-blocks` prohíbe. Si el
+    // proveedor no está disponible, degrada en silencio a "sin binding de
+    // símbolo": el binding de archivo (abajo) sigue gobernando el target
+    // igual, gracias a la propagación archivo→símbolo de `binding_match`.
+    let resolved_symbol: Option<crate::providers::ResolvedTarget> =
+        match (&declared_symbol, &mut *provider) {
+            (Some(sym), ProviderHandle::Live(client)) => {
+                let result = client.resolve_target(req.repo_path.to_str().unwrap_or(""), sym);
+                if result.data.is_none() {
+                    diagnostics.push(format!(
+                        "el proveedor no confirmó el símbolo '{sym}' — solo se enlaza el archivo"
+                    ));
+                }
+                result.data
+            }
+            (Some(_), ProviderHandle::Unavailable(_)) => {
+                diagnostics.push(
+                    "proveedor no disponible — solo se enlaza el archivo, sin binding de símbolo"
+                        .to_string(),
+                );
+                None
+            }
+            (None, _) => None,
+        };
 
     let mut all_signals: std::collections::HashSet<signals::Signal> =
         signals::signals_from_paths(&mechanical.changed_files)
@@ -710,7 +825,12 @@ pub fn finalize(
         _ => req.subject_id.clone(),
     };
 
-    let binding_declarations: Vec<BindingDeclaration> = mechanical
+    // Siempre un binding de archivo por cada archivo cambiado — verificable
+    // sin el proveedor, por diseño. `provisional` refleja la procedencia
+    // real (Fase 1.3): un archivo `Committed` es verificable por
+    // cualquiera con el mismo repo; cualquier otra procedencia no lo es
+    // todavía, y el Record lo declara en vez de fingir la misma certeza.
+    let mut binding_declarations: Vec<BindingDeclaration> = mechanical
         .changed_files
         .iter()
         .enumerate()
@@ -720,9 +840,77 @@ pub fn finalize(
             provider: None,
             structural_id: None,
             path_hint: Some(f.path.clone()),
+            provisional: f.origin != capture::ChangeOrigin::Committed,
             extra: yaml_serde::Mapping::new(),
         })
         .collect();
+
+    // Binding de símbolo adicional — solo cuando el proveedor confirmó el
+    // símbolo (arriba). `structural_id` es el `qualified_name` real que el
+    // proveedor devolvió, nunca una concatenación hecha a mano. El
+    // `path_hint` (repo-relativo) acompaña al símbolo para que
+    // `binding_match` pueda exigir que ambos coincidan con el target
+    // — sin esto, un símbolo homónimo en otro archivo podría matchear.
+    if let Some(resolved) = &resolved_symbol {
+        let rel_path = binding_match::target_rel_path(
+            &req.repo_path,
+            &project::Target {
+                path: PathBuf::from(&resolved.file_path),
+                symbol: declared_symbol.clone(),
+            },
+        );
+        let provisional = rel_path
+            .as_ref()
+            .and_then(|p| mechanical.changed_files.iter().find(|f| &f.path == p))
+            .map(|f| f.origin != capture::ChangeOrigin::Committed)
+            .unwrap_or(false);
+        binding_declarations.push(BindingDeclaration {
+            id: format!("binding.{}.symbol", req.record_id),
+            kind: "symbol".to_string(),
+            provider: Some("codebase-memory".to_string()),
+            structural_id: Some(resolved.qualified_name.clone()),
+            path_hint: rel_path,
+            provisional,
+            extra: yaml_serde::Mapping::new(),
+        });
+    }
+
+    // Materializar el Subject AHORA, no al aprobar: un Subject es
+    // identidad conceptual, no una aprobación normativa (tiene su propio
+    // `review.status: unreviewed`, ortogonal a `Record.approvals` —
+    // `authority_label` nunca lo lee). Hacerlo en `approve` en vez de aquí
+    // dejaría al Subject Resolver ciego ante Subjects recién propuestos en
+    // la MISMA sesión, porque `existing_bindings` (arriba) solo mira
+    // `records/`, no `proposals/` — dos agentes seguidos propondrían el
+    // mismo concepto con ids distintos de forma fiable. Nunca sobrescribe
+    // uno existente (`materialize_proposed`), así que llamarlo también
+    // para el caso `Reuse` es un no-op seguro, no un riesgo.
+    let subjects_dir = config.rationale_dir.join("subjects");
+    let applies_to: Vec<String> = binding_declarations
+        .iter()
+        .filter_map(|b| b.path_hint.clone())
+        .collect();
+    match subjects::materialize_proposed(
+        &subjects_dir,
+        &final_subject_id,
+        &req.subject_title,
+        req.subject_type.as_deref().unwrap_or(""),
+        "project",
+        &applies_to,
+        "mcp-client",
+        &evaluation::now_iso8601(),
+    ) {
+        Ok(subjects::MaterializeOutcome::Created(path)) => {
+            diagnostics.push(format!(
+                "Subject materializado en {} (review.status=unreviewed)",
+                path.display()
+            ));
+        }
+        Ok(subjects::MaterializeOutcome::AlreadyExists(_)) => {}
+        Err(e) => diagnostics.push(format!(
+            "advertencia: no se pudo materializar el Subject '{final_subject_id}': {e}"
+        )),
+    }
 
     let risks: Vec<Risk> = req
         .risks

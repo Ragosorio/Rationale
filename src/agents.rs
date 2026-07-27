@@ -19,6 +19,7 @@ const MARKER_BEGIN: &str =
     "<!-- rationale:begin (no editar a mano — `rationale uninstall-agent` lo revierte) -->";
 const MARKER_END: &str = "<!-- rationale:end -->";
 const MANIFEST_FILE: &str = "installed-agent-files.json";
+const MASTER_PROMPT: &str = include_str!("../docs/prompt-master.md");
 
 struct AgentTarget {
     name: &'static str,
@@ -256,28 +257,12 @@ fn instructions_block(binary_path: &Path) -> String {
 ## Rationale — protocolo de invocación
 
 Este proyecto usa Rationale (servidor MCP `rationale`, binario en `{bin}`)
-para preservar el *por qué* del código: restricciones activas, decisiones
-previas y su vigencia. Es un complemento de la memoria de código, no un
-sustituto: la memoria de código sabe DÓNDE y CÓMO; Rationale sabe POR QUÉ
-y QUÉ no debe romperse.
+para preservar el *por qué* del código. Sigue este protocolo:
 
-Llama a sus herramientas MCP sin pedir permiso — son de solo lectura y
-forman parte del flujo normal de exploración:
-
-- Antes de modificar código no trivial: `prepare_change(target, intent)`.
-  Devuelve restricciones críticas, conflictos con tu intención declarada
-  y el motivo de decisiones previas sobre ese código.
-- Al encontrar código que parece innecesariamente complejo, redundante o
-  \"raro\": `explain_target(target)` antes de simplificarlo — puede ser una
-  valla de Chesterton.
-- Al terminar un cambio no trivial: `finalize_change(...)` para dejar
-  constancia de lo decidido.
-
-Flujo compuesto recomendado cuando también hay memoria de código
-disponible: primero ubica el símbolo/función objetivo con la memoria de
-código, luego pasa ese target a `prepare_change` antes de escribir código.
+{prompt}
 {MARKER_END}\n",
-        bin = binary_path.display()
+        bin = binary_path.display(),
+        prompt = MASTER_PROMPT.trim()
     )
 }
 
@@ -585,6 +570,14 @@ mod tests {
         assert!(!after.contains(MARKER_BEGIN));
 
         std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn instructions_block_embeds_the_canonical_master_prompt() {
+        let block = instructions_block(&fake_binary());
+        assert!(block.contains(MASTER_PROMPT.trim()));
+        assert!(block.contains("prepare_change(target, intent)"));
+        assert!(block.contains("finalize_change(...)"));
     }
 
     #[test]

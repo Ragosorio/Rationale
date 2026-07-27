@@ -1,7 +1,9 @@
-# Rationale landing
+# Rationale site
 
-Astro 7 static landing page for Rationale, styled with Tailwind CSS 4 through
-Tailwind's Vite plugin.
+Astro 7 static landing and documentation site for Rationale, styled with
+Tailwind CSS 4 through Tailwind's Vite plugin. The documentation uses typed
+content collections and ships in English and Spanish under `/docs/*` and
+`/es/docs/*`.
 
 ## Local development
 
@@ -10,6 +12,14 @@ npm install
 npm run dev
 npm run build
 ```
+
+The canonical agent prompts live at `../docs/prompt-master.md` and
+`../docs/prompt-master.es.md`. The landing imports both at build time, and the
+documentation prompt pages render the matching source for their locale.
+
+The site currently uses relative canonical URLs because the production Vercel
+hostname has not been recorded in this repository yet. Set Astro's `site`
+option in `astro.config.mjs` when that hostname is confirmed.
 
 To keep Astro and official integrations current, use the official upgrader:
 

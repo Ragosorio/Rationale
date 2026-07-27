@@ -13,7 +13,7 @@
     },
     "type": {
       "type": "string",
-      "enum": ["symbol", "database-table", "route", "migration", "test", "commit"]
+      "enum": ["file", "symbol", "database-table", "route", "migration", "test", "commit"]
     },
     "provider": {
       "type": "string",
@@ -30,6 +30,11 @@
     "scope": {
       "type": "string",
       "description": "ProjectScope jerárquico (v0.5 §5.7), ej. 'package:npm:@boost/api'."
+    },
+    "provisional": {
+      "type": "boolean",
+      "default": false,
+      "description": "true cuando el binding se derivó de un archivo que no estaba commiteado al momento de finalize_change (staged, unstaged o untracked) — no es verificable por un tercero con el mismo repo hasta que se commitee."
     }
   }
 }

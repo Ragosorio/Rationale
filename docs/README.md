@@ -12,6 +12,7 @@ página organiza el detalle sin duplicarlo.
 5. [Agentes y MCP](user-guide/agents-and-mcp.md)
 6. [Configuración, archivos y privacidad](user-guide/configuration.md)
 7. [Diagnóstico](runbooks/diagnostics.md)
+8. [Prompt maestro para agentes](prompt-master.md) · [versión en español](prompt-master.es.md)
 
 ## Quiero contribuir
 

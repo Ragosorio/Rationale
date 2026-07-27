@@ -29,10 +29,10 @@
     },
     "critical_constraints": {
       "type": "array",
-      "description": "Nivel 1 de v0.5 §18.1. Esta vertical slice (Fase D/E) entrega como máximo una; el budget multi-constraint real es Fase E4.",
+      "description": "Nivel 1 de v0.5 §18.1 — TODA constraint entra (severidad y gobernancia son señales de orden, nunca de visibilidad; Fase 1.2). Las que gobiernan el target (`governs_target: true`) nunca se truncan por presupuesto (v0.5 §30.1.7).",
       "items": {
         "type": "object",
-        "required": ["id", "statement", "authority"],
+        "required": ["id", "statement", "authority", "severity", "governs_target"],
         "properties": {
           "id": { "type": "string" },
           "statement": { "type": "string" },
@@ -40,9 +40,44 @@
             "type": "string",
             "enum": ["unreviewed", "approved", "policy", "revoked"],
             "description": "Nunca se disfraza una constraint sin aprobación como 'approved' (v0.5 §10.7)."
+          },
+          "severity": {
+            "type": "string",
+            "description": "Verbatim del Record — puede estar fuera del enum del schema (Records legados); nunca decide visibilidad, solo orden."
+          },
+          "governs_target": {
+            "type": "boolean",
+            "description": "true cuando este Record gobierna el target consultado por binding real (binding_match::governing)."
+          },
+          "match_kind": {
+            "type": ["string", "null"],
+            "enum": ["file-exact", "file-contains-symbol", "structural", null]
           }
         }
       }
+    },
+    "intent_conflicts": {
+      "type": "array",
+      "description": "Nivel 2 de v0.5 §18.1. Nunca un veredicto semántico — `detection` distingue un hecho verificable (gobierna el target) de una señal léxica cruda.",
+      "items": {
+        "type": "object",
+        "required": ["record_id", "statement", "detection", "polarity", "governs_target"],
+        "properties": {
+          "record_id": { "type": "string" },
+          "statement": { "type": "string" },
+          "authority": { "type": "string" },
+          "severity": { "type": "string" },
+          "governs_target": { "type": "boolean" },
+          "detection": { "type": "string", "enum": ["governs-target", "lexical-overlap"] },
+          "polarity": { "type": "string", "enum": ["opposed", "aligned", "undetermined"] },
+          "shared_terms": { "type": "array", "items": { "type": "string" } },
+          "epistemic_note": { "type": "string" }
+        }
+      }
+    },
+    "governance_verdict_required": {
+      "type": "boolean",
+      "description": "true cuando algún Record gobierna el target y hay intención declarada — el agente debe pronunciarse explícitamente sobre si su intención lo contradice; Rationale nunca lo juzga por sí solo."
     },
     "resolved_target": {
       "type": ["string", "null"],

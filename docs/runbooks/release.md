@@ -1,8 +1,10 @@
 # Release runbook
 
-La próxima Release pública es `v0.1.0-alpha.4`, construida desde la rama
+La Release pública vigente es `v0.1.0-alpha.4`, construida desde la rama
 `release/v0.1.0-alpha.1`. Los tags `dogfood.*` quedan como iteraciones
-históricas de hardening y no deben usarse para validar el flujo actual.
+históricas de hardening y no deben usarse para validar el flujo actual. Los
+cambios posteriores de gobernanza y landing permanecen en `Unreleased` hasta
+que pasen los gates de esta guía.
 
 ## Antes del tag
 
