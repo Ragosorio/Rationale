@@ -50,6 +50,16 @@ cada cambio vive en commits, ADRs y work items enlazados.
   "queda recuperable"; `rationale doctor --repair` ahora la devuelve a
   `proposals/`.
 
+- **Fase C — camino de migración para el canon legado.** `doctor` detectaba
+  `RecordWithoutBindings` pero se negaba a repararlo ("inventar un binding
+  sería peor que ninguno") — correcto como principio, pero sin salida para
+  el canon que el productor roto de Fase 1 ya dejó escrito en cuatro repos.
+  `rationale doctor --repair` ahora pide la ruta (y símbolo opcional) al
+  humano, escribe el binding marcado `declared_by: human` — nunca
+  indistinguible de uno que un proveedor estructural confirmó — con su
+  propio evento de lifecycle. Rescata la evidencia de dogfood en vez de
+  descartarla.
+
 ## v0.1.0-alpha.7 — 2026-07-27
 
 - Corrige el canal por defecto de `rationale-installer.sh/.ps1` y

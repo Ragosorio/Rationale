@@ -903,53 +903,108 @@ fn cmd_doctor(args: &[String]) {
         .iter()
         .filter(|f| f.is_repairable())
         .collect();
+
     if repairable.is_empty() {
         println!("\nNingún hallazgo de este reporte es reparable automáticamente.");
-        return;
+    } else {
+        println!(
+            "\n{} hallazgo(s) reparable(s). Uno por pantalla — Actor: {reviewer_actor}, autoridad: {}",
+            repairable.len(),
+            reviewer_authority.role
+        );
+        for finding in repairable {
+            println!("\n=== {} ===", finding.describe());
+            println!("Escribe 'repair' para aplicar, cualquier otra cosa para saltar:");
+            let Some(confirm) = read_interactive_line() else {
+                println!("EOF — no se repara nada más.");
+                break;
+            };
+            if confirm != "repair" {
+                println!("Saltado.");
+                continue;
+            }
+
+            let result = match finding {
+                doctor::Finding::InvalidSeverity { record_id, .. } => {
+                    println!(
+                        "Nueva severidad para '{record_id}' ({}):",
+                        storage::Severity::ALL.join(", ")
+                    );
+                    let Some(new_severity) = read_interactive_line() else {
+                        break;
+                    };
+                    doctor::repair_severity(
+                        &config.rationale_dir,
+                        record_id,
+                        &new_severity,
+                        "corregido por rationale doctor --repair",
+                        &reviewer_actor,
+                        reviewer_authority.role,
+                        reviewer_authority.declared,
+                    )
+                }
+                _ => doctor::repair(&config.rationale_dir, finding, &reviewer_actor),
+            };
+
+            match result {
+                Ok(path) => println!("Reparado -> {}", path.display()),
+                Err(e) => eprintln!("no se pudo reparar: {e}"),
+            }
+        }
     }
 
-    println!(
-        "\n{} hallazgo(s) reparable(s). Uno por pantalla — Actor: {reviewer_actor}, autoridad: {}",
-        repairable.len(),
-        reviewer_authority.role
-    );
-    for finding in repairable {
-        println!("\n=== {} ===", finding.describe());
-        println!("Escribe 'repair' para aplicar, cualquier otra cosa para saltar:");
-        let Some(confirm) = read_interactive_line() else {
-            println!("EOF — no se repara nada más.");
-            break;
-        };
-        if confirm != "repair" {
-            println!("Saltado.");
-            continue;
-        }
-
-        let result = match finding {
-            doctor::Finding::InvalidSeverity { record_id, .. } => {
-                println!(
-                    "Nueva severidad para '{record_id}' ({}):",
-                    storage::Severity::ALL.join(", ")
-                );
-                let Some(new_severity) = read_interactive_line() else {
-                    break;
-                };
-                doctor::repair_severity(
-                    &config.rationale_dir,
-                    record_id,
-                    &new_severity,
-                    "corregido por rationale doctor --repair",
-                    &reviewer_actor,
-                    reviewer_authority.role,
-                    reviewer_authority.declared,
-                )
+    // `RecordWithoutBindings` nunca entra al bucle automático de arriba
+    // (`is_repairable() == false` a propósito: inventar un binding sería
+    // peor que ninguno). Este es el único camino para cerrar ese hueco: el
+    // HUMANO escribe la ruta y, opcionalmente, el símbolo — nunca Rationale
+    // adivinándolo. Sin esto, el canon legado que el productor roto dejó
+    // sin bindings (Fase 1) no tenía ninguna salida.
+    let unbound: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|f| matches!(f, doctor::Finding::RecordWithoutBindings { .. }))
+        .collect();
+    if !unbound.is_empty() {
+        println!(
+            "\n{} Record(s) sin binding_declarations. Uno por pantalla — escribe la ruta real \
+             que gobiernan, o 'skip' para dejarlo sin reparar:",
+            unbound.len()
+        );
+        for finding in unbound {
+            let doctor::Finding::RecordWithoutBindings { record_id, .. } = finding else {
+                continue;
+            };
+            println!("\n=== {} ===", finding.describe());
+            println!("Ruta (repo-relativa) que este Record gobierna, o 'skip':");
+            let Some(path_hint) = read_interactive_line() else {
+                println!("EOF — no se repara nada más.");
+                break;
+            };
+            if path_hint == "skip" {
+                println!("Saltado.");
+                continue;
             }
-            _ => doctor::repair(&config.rationale_dir, finding, &reviewer_actor),
-        };
-
-        match result {
-            Ok(path) => println!("Reparado -> {}", path.display()),
-            Err(e) => eprintln!("no se pudo reparar: {e}"),
+            println!("Símbolo dentro de esa ruta (opcional, Enter para omitir):");
+            let symbol = read_interactive_line().filter(|s| !s.is_empty());
+            println!("Razón (por qué este binding es correcto):");
+            let Some(reason) = read_interactive_line() else {
+                break;
+            };
+            let result = doctor::repair_binding(
+                &config.rationale_dir,
+                &project_root,
+                record_id,
+                &path_hint,
+                symbol.as_deref(),
+                &reason,
+                &reviewer_actor,
+                reviewer_authority.role,
+                reviewer_authority.declared,
+            );
+            match result {
+                Ok(path) => println!("Reparado -> {}", path.display()),
+                Err(e) => eprintln!("no se pudo reparar: {e}"),
+            }
         }
     }
 }

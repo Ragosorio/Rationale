@@ -284,6 +284,18 @@ pub enum RecordMutation {
         new_severity: String,
         reason: String,
     },
+    /// Fase C del plan beta — `doctor` detecta `RecordWithoutBindings` pero
+    /// nunca lo repara solo ("inventar un binding sería peor que ninguno").
+    /// Este es el camino de migración para el canon legado que quedó así:
+    /// el HUMANO aporta la ruta (y opcionalmente el símbolo), nunca
+    /// Rationale. `extra.declared_by: "human"` distingue este binding de
+    /// uno que un proveedor estructural confirmó — nunca se presenta como
+    /// la misma certeza.
+    AddHumanConfirmedBinding {
+        path_hint: String,
+        symbol: Option<String>,
+        reason: String,
+    },
 }
 
 fn ensure_mapping<'a>(map: &'a mut yaml_serde::Mapping, key: &str) -> &'a mut yaml_serde::Mapping {
@@ -531,6 +543,57 @@ pub fn mutate_record(
                     ("old_severity", old_severity),
                     ("new_severity", new_severity),
                 ],
+            );
+        }
+        RecordMutation::AddHumanConfirmedBinding {
+            path_hint,
+            symbol,
+            reason,
+        } => {
+            if path_hint.trim().is_empty() {
+                return Err(storage::StorageError::MissingRequiredField("path_hint"));
+            }
+            let mut extra = yaml_serde::Mapping::new();
+            // Nunca indistinguible de un binding que un proveedor
+            // estructural confirmó — `provider` se queda en `None` (como
+            // cualquier binding de archivo real) y este marcador declara
+            // explícitamente que el dato lo aportó una persona, no un
+            // proceso automático.
+            extra.insert(
+                yaml_serde::Value::String("declared_by".to_string()),
+                yaml_serde::Value::String("human".to_string()),
+            );
+            let binding_id = format!(
+                "binding.{record_id}.human-confirmed-{}",
+                record.binding_declarations.len()
+            );
+            record
+                .binding_declarations
+                .push(storage::BindingDeclaration {
+                    id: binding_id.clone(),
+                    kind: if symbol.is_some() {
+                        "symbol".to_string()
+                    } else {
+                        "file".to_string()
+                    },
+                    provider: None,
+                    structural_id: symbol.clone(),
+                    path_hint: Some(path_hint.clone()),
+                    provisional: false,
+                    extra,
+                });
+            let mut event_extra = vec![("path_hint", path_hint), ("binding_id", binding_id)];
+            if let Some(symbol) = symbol {
+                event_extra.push(("symbol", symbol));
+            }
+            add_lifecycle_event(
+                &mut record,
+                None,
+                "binding-added-by-human",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                event_extra,
             );
         }
     }
@@ -1043,6 +1106,71 @@ mod tests {
             _ => panic!("lifecycle debe ser un mapping"),
         };
         assert_eq!(events.len(), 3);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Fase C del plan beta: el único camino para cerrar
+    /// `RecordWithoutBindings` en canon legado es que un humano aporte la
+    /// ruta. El binding resultante debe quedar marcado `declared_by: human`
+    /// — nunca indistinguible de uno que un proveedor confirmó.
+    #[test]
+    fn add_human_confirmed_binding_marks_provenance_and_logs_lifecycle() {
+        let dir = temp_rationale_dir();
+        let mut record = proposal_record("constraint.human-binding-test", "high");
+        record.binding_declarations.clear();
+        record.approvals.push(Approval {
+            actor: "user:declared".to_string(),
+            authority: "architecture-owner".to_string(),
+            status: "approved".to_string(),
+            extra: yaml_serde::Mapping::new(),
+        });
+        let path = dir
+            .join("records")
+            .join("constraint.human-binding-test.yaml");
+        storage::write_record(&path, &record).unwrap();
+        let reviewer = "user:declared";
+
+        mutate_record(
+            &dir,
+            "constraint.human-binding-test",
+            RecordMutation::AddHumanConfirmedBinding {
+                path_hint: "app/upload.ts".to_string(),
+                symbol: Some("submit".to_string()),
+                reason: "confirmado a mano tras revisar el código real".to_string(),
+            },
+            reviewer,
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        )
+        .unwrap();
+
+        let updated = storage::read_record(&path).unwrap();
+        assert_eq!(updated.binding_declarations.len(), 1);
+        let binding = &updated.binding_declarations[0];
+        assert_eq!(binding.path_hint.as_deref(), Some("app/upload.ts"));
+        assert_eq!(binding.structural_id.as_deref(), Some("submit"));
+        assert!(binding.provider.is_none());
+        assert_eq!(
+            binding
+                .extra
+                .get(yaml_serde::Value::String("declared_by".to_string()))
+                .and_then(|v| v.as_str()),
+            Some("human")
+        );
+
+        let lifecycle = updated
+            .extra
+            .get(yaml_serde::Value::String("lifecycle".to_string()))
+            .unwrap();
+        let events = match lifecycle {
+            yaml_serde::Value::Mapping(map) => map
+                .get(yaml_serde::Value::String("events".to_string()))
+                .and_then(|value| value.as_sequence())
+                .unwrap(),
+            _ => panic!("lifecycle debe ser un mapping"),
+        };
+        assert_eq!(events.len(), 1);
+
         std::fs::remove_dir_all(&dir).ok();
     }
 

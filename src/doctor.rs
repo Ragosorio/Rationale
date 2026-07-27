@@ -381,6 +381,48 @@ pub fn repair_severity(
     .map_err(|e| e.to_string())
 }
 
+/// Repara `RecordWithoutBindings` con la ruta (y símbolo opcional) que el
+/// HUMANO aporta — nunca `repair()` genérico, por la misma razón que
+/// `repair_severity`: exige un input que solo tiene sentido pedido
+/// interactivamente. `RecordWithoutBindings::is_repairable() == false` a
+/// propósito: sigue sin haber reparación automática, solo un camino para
+/// que un humano cierre el hueco que dejó el productor roto sin que
+/// Rationale invente el dato. Rechaza una ruta que no exista en
+/// `project_root` — un binding humano sigue debiendo señalar algo real.
+#[allow(clippy::too_many_arguments)]
+pub fn repair_binding(
+    rationale_dir: &Path,
+    project_root: &Path,
+    record_id: &str,
+    path_hint: &str,
+    symbol: Option<&str>,
+    reason: &str,
+    reviewer_actor: &str,
+    reviewer_role: storage::AuthorityRole,
+    reviewer_declared: bool,
+) -> Result<PathBuf, String> {
+    if !project_root.join(path_hint).is_file() {
+        return Err(format!(
+            "'{path_hint}' no existe en {} — un binding humano debe señalar un archivo real, \
+             no inventado",
+            project_root.display()
+        ));
+    }
+    review::mutate_record(
+        rationale_dir,
+        record_id,
+        review::RecordMutation::AddHumanConfirmedBinding {
+            path_hint: path_hint.to_string(),
+            symbol: symbol.map(|s| s.to_string()),
+            reason: reason.to_string(),
+        },
+        reviewer_actor,
+        reviewer_role,
+        reviewer_declared,
+    )
+    .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,6 +648,83 @@ mod tests {
         assert_eq!(record.severity, "high");
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("severity-corrected"));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// Fase C del plan beta: `RecordWithoutBindings` no es reparable
+    /// automáticamente (`is_repairable() == false`), pero `repair_binding`
+    /// da el único camino de migración para el canon legado — con la ruta
+    /// que aporta el humano, nunca inventada.
+    #[test]
+    fn repair_binding_adds_human_confirmed_binding_and_clears_the_finding() {
+        let project = unique_dir("repair-binding");
+        let rationale_dir = project.join(".rationale");
+        write_record_yaml(
+            &rationale_dir.join("records"),
+            "constraint.no-bindings",
+            "id: constraint.no-bindings\nkind: constraint\nseverity: high\nstatement: \"x\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\n",
+        );
+        std::fs::create_dir_all(project.join("app")).unwrap();
+        std::fs::write(
+            project.join("app/upload.ts"),
+            "export function submit() {}\n",
+        )
+        .unwrap();
+
+        let report_before = check(&rationale_dir, &project);
+        assert!(report_before
+            .findings
+            .iter()
+            .any(|f| matches!(f, Finding::RecordWithoutBindings { .. })));
+
+        let path = repair_binding(
+            &rationale_dir,
+            &project,
+            "constraint.no-bindings",
+            "app/upload.ts",
+            Some("submit"),
+            "confirmado a mano tras revisar el codigo real",
+            "user:doctor-test",
+            storage::AuthorityRole::Contributor,
+            true,
+        )
+        .unwrap();
+        assert!(path.exists());
+
+        let report_after = check(&rationale_dir, &project);
+        assert!(!report_after
+            .findings
+            .iter()
+            .any(|f| matches!(f, Finding::RecordWithoutBindings { .. })));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// Un binding humano sigue debiendo señalar algo real — nunca debe
+    /// poder "confirmarse" una ruta que no existe.
+    #[test]
+    fn repair_binding_rejects_a_path_that_does_not_exist() {
+        let project = unique_dir("repair-binding-missing-path");
+        let rationale_dir = project.join(".rationale");
+        write_record_yaml(
+            &rationale_dir.join("records"),
+            "constraint.no-bindings",
+            "id: constraint.no-bindings\nkind: constraint\nseverity: high\nstatement: \"x\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\n",
+        );
+
+        let result = repair_binding(
+            &rationale_dir,
+            &project,
+            "constraint.no-bindings",
+            "does/not/exist.ts",
+            None,
+            "intento invalido",
+            "user:doctor-test",
+            storage::AuthorityRole::Contributor,
+            true,
+        );
+        assert!(result.is_err());
 
         std::fs::remove_dir_all(&project).ok();
     }
