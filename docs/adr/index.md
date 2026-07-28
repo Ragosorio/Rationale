@@ -2,7 +2,7 @@
 
 Ningún ADR puede justificarse solamente con "elegimos X porque es rápido" (`Rationale_Arquitectura_Conceptual_v0.1.md §22`). Debe contener evidencia reproducible.
 
-Los ADRs iniciales obligatorios (0001–0012, `Rationale_Arquitectura_Conceptual_v0.1.md §22`) y el ADR-0013 añadido en Fase G se mantienen explícitos en este índice; las propuestas requieren evidencia antes de pasar de estado:
+Los ADRs iniciales obligatorios (0001–0012, `Rationale_Arquitectura_Conceptual_v0.1.md §22`), el ADR-0013 añadido en Fase G y el ADR-0014 añadido en el dogfood pre-beta se mantienen explícitos en este índice; las propuestas requieren evidencia antes de pasar de estado:
 
 | ADR | Título | Estado | Depende de |
 |---|---|---|---|
@@ -17,8 +17,11 @@ Los ADRs iniciales obligatorios (0001–0012, `Rationale_Arquitectura_Conceptual
 | [ADR-0009](ADR-0009-integration-surfaces.md) | Baseline integration surfaces | **proposed** | Fase G — MCP consulta/prepara; CLI muta |
 | [ADR-0010](ADR-0010-packaging-strategy.md) | Packaging strategy | **proposed** | Fase G/H — GitHub Release e instaladores |
 | ADR-0011 | Licensing and dependency policy | accepted (parcial) | Licencia MIT decidida (ver nota abajo); política de dependencias pendiente |
-| [ADR-0012](ADR-0012-telemetry-and-privacy.md) | Telemetry and privacy | **proposed** — local-only, formaliza `src/evaluation.rs` | Fase E1 |
+| [ADR-0012](ADR-0012-telemetry-and-privacy.md) | Telemetry and privacy | **proposed — validation failed in part** | Fase E1. La garantía de exclusión local se invalidó en dos pilotos reales (ver §Validation update — 2026-07-28); reemplazo propuesto en ADR-0014. La decisión de no-transmisión por red sigue en pie |
 | [ADR-0013](ADR-0013-record-lifecycle-and-authority.md) | Record lifecycle and authority | **proposed** | Fase G — `review_record` interactivo |
+| [ADR-0014](ADR-0014-local-data-exclusion.md) | Local data exclusion in consumer projects | **proposed** | Migración `alpha.7` → `main` sobre copias de Monorepo y BoostAPI. Propone reemplazar la garantía de exclusión de ADR-0012 |
+
+**Una propuesta no supersede a otra propuesta.** Mientras dos ADRs estén en `proposed`, el que propone reemplazar al otro lo declara en su encabezado pero no adquiere autoridad sobre él; el campo `Superseded by` del ADR reemplazado solo se rellena cuando el reemplazo pasa revisión cruzada y aprobación humana. Es el caso hoy de ADR-0012 y ADR-0014.
 
 Todos los ADRs en estado `proposed` requieren revisión cruzada de otro agente y aprobación humana antes de pasar a `accepted` (`AGENTS.md §Roles y revisión cruzada`, Subject `evaluation.no-self-certification`). ADR-0001, 0002 y 0006 ya pasaron por una revisión adversarial de una sesión independiente (`docs/work-items/adversarial-review-adr-0001-0002-0006.md`) — ninguno fue aprobado ni rechazado, la decisión final queda pendiente del dueño humano del proyecto.
 

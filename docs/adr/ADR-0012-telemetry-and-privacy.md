@@ -1,9 +1,9 @@
 # ADR-0012: Telemetry and privacy
 
-**Status:** proposed — pendiente de revisión cruzada independiente antes de `accepted`.
+**Status:** proposed — validation failed in part (ver «Validation update — 2026-07-28»). Reemplazo propuesto en ADR-0014.
 **Date:** 2026-07-25
 **Deciders:** Claude Code (análisis e implementación); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno
+**Supersedes / Superseded by:** ninguno todavía — ADR-0014 propone reemplazar la garantía de exclusión local, pero ambos siguen en `proposed`: una propuesta sin aprobar no supersede a otra. Cuando ADR-0014 pase revisión cruzada y aprobación humana, este campo pasa a `partially superseded by ADR-0014`.
 
 ## Context
 
@@ -49,3 +49,55 @@ Verificado por inspección directa del log real generado en Fase D (ver Evidence
 ## Revisit trigger
 
 Reabrir si Fase F necesita registrar algo que hoy está prohibido (ej. un fragmento de diff para debugging) — requeriría una decisión explícita de opt-in, no una ampliación silenciosa de este ADR.
+
+## Validation update — 2026-07-28
+
+La migración de `alpha.7` a `main` sobre copias de los repos piloto Monorepo y
+BoostAPI invalidó parte de la validación original. **No se reescribe el texto
+anterior**: queda tal como se escribió, y esta sección registra qué falló y por
+qué. El error también es evidencia.
+
+**Qué sigue siendo válido.** La Decision #1 no fue refutada: Rationale no
+inicia ninguna llamada de red y ningún dato sale del filesystem por acción del
+producto. La Decision #2 (formato NDJSON append-only) tampoco.
+
+**Fallo 1 — la Evidence generalizó desde el repo de desarrollo a los repos
+consumidores.** La línea «`.rationale-local/` ya está en `.gitignore` desde
+Fase A — verificado que los logs de instrumentación nunca se versionan ni se
+publican junto con el repo» es cierta **solo dentro del repo de Rationale**,
+donde ese `.gitignore` se escribió a mano. `init` e `install-agent` nunca
+escriben esa entrada en el proyecto del usuario. En Monorepo y BoostAPI los
+tres archivos de `.rationale-local/` están versionados, y `git branch -r
+--contains` los sitúa en `origin/main` de ambos: la exposición fue efectiva
+hacia esos remotos, no solo potencial. Dos de dos pilotos — es el flujo normal,
+no contaminación accidental.
+
+**Fallo 2 — el inventario de campos estaba incompleto.** La Evidence solo
+auditó `RunLog` (`src/evaluation.rs`). El evento `review_decision`
+(`src/review.rs:636`) emite `record_id`, `decision` y `time_to_confirm_ms`
+—cuánto tardó un humano en resolver cada Record— y **ninguno de los tres
+aparece en la lista de campos permitidos de la Decision #3**. Es dato
+conductual sobre una persona, no metadata operacional de máquina. Nunca pasó la
+prueba que este mismo ADR exige. `installed-agent-files.json` tampoco fue
+considerado, y almacena rutas absolutas bajo el `$HOME` del usuario.
+
+**Fallo 3 — el vector de exposición previsto no fue el real.** Risks anticipó
+«un desarrollador que copie manualmente `.rationale-local/`». El vector real no
+requirió ninguna acción humana: fue `git add` sobre un directorio que nadie
+había excluido. Un riesgo redactado alrededor de un descuido manual no cubrió
+el caso automático.
+
+**Qué queda invalidado**, y pasa a ADR-0014: la garantía de que
+`.rationale-local/` queda excluido en proyectos consumidores, la conclusión de
+que los datos nunca llegan a un remoto, y la completitud del inventario de
+datos locales considerado en el análisis de privacidad.
+
+**Remediación en los pilotos.** Corregir Rationale no saca los archivos ya
+seguidos por Git. Cada repo afectado necesita `git rm -r --cached
+.rationale-local` de forma manual y explícita. No se reescribe el historial:
+lo filtrado es metadata operacional y rutas personales — sin credenciales,
+secretos, código ni contenido de Records — y el costo de reescribir historia
+compartida es desproporcionado frente a ese contenido. Esa evaluación asume
+repos privados de acceso limitado; **la visibilidad no está confirmada por el
+dueño del proyecto al momento de escribir esto** y debe reevaluarse si son
+públicos.
