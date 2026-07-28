@@ -188,17 +188,35 @@ contra un problema sin resolver.
 
 ## Validation
 
-Pendiente de implementación. La validación exigida es:
+Implementado y verificado. Siete tests de regresión en `src/agents.rs`, todos
+sobre repositorios Git temporales reales:
 
-1. Test de regresión con repo Git temporal (Decision #8), que falle si
-   `.rationale-local/` queda seguido o sin ignorar tras `install-agent`.
-2. Fixtures `tests/fixtures/alpha7-consumer/` que reproduzcan el estado
-   histórico real observado en los pilotos — un solo formato, porque Monorepo y
-   BoostAPI resultaron idénticos.
-3. Test específico de gitdir resuelto vía puntero `gitdir:` (worktree o
-   submódulo), no solo el caso `.git/` directorio.
-4. Test de que un manifest antiguo con rutas absolutas sigue siendo legible por
-   `uninstall-agent`.
+1. `install_leaves_no_local_data_visible_to_git` — falla si `git status
+   --porcelain --untracked-files=all` reporta cualquier ruta bajo
+   `.rationale-local/` tras instalar (Decision #8).
+2. `exclude_entry_is_idempotent_and_preserves_existing_rules` — segunda pasada
+   sin reescritura, entrada sin duplicar, reglas previas del usuario intactas.
+3. `exclude_resolves_the_real_gitdir_in_a_worktree` — worktree real, `.git`
+   como archivo con puntero, exclusión aterrizando en el directorio común.
+4. `install_warns_when_local_data_is_already_tracked` — advertencia con el
+   comando exacto, y comprobación de que el índice **no** se modificó.
+5. `install_outside_a_git_repository_does_not_fail` (Decision #5).
+6. `manifest_stores_project_relative_paths` — ninguna ruta absoluta.
+7. `uninstall_still_reads_a_legacy_absolute_path_manifest` — compatibilidad
+   hacia atrás.
+
+**Desviación deliberada respecto al plan original de validación**, que pedía
+fixtures estáticos en `tests/fixtures/alpha7-consumer/`: se descartaron a favor
+de construir los repos con `git init` dentro de cada test. Un fixture estático
+no puede llevar un `.git/` real versionado dentro de este repositorio, así que
+no podría reproducir lo único que importa aquí —qué archivos están *seguidos
+por el índice*— que es precisamente la condición que falló en los pilotos. Los
+tests programáticos cubren ese estado; los fixtures no podían.
+
+Verificación end-to-end adicional, fuera de la suite: `install-agent` corrido
+dos veces sobre copias frescas de Monorepo y BoostAPI. Bloques byte-idénticos
+entre pasadas, exclusión sin duplicar, cero rutas absolutas en `CLAUDE.md` y
+`AGENTS.md`, advertencia emitida en ambos por los tres archivos ya seguidos.
 
 **Explícitamente, la validación no puede consistir en inspección manual del
 repo de Rationale.** Ese fue el error de ADR-0012: verificar en el repo de
