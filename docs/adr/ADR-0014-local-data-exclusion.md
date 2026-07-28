@@ -164,6 +164,28 @@ contra un problema sin resolver.
   alternativa es actuar sobre el índice ajeno, que es peor. La advertencia se
   repite en cada ejecución mientras la condición persista.
 
+- **Un manifest con rutas absolutas fuera del proyecto aborta `uninstall-agent`
+  entero.** Observado al verificar este ADR sobre una copia de BoostAPI: si el
+  proyecto se movió o copió después de instalar, las entradas absolutas del
+  manifest apuntan a la ubicación anterior, `resolve_managed_entry_path` las
+  rechaza —correctamente, es la guarda que impide que un manifest manipulado
+  haga tocar archivos arbitrarios— y el rechazo **cancela toda la
+  desinstalación**, incluidas las entradas legítimas.
+
+  Es un defecto **preexistente**, no introducido por este ADR: la guarda y su
+  comportamiento de aborto son anteriores. Este ADR lo reduce hacia adelante
+  (una ruta relativa sobrevive a mover el proyecto) pero no lo elimina para los
+  manifests ya escritos. Se documenta aquí en vez de darlo por cubierto: la
+  Consequence de este ADR afirma compatibilidad de `uninstall-agent` con
+  manifests heredados, y esa afirmación es cierta solo mientras el proyecto no
+  se haya movido. Dar por buena una compatibilidad sin acotarla sería
+  exactamente el error que ADR-0012 cometió.
+
+  Arreglo propuesto, **fuera del alcance de este ADR** porque toca una guarda
+  de seguridad y merece su propia decisión: no actuar nunca sobre la entrada
+  rechazada (la propiedad de seguridad se conserva intacta) pero reportarla y
+  continuar con las demás, en vez de abortar.
+
 ## Validation
 
 Pendiente de implementación. La validación exigida es:

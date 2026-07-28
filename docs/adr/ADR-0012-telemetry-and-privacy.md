@@ -97,7 +97,14 @@ seguidos por Git. Cada repo afectado necesita `git rm -r --cached
 .rationale-local` de forma manual y explícita. No se reescribe el historial:
 lo filtrado es metadata operacional y rutas personales — sin credenciales,
 secretos, código ni contenido de Records — y el costo de reescribir historia
-compartida es desproporcionado frente a ese contenido. Esa evaluación asume
-repos privados de acceso limitado; **la visibilidad no está confirmada por el
-dueño del proyecto al momento de escribir esto** y debe reevaluarse si son
-públicos.
+compartida es desproporcionado frente a ese contenido.
+
+**Alcance confirmado de la exposición (2026-07-28, por el dueño del
+proyecto):** Boost y BoostAPI son repositorios privados. La exposición fue
+real pero acotada a esos remotos privados y a las personas con acceso a ellos;
+no hubo publicación pública. Esto **no** equivale a «sin exposición»: los datos
+llegaron a colaboradores y persisten en el historial remoto. Reduce la
+gravedad, no la existencia del incidente, y es lo que hace proporcionada la
+decisión de no reescribir el historial. Reabrir esta evaluación si cambia la
+visibilidad de alguno de los dos repos o si se identifica contenido más
+sensible del ya inventariado.

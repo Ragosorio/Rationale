@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const MARKER_BEGIN: &str =
@@ -133,6 +134,19 @@ pub fn install(
         actions: Vec::new(),
     };
 
+    // Antes de cualquier escritura bajo `.rationale-local/` (ADR-0014
+    // §Decision 3): el manifest se guarda al final de esta función, y
+    // protegerlo después de crearlo es exactamente el orden que dejó tres
+    // archivos versionados en dos repos piloto.
+    if ensure_local_data_excluded(project_root, dry_run)? {
+        report
+            .actions
+            .push(".rationale-local/ excluido localmente en .git/info/exclude".to_string());
+    }
+    if let Some(warning) = tracked_local_data_warning(project_root) {
+        report.actions.push(warning);
+    }
+
     let detected_targets: Vec<&AgentTarget> = TARGETS
         .iter()
         .filter(|t| {
@@ -164,8 +178,7 @@ pub fn install(
         }
 
         let instructions_path = project_root.join(target.instructions_file);
-        let (action, changed) =
-            upsert_instructions_block(&instructions_path, binary_path, dry_run)?;
+        let (action, changed) = upsert_instructions_block(&instructions_path, dry_run)?;
         if changed {
             report.actions.push(format!(
                 "{}: {} bloque de instrucciones en {}",
@@ -177,7 +190,13 @@ pub fn install(
                 },
                 target.instructions_file
             ));
-            record_entry(&mut manifest, target.name, &instructions_path, action);
+            record_entry(
+                &mut manifest,
+                project_root,
+                target.name,
+                &instructions_path,
+                action,
+            );
         } else {
             report.actions.push(format!(
                 "{}: instrucciones ya presentes y al día en {}",
@@ -194,7 +213,13 @@ pub fn install(
                         "{}: servidor MCP registrado en {}",
                         target.name, config_rel
                     ));
-                    record_entry(&mut manifest, target.name, &config_path, action);
+                    record_entry(
+                        &mut manifest,
+                        project_root,
+                        target.name,
+                        &config_path,
+                        action,
+                    );
                 } else {
                     report.actions.push(format!(
                         "{}: servidor MCP ya registrado en {}",
@@ -253,6 +278,7 @@ pub fn install(
                 if outcome.owned && !dry_run {
                     record_owned_entry(
                         &mut manifest,
+                        project_root,
                         target.name,
                         &path,
                         outcome.action,
@@ -473,17 +499,24 @@ fn is_executable(path: &Path) -> bool {
     path.is_file()
 }
 
-fn instructions_block(binary_path: &Path) -> String {
+/// El bloque **no** menciona la ruta del binario (ADR-0014 §Decision 7).
+///
+/// `CLAUDE.md` y `AGENTS.md` son documentación compartida y versionada: la
+/// instalación de una persona concreta no pertenece ahí, y en los dos repos
+/// piloto llegó comiteada a `origin/main`. Quien lea estas instrucciones es un
+/// agente que invoca herramientas MCP por nombre, no rutas del filesystem —
+/// nunca necesitó el path. La resolución del ejecutable es un problema
+/// distinto y vive solo en la configuración MCP (ADR-0015).
+fn instructions_block() -> String {
     format!(
         "{MARKER_BEGIN}\n\
 ## Rationale — protocolo de invocación
 
-Este proyecto usa Rationale (servidor MCP `rationale`, binario en `{bin}`)
-para preservar el *por qué* del código. Sigue este protocolo:
+Este proyecto usa Rationale (servidor MCP `rationale`) para preservar el
+*por qué* del código. Sigue este protocolo:
 
 {prompt}
 {MARKER_END}\n",
-        bin = binary_path.display(),
         prompt = MASTER_PROMPT.trim()
     )
 }
@@ -810,13 +843,9 @@ fn content_hash(content: &[u8]) -> String {
     format!("{:x}", Sha256::digest(content))
 }
 
-fn upsert_instructions_block(
-    path: &Path,
-    binary_path: &Path,
-    dry_run: bool,
-) -> Result<(FileAction, bool), String> {
+fn upsert_instructions_block(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
     let existing = std::fs::read_to_string(path).ok();
-    let block = instructions_block(binary_path);
+    let block = instructions_block();
 
     match existing {
         None => {
@@ -1039,11 +1068,154 @@ fn register_codex_mcp(binary_path: &Path, dry_run: bool) -> Result<bool, String>
     Ok(true)
 }
 
-fn record_entry(manifest: &mut Manifest, agent: &str, path: &Path, action: FileAction) {
-    manifest.entries.retain(|e| e.path != path);
+/// Ruta local-only que Rationale nunca debe dejar versionada en el proyecto
+/// del usuario (ADR-0014 §Decision 1). El patrón es de directorio: cualquier
+/// emisor nuevo bajo `.rationale-local/` queda cubierto sin decisión adicional.
+const LOCAL_DATA_EXCLUDE_PATTERN: &str = ".rationale-local/";
+
+/// Directorio Git *común* del proyecto, o `None` si no hay repositorio.
+///
+/// No se asume `<root>/.git/info/exclude` (ADR-0014 §Decision 4): en un
+/// submódulo o un worktree, `.git` es un archivo con un puntero `gitdir:`, y
+/// en un worktree el `info/exclude` que aplica vive en el directorio común
+/// compartido, no en el del worktree. `--git-common-dir` resuelve ambos casos
+/// y es la única fuente de verdad — parsear el puntero a mano reimplementaría
+/// mal lo que Git ya sabe hacer.
+fn git_common_dir(project_root: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(["rev-parse", "--git-common-dir"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8(output.stdout).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(trimmed);
+    // `--git-common-dir` devuelve una ruta relativa al `-C` cuando puede.
+    Some(if path.is_absolute() {
+        path
+    } else {
+        project_root.join(path)
+    })
+}
+
+/// Instala la exclusión local de `.rationale-local/` en `info/exclude`.
+///
+/// `info/exclude` y no `.gitignore` (ADR-0014 §Decision 2): `.gitignore` es un
+/// archivo compartido y versionado del proyecto ajeno, y Rationale no tiene
+/// por qué imponerle un cambio de repo al equipo para proteger sus propios
+/// artefactos. `info/exclude` es local al clon y logra lo mismo.
+///
+/// Devuelve `Ok(true)` si escribió la entrada, `Ok(false)` si ya estaba o si
+/// no hay repositorio Git. Fuera de un repo no falla ni bloquea (§Decision 5):
+/// sin gitdir no hay nada que excluir.
+fn ensure_local_data_excluded(project_root: &Path, dry_run: bool) -> Result<bool, String> {
+    let Some(git_dir) = git_common_dir(project_root) else {
+        return Ok(false);
+    };
+    let exclude_path = git_dir.join("info").join("exclude");
+
+    let existing = std::fs::read_to_string(&exclude_path).unwrap_or_default();
+    if existing
+        .lines()
+        .any(|line| line.trim() == LOCAL_DATA_EXCLUDE_PATTERN)
+    {
+        return Ok(false);
+    }
+    if dry_run {
+        return Ok(true);
+    }
+
+    if let Some(parent) = exclude_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("no se pudo crear {}: {e}", parent.display()))?;
+    }
+
+    let mut updated = existing;
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str(&format!(
+        "\n# Rationale — datos local-only, nunca versionados (ADR-0014)\n{LOCAL_DATA_EXCLUDE_PATTERN}\n"
+    ));
+    crate::storage::atomic_write_bytes(&exclude_path, updated.as_bytes())
+        .map_err(|e| format!("no se pudo escribir {}: {e}", exclude_path.display()))?;
+    Ok(true)
+}
+
+/// Advierte si `.rationale-local/` ya está seguido por Git.
+///
+/// Solo advierte: modificar el índice de un proyecto ajeno no es decisión del
+/// instalador (ADR-0014 §Decision 6). `info/exclude` no despista a Git sobre
+/// un archivo que ya está en el índice, así que sin esta advertencia el
+/// usuario creería que quedó protegido cuando no lo está.
+fn tracked_local_data_warning(project_root: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(["ls-files", "--", ".rationale-local"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let listing = String::from_utf8(output.stdout).ok()?;
+    let count = listing.lines().filter(|l| !l.trim().is_empty()).count();
+    if count == 0 {
+        return None;
+    }
+    Some(format!(
+        "aviso: .rationale-local/ contiene {count} archivo(s) seguidos por Git — son datos \
+         local-only (telemetría y manifest de instalación) que no deberían versionarse. \
+         Rationale no modificará el índice automáticamente. Para dejar de versionarlos:\n    \
+         git rm -r --cached .rationale-local"
+    ))
+}
+
+/// Ruta a guardar en el manifest: relativa a la raíz del proyecto siempre que
+/// sea posible (ADR-0014 §Decision 7). Guardar absolutas dejaba el `$HOME` de
+/// quien instaló dentro de un archivo que ya se filtró a dos remotos.
+/// `resolve_managed_entry_path` acepta ambas formas, así que los manifests
+/// escritos por versiones anteriores siguen siendo legibles.
+fn manifest_relative_path(project_root: &Path, path: &Path) -> PathBuf {
+    path.strip_prefix(project_root)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Descarta la entrada previa del mismo archivo comparando en forma absoluta.
+///
+/// Un manifest escrito antes de ADR-0014 guarda rutas absolutas y uno nuevo las
+/// guarda relativas: comparar los campos crudos duplicaría cada entrada al
+/// reinstalar sobre una instalación vieja.
+fn drop_existing_entry(manifest: &mut Manifest, project_root: &Path, absolute: &Path) {
+    manifest.entries.retain(|entry| {
+        let existing = if entry.path.is_absolute() {
+            entry.path.clone()
+        } else {
+            project_root.join(&entry.path)
+        };
+        existing != absolute
+    });
+}
+
+fn record_entry(
+    manifest: &mut Manifest,
+    project_root: &Path,
+    agent: &str,
+    path: &Path,
+    action: FileAction,
+) {
+    drop_existing_entry(manifest, project_root, path);
     manifest.entries.push(InstalledEntry {
         agent: agent.to_string(),
-        path: path.to_path_buf(),
+        path: manifest_relative_path(project_root, path),
         action,
         reversal: ReversalStrategy::ManagedPart,
         content_hash: None,
@@ -1052,15 +1224,16 @@ fn record_entry(manifest: &mut Manifest, agent: &str, path: &Path, action: FileA
 
 fn record_owned_entry(
     manifest: &mut Manifest,
+    project_root: &Path,
     agent: &str,
     path: &Path,
     action: FileAction,
     hash: &str,
 ) {
-    manifest.entries.retain(|entry| entry.path != path);
+    drop_existing_entry(manifest, project_root, path);
     manifest.entries.push(InstalledEntry {
         agent: agent.to_string(),
-        path: path.to_path_buf(),
+        path: manifest_relative_path(project_root, path),
         action,
         reversal: ReversalStrategy::OwnedFile,
         content_hash: Some(hash.to_string()),
@@ -1112,13 +1285,11 @@ mod tests {
     fn instructions_block_is_idempotent() {
         let project = temp_dir("idempotent");
         let claude_md = project.join("CLAUDE.md");
-        let (action1, changed1) =
-            upsert_instructions_block(&claude_md, &fake_binary(), false).unwrap();
+        let (action1, changed1) = upsert_instructions_block(&claude_md, false).unwrap();
         assert_eq!(action1, FileAction::Created);
         assert!(changed1);
 
-        let (action2, changed2) =
-            upsert_instructions_block(&claude_md, &fake_binary(), false).unwrap();
+        let (action2, changed2) = upsert_instructions_block(&claude_md, false).unwrap();
         assert_eq!(action2, FileAction::Modified);
         assert!(
             !changed2,
@@ -1138,7 +1309,7 @@ mod tests {
         )
         .unwrap();
 
-        upsert_instructions_block(&claude_md, &fake_binary(), false).unwrap();
+        upsert_instructions_block(&claude_md, false).unwrap();
         let content = std::fs::read_to_string(&claude_md).unwrap();
         assert!(content.contains("Mis instrucciones"));
         assert!(content.contains(MARKER_BEGIN));
@@ -1153,7 +1324,7 @@ mod tests {
 
     #[test]
     fn instructions_block_embeds_the_canonical_master_prompt() {
-        let block = instructions_block(&fake_binary());
+        let block = instructions_block();
         assert!(block.contains(MASTER_PROMPT.trim()));
         assert!(block.contains("prepare_change(target, intent)"));
         assert!(block.contains("finalize_change(...)"));
@@ -1163,7 +1334,7 @@ mod tests {
     fn remove_instructions_block_deletes_file_it_created_entirely() {
         let project = temp_dir("delete-created");
         let claude_md = project.join("CLAUDE.md");
-        upsert_instructions_block(&claude_md, &fake_binary(), false).unwrap();
+        upsert_instructions_block(&claude_md, false).unwrap();
         remove_instructions_block(&claude_md).unwrap();
         assert!(!claude_md.exists());
         std::fs::remove_dir_all(project).ok();
@@ -1185,7 +1356,7 @@ mod tests {
         );
         std::fs::write(&claude_md, &corrupted).unwrap();
 
-        let result = upsert_instructions_block(&claude_md, &fake_binary(), false);
+        let result = upsert_instructions_block(&claude_md, false);
         assert!(
             result.is_err(),
             "debe rechazar marcadores invertidos, no panicar ni escribir"
@@ -1218,7 +1389,7 @@ mod tests {
         let rationale_local = project.join(".rationale-local");
 
         let claude_md = project.join("CLAUDE.md");
-        let (action, _) = upsert_instructions_block(&claude_md, &fake_binary(), false).unwrap();
+        let (action, _) = upsert_instructions_block(&claude_md, false).unwrap();
         assert_eq!(action, FileAction::Created);
         let existing = std::fs::read_to_string(&claude_md).unwrap();
         std::fs::write(
@@ -1242,11 +1413,18 @@ mod tests {
         let mut manifest = Manifest::default();
         record_entry(
             &mut manifest,
+            &project,
             "claude-code",
             &claude_md,
             FileAction::Created,
         );
-        record_entry(&mut manifest, "claude-code", &mcp_json, FileAction::Created);
+        record_entry(
+            &mut manifest,
+            &project,
+            "claude-code",
+            &mcp_json,
+            FileAction::Created,
+        );
         save_manifest(&rationale_local, &manifest).unwrap();
 
         uninstall(&project, &rationale_local).unwrap();
@@ -1337,7 +1515,7 @@ mod tests {
     fn dry_run_touches_nothing() {
         let project = temp_dir("dry-run");
         let claude_md = project.join("CLAUDE.md");
-        let (_, changed) = upsert_instructions_block(&claude_md, &fake_binary(), true).unwrap();
+        let (_, changed) = upsert_instructions_block(&claude_md, true).unwrap();
         assert!(changed, "dry-run debe reportar lo que haría");
         assert!(!claude_md.exists(), "dry-run no debe escribir nada");
         std::fs::remove_dir_all(project).ok();
@@ -1382,6 +1560,7 @@ mod tests {
         let mut manifest = Manifest::default();
         record_owned_entry(
             &mut manifest,
+            &project,
             "claude-code",
             &intact,
             FileAction::Created,
@@ -1389,6 +1568,7 @@ mod tests {
         );
         record_owned_entry(
             &mut manifest,
+            &project,
             "claude-code",
             &edited,
             FileAction::Created,
@@ -1523,6 +1703,7 @@ mod tests {
         let mut manifest = Manifest::default();
         record_owned_entry(
             &mut manifest,
+            &project,
             "claude-code",
             &victim,
             FileAction::Created,
@@ -1613,6 +1794,7 @@ mod tests {
         let mut manifest = Manifest::default();
         record_owned_entry(
             &mut manifest,
+            &project,
             "claude-code",
             &managed,
             FileAction::Created,
@@ -1651,5 +1833,225 @@ mod tests {
 
         std::fs::remove_dir_all(project).ok();
         std::fs::remove_dir_all(outside).ok();
+    }
+
+    // --- ADR-0014: exclusión de datos local-only en proyectos consumidores ---
+    //
+    // La validación de ADR-0012 fue inspección manual dentro del repo de
+    // Rationale, y por eso no vio que `.rationale-local/` quedaba versionado
+    // en los consumidores. Estos tests son la sustitución: repos Git reales,
+    // temporales, comprobando lo que Git de verdad reporta.
+
+    fn git(repo: &Path, args: &[&str]) -> std::process::Output {
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .output()
+            .expect("git debe estar disponible para estos tests")
+    }
+
+    fn git_repo(label: &str) -> PathBuf {
+        let repo = temp_dir(label);
+        git(&repo, &["init", "-q"]);
+        git(&repo, &["config", "user.email", "test@example.com"]);
+        git(&repo, &["config", "user.name", "Test"]);
+        repo
+    }
+
+    /// El test que ADR-0012 necesitaba y no tuvo: qué dice Git, no qué creemos.
+    #[test]
+    fn install_leaves_no_local_data_visible_to_git() {
+        let repo = git_repo("exclude-regression");
+        let local = repo.join(".rationale-local");
+
+        install(&repo, &local, &fake_binary(), false).unwrap();
+
+        let status = git(&repo, &["status", "--porcelain", "--untracked-files=all"]);
+        let listing = String::from_utf8(status.stdout).unwrap();
+        let leaked: Vec<&str> = listing
+            .lines()
+            .filter(|line| line.contains(".rationale-local"))
+            .collect();
+        assert!(
+            leaked.is_empty(),
+            "ninguna ruta bajo .rationale-local/ puede aparecer ante Git; apareció: {leaked:?}"
+        );
+
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn exclude_entry_is_idempotent_and_preserves_existing_rules() {
+        let repo = git_repo("exclude-idempotent");
+        let exclude = repo.join(".git/info/exclude");
+        std::fs::create_dir_all(exclude.parent().unwrap()).unwrap();
+        std::fs::write(&exclude, "# regla previa del usuario\n*.tmp\n").unwrap();
+
+        assert!(ensure_local_data_excluded(&repo, false).unwrap());
+        assert!(
+            !ensure_local_data_excluded(&repo, false).unwrap(),
+            "la segunda pasada no debe volver a escribir la entrada"
+        );
+
+        let content = std::fs::read_to_string(&exclude).unwrap();
+        assert_eq!(
+            content
+                .lines()
+                .filter(|l| l.trim() == LOCAL_DATA_EXCLUDE_PATTERN)
+                .count(),
+            1,
+            "la entrada no puede duplicarse"
+        );
+        assert!(
+            content.contains("*.tmp"),
+            "las reglas previas del usuario se conservan"
+        );
+
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// `.git` como *archivo* con puntero `gitdir:` — el caso que se rompería
+    /// si se asumiera `<root>/.git/info/exclude` (ADR-0014 §Decision 4).
+    #[test]
+    fn exclude_resolves_the_real_gitdir_in_a_worktree() {
+        let repo = git_repo("exclude-worktree");
+        std::fs::write(repo.join("seed.txt"), "seed\n").unwrap();
+        git(&repo, &["add", "seed.txt"]);
+        git(&repo, &["commit", "-q", "-m", "seed"]);
+
+        let worktree = repo.with_extension("wt");
+        git(
+            &repo,
+            &["worktree", "add", "-q", worktree.to_str().unwrap(), "-d"],
+        );
+        assert!(
+            worktree.join(".git").is_file(),
+            "en un worktree, .git es un archivo con un puntero gitdir:"
+        );
+
+        assert!(ensure_local_data_excluded(&worktree, false).unwrap());
+
+        // La exclusión debe aterrizar en el directorio común, no dentro del
+        // worktree, para aplicar a todos los worktrees del repo.
+        let common = repo.join(".git/info/exclude");
+        let content = std::fs::read_to_string(&common)
+            .expect("info/exclude debe escribirse en el git dir común");
+        assert!(content.contains(LOCAL_DATA_EXCLUDE_PATTERN));
+
+        git(
+            &repo,
+            &["worktree", "remove", "--force", worktree.to_str().unwrap()],
+        );
+        std::fs::remove_dir_all(&repo).ok();
+        std::fs::remove_dir_all(&worktree).ok();
+    }
+
+    #[test]
+    fn install_warns_when_local_data_is_already_tracked() {
+        let repo = git_repo("exclude-warns-tracked");
+        let local = repo.join(".rationale-local");
+        std::fs::create_dir_all(local.join("runs")).unwrap();
+        std::fs::write(local.join("runs/vertical-slice.ndjson"), "{}\n").unwrap();
+        // `-f` porque el usuario pudo haberlo versionado antes de que
+        // existiera cualquier exclusión — que es exactamente lo que pasó en
+        // Monorepo y BoostAPI.
+        git(&repo, &["add", "-f", ".rationale-local"]);
+
+        let report = install(&repo, &local, &fake_binary(), false).unwrap();
+        let warning = report
+            .actions
+            .iter()
+            .find(|line| line.starts_with("aviso: .rationale-local/"))
+            .expect("debe advertir cuando ya hay archivos seguidos");
+        assert!(
+            warning.contains("git rm -r --cached .rationale-local"),
+            "la advertencia debe nombrar el comando exacto: {warning}"
+        );
+
+        // Y no debe tocar el índice: el archivo sigue seguido.
+        let tracked =
+            String::from_utf8(git(&repo, &["ls-files", "--", ".rationale-local"]).stdout).unwrap();
+        assert!(
+            tracked.contains("vertical-slice.ndjson"),
+            "Rationale no puede modificar el índice del usuario"
+        );
+
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn install_outside_a_git_repository_does_not_fail() {
+        let project = temp_dir("exclude-no-git");
+        let local = project.join(".rationale-local");
+        assert!(
+            !ensure_local_data_excluded(&project, false).unwrap(),
+            "sin gitdir no hay nada que excluir"
+        );
+        install(&project, &local, &fake_binary(), false)
+            .expect("la ausencia de repo Git no puede bloquear la instalación");
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn manifest_stores_project_relative_paths() {
+        let repo = git_repo("manifest-relative");
+        let local = repo.join(".rationale-local");
+        install(&repo, &local, &fake_binary(), false).unwrap();
+
+        let raw = std::fs::read_to_string(manifest_path(&local)).unwrap();
+        assert!(
+            !raw.contains(repo.to_str().unwrap()),
+            "el manifest no puede contener la ruta absoluta del proyecto:\n{raw}"
+        );
+        let manifest: Manifest = serde_json::from_str(&raw).unwrap();
+        assert!(
+            manifest.entries.iter().all(|e| e.path.is_relative()),
+            "toda entrada nueva debe ser relativa"
+        );
+
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// Compatibilidad hacia atrás: los pilotos ya instalados tienen manifests
+    /// con rutas absolutas. Si `uninstall-agent` dejara de leerlos, el arreglo
+    /// nuevo rompería la limpieza de las instalaciones viejas.
+    #[test]
+    fn uninstall_still_reads_a_legacy_absolute_path_manifest() {
+        let project = temp_dir("legacy-manifest");
+        let local = project.join(".rationale-local");
+        let claude_md = project.join("CLAUDE.md");
+        upsert_instructions_block(&claude_md, false).unwrap();
+
+        // Manifest en el formato anterior a ADR-0014: ruta absoluta.
+        let legacy = Manifest {
+            entries: vec![InstalledEntry {
+                agent: "claude-code".to_string(),
+                path: claude_md.clone(),
+                action: FileAction::Created,
+                reversal: ReversalStrategy::ManagedPart,
+                content_hash: None,
+            }],
+        };
+        save_manifest(&local, &legacy).unwrap();
+
+        uninstall(&project, &local).expect("un manifest heredado debe seguir siendo legible");
+        assert!(
+            !claude_md.exists(),
+            "el bloque era todo el archivo, así que uninstall debe borrarlo"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn shared_instructions_never_embed_an_install_path() {
+        let block = instructions_block();
+        assert!(
+            !block.contains("/Users/") && !block.contains("/home/") && !block.contains(":\\"),
+            "CLAUDE.md y AGENTS.md son documentación compartida: no pueden llevar la \
+             instalación de una persona"
+        );
+        assert!(block.contains("servidor MCP `rationale`"));
     }
 }
