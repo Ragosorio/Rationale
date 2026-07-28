@@ -203,15 +203,43 @@ stdio de un objeto JSON por línea (`src/mcp/framing.rs` — *no*
 hace lo mismo. Por tanto, un fallo en las pruebas de cliente aísla a la
 resolución del `PATH` y a nada más.
 
-1. **Comprobación directa con `~/.local/bin` en Claude Code.** Banco
-   `~/Desktop/rationale-path-test`, ya preparado con `.mcp.json` conteniendo
-   `"command": "rationale"`. **Cerrar Claude Code por completo (⌘Q) y reabrirlo
-   en esa carpeta** —no recargar la sesión, no abrir otro proyecto— y llamar la
-   herramienta `health`. Cerrar y reabrir es parte de la prueba: determina de
-   qué proceso se hereda el entorno. Abrirla en un proyecto cuyo `.mcp.json`
-   no tenga el comando pelado no prueba nada.
+1. **Comprobación directa con `~/.local/bin` en Claude Code — ✅ PASÓ
+   (2026-07-28).** Banco `~/Desktop/rationale-path-test` con `.mcp.json`
+   conteniendo `"command": "rationale"`, tras cerrar y reabrir el cliente.
 
-2. **Resolución en runtime en Cursor.** Banco con `.cursor/mcp.json` escrito
+   La comprobación no se hizo llamando a `health` desde el chat —el cliente no
+   completaba la generación, por causas ajenas a Rationale— sino **inspeccionando
+   el proceso que el cliente había lanzado**, que es evidencia más directa:
+
+   ```
+   PID 52676   rationale serve          ← comando pelado, tal como en .mcp.json
+   cwd         ~/Desktop/rationale-path-test
+   txt         /Users/roor.osorio/.local/bin/rationale
+   PATH        …:/Users/roor.osorio/.local/bin:…
+   ```
+
+   El descriptor `txt` es el ejecutable que el kernel cargó: prueba que el
+   cliente resolvió `rationale` **a `~/.local/bin`**, el directorio que la
+   Evidence no cubría. Cierra ese hueco.
+
+   **Y cierra también el riesgo residual del lanzamiento desde GUI**, que era
+   la objeción más fuerte contra la Decision #1. El cliente probado es la
+   aplicación de escritorio de Claude Code, abierta como app, no desde un
+   shell — y aun así pasó a su subproceso un `PATH` que contiene
+   `~/.local/bin`, duplicado, lo cual es la firma de una resolución del perfil
+   del usuario (`~/.zshrc` y `~/.zprofile` lo exportan ambos) y no de una
+   herencia cruda de `launchd`.
+
+   Alcance: vale para esta aplicación en esta máquina. No generaliza a todo
+   cliente MCP lanzado desde GUI, y el riesgo declarado se mantiene para los
+   que no se han probado.
+
+2. **Resolución en runtime en Cursor — ⏳ `pending validation`.** No ejecutada:
+   `cursor-agent` no está en el `PATH` de la máquina de prueba. Se declara
+   pendiente, **no** comprobada, y ADR-0015 no puede pasar a `accepted` sin
+   ella o sin una decisión explícita de aceptar el riesgo para Cursor.
+
+   Banco con `.cursor/mcp.json` escrito
    **a mano** con el mismo comando pelado, tras cerrar y reabrir Cursor.
 
    **Alcance exacto de esta prueba:** demuestra únicamente que Cursor resuelve
