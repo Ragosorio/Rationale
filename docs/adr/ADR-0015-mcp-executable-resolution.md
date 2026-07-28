@@ -185,15 +185,47 @@ Claude Code.
 
 Pendiente de implementación. Exigida antes de `accepted`:
 
-1. **Comprobación directa con `~/.local/bin`**, cerrando el hueco de la
-   Evidence: `rationale` realmente instalado ahí, `.mcp.json` de un piloto con
-   `"command": "rationale"`, **cerrar Claude Code por completo y reabrirlo de
-   la forma habitual** —no recargar la sesión— y llamar la herramienta
-   `health`. Debe responder. Cerrar y reabrir es parte de la prueba: es lo que
-   determina de qué proceso se hereda el entorno.
-2. **La misma prueba en Cursor**, contra `.cursor/mcp.json` —no contra el
-   archivo de Claude Code—, igualmente tras cerrar y reabrir. Determina si la
-   Decision #2 sostiene o si Cursor necesita su propia decisión.
+**Binario bajo prueba**, para que la evidencia quede atada a un ejecutable
+concreto y no a «alguna instalación»:
+
+```
+command -v rationale  → /Users/roor.osorio/.local/bin/rationale
+rationale --version   → rationale v0.1.0-alpha.7
+shasum -a 256         → 1933981a5dafdf020fcb4f2060c5bf0acd61678b2cd953ab4a643517b4f063fe
+```
+
+**Confundidor ya eliminado.** Se verificó que ese binario habla MCP
+correctamente al invocarse directamente: `initialize` devuelve
+`{"name":"rationale","version":"v0.1.0-alpha.7"}` y `tools/call health`
+responde, sobre el banco `~/Desktop/rationale-path-test`, usando el transporte
+stdio de un objeto JSON por línea (`src/mcp/framing.rs` — *no*
+`Content-Length`, que es el codec de Codebase Memory). El binario de `main`
+hace lo mismo. Por tanto, un fallo en las pruebas de cliente aísla a la
+resolución del `PATH` y a nada más.
+
+1. **Comprobación directa con `~/.local/bin` en Claude Code.** Banco
+   `~/Desktop/rationale-path-test`, ya preparado con `.mcp.json` conteniendo
+   `"command": "rationale"`. **Cerrar Claude Code por completo (⌘Q) y reabrirlo
+   en esa carpeta** —no recargar la sesión, no abrir otro proyecto— y llamar la
+   herramienta `health`. Cerrar y reabrir es parte de la prueba: determina de
+   qué proceso se hereda el entorno. Abrirla en un proyecto cuyo `.mcp.json`
+   no tenga el comando pelado no prueba nada.
+
+2. **Resolución en runtime en Cursor.** Banco con `.cursor/mcp.json` escrito
+   **a mano** con el mismo comando pelado, tras cerrar y reabrir Cursor.
+
+   **Alcance exacto de esta prueba:** demuestra únicamente que Cursor resuelve
+   y ejecuta el comando lógico desde `~/.local/bin`. **No** demuestra que
+   `install-agent` detecte Cursor ni que genere ese archivo — en la máquina de
+   prueba `cursor-agent` no está en el `PATH`, así que la detección no se
+   ejercitó. Esa segunda propiedad queda cubierta por
+   `no_target_writes_an_absolute_command_into_shared_mcp_config`, que recorre
+   `TARGETS` incluyendo Cursor, y por `only_claude_code_declares_a_skills_directory`.
+   Registrar la prueba manual como si también hubiera comprobado la detección
+   sería exactamente el tipo de generalización que invalidó ADR-0012.
+
+   Si no hay Cursor funcional disponible, esta validación queda como
+   **`pending validation`** explícito — nunca como comprobada.
 3. **Test de regresión** que falle si `upsert_mcp_json` escribe una ruta
    absoluta en cualquier `mcp_config_file` de `TARGETS`.
 4. **Instalación en dos rutas distintas del mismo proyecto** (copiado), para
