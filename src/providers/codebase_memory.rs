@@ -294,6 +294,7 @@ impl CodeIntelligenceProvider for CodebaseMemoryClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(windows))]
     use std::path::Path;
 
     #[cfg(not(windows))]
