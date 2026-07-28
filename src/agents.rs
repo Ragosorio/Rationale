@@ -955,11 +955,13 @@ fn remove_instructions_block(path: &Path) -> Result<(), String> {
 /// Comando lógico, nunca una ruta absoluta (ADR-0015 §Decision 1).
 ///
 /// La ruta absoluta se justificaba con que un cliente MCP podría no heredar el
-/// `PATH`. Se refutó para Claude Code: este mismo repositorio arranca su
-/// servidor con un `"command": "cargo"` pelado, y `cargo` vive en
-/// `~/.cargo/bin`, que no está en el `PATH` por defecto de macOS. Estos
-/// archivos son configuración compartida y versionada — el `$HOME` de quien
-/// instaló no pertenece ahí.
+/// `PATH`. Este mismo repositorio arranca su servidor con un `"command":
+/// "cargo"` pelado, y `cargo` vive en `~/.cargo/bin`, que no está en el `PATH`
+/// por defecto de macOS: la ruta absoluta no es necesaria cuando el cliente se
+/// lanza desde un shell. Sigue sin verificarse el lanzamiento desde GUI, y ese
+/// riesgo residual está declarado en el ADR. Lo que decide es la asimetría: la
+/// ruta absoluta falla para *todo* integrante que no sea quien instaló, y estos
+/// archivos son configuración compartida y versionada.
 const MCP_COMMAND: &str = "rationale";
 
 fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
@@ -2185,6 +2187,141 @@ mod tests {
             "install-agent debe normalizar la entrada heredada:\n{raw}"
         );
         uninstall(&project, &local).expect("tras migrar, la desinstalación debe completarse");
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// Prueba adversarial de la Decision #9. La migración reinterpreta
+    /// evidencia histórica de *otro* proyecto y la traslada a éste; hay que
+    /// demostrar que eso nunca se convierte en permiso para borrar contenido
+    /// local. Un manifest trasladado afirma `created` sobre archivos que aquí
+    /// son del usuario y que Rationale nunca tocó.
+    #[test]
+    fn a_relocated_manifest_never_deletes_preexisting_user_files() {
+        let project = temp_dir("legacy-adversarial");
+        let local = project.join(".rationale-local");
+
+        // Archivos del usuario, sin nada de Rationale dentro.
+        let claude_md = project.join("CLAUDE.md");
+        let user_instructions = "# Mis instrucciones\n\nNunca las escribió Rationale.\n";
+        std::fs::write(&claude_md, user_instructions).unwrap();
+
+        let skill = project.join(".claude/skills/rationale-health/SKILL.md");
+        std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        let user_skill = "---\ndescription: mi versión\n---\n\nEsto lo escribí yo.\n";
+        std::fs::write(&skill, user_skill).unwrap();
+
+        // Manifest de otro project-root que afirma haber creado ambos, con un
+        // hash que corresponde al skill *generado*, no al del usuario.
+        let generated = skill_content(crate::prompts::action("health").unwrap());
+        save_manifest(
+            &local,
+            &Manifest {
+                entries: vec![
+                    InstalledEntry {
+                        agent: "claude-code".to_string(),
+                        path: PathBuf::from("/otro/proyecto/CLAUDE.md"),
+                        action: FileAction::Created,
+                        reversal: ReversalStrategy::ManagedPart,
+                        content_hash: None,
+                    },
+                    InstalledEntry {
+                        agent: "claude-code".to_string(),
+                        path: PathBuf::from(
+                            "/otro/proyecto/.claude/skills/rationale-health/SKILL.md",
+                        ),
+                        action: FileAction::Created,
+                        reversal: ReversalStrategy::OwnedFile,
+                        content_hash: Some(content_hash(generated.as_bytes())),
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        let mut manifest = load_manifest(&local);
+        assert_eq!(
+            migrate_legacy_absolute_entries(&mut manifest, &project),
+            2,
+            "ambos destinos son administrados y se normalizan"
+        );
+        save_manifest(&local, &manifest).unwrap();
+
+        uninstall(&project, &local).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&claude_md).unwrap(),
+            user_instructions,
+            "un CLAUDE.md sin bloque de Rationale no puede tocarse, aunque el \
+             manifest trasladado afirme `created`"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&skill).unwrap(),
+            user_skill,
+            "un skill cuyo hash no coincide es del usuario: no puede borrarse"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// La cara complementaria: sobre contenido que Rationale sí administra, la
+    /// desinstalación tras migrar debe quitar exactamente lo suyo y nada más.
+    #[test]
+    fn after_migrating_uninstall_removes_only_rationale_managed_content() {
+        let project = temp_dir("legacy-adversarial-managed");
+        let local = project.join(".rationale-local");
+
+        let claude_md = project.join("CLAUDE.md");
+        std::fs::write(&claude_md, "# Encabezado propio\n\n").unwrap();
+        upsert_instructions_block(&claude_md, false).unwrap();
+        let with_block = std::fs::read_to_string(&claude_md).unwrap();
+        std::fs::write(&claude_md, format!("{with_block}\n## Cola propia\n")).unwrap();
+
+        let skill = project.join(".claude/skills/rationale-health/SKILL.md");
+        let generated = skill_content(crate::prompts::action("health").unwrap());
+        std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        crate::storage::atomic_write_bytes(&skill, generated.as_bytes()).unwrap();
+
+        save_manifest(
+            &local,
+            &Manifest {
+                entries: vec![
+                    InstalledEntry {
+                        agent: "claude-code".to_string(),
+                        path: PathBuf::from("/otro/proyecto/CLAUDE.md"),
+                        action: FileAction::Modified,
+                        reversal: ReversalStrategy::ManagedPart,
+                        content_hash: None,
+                    },
+                    InstalledEntry {
+                        agent: "claude-code".to_string(),
+                        path: PathBuf::from(
+                            "/otro/proyecto/.claude/skills/rationale-health/SKILL.md",
+                        ),
+                        action: FileAction::Created,
+                        reversal: ReversalStrategy::OwnedFile,
+                        content_hash: Some(content_hash(generated.as_bytes())),
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        let mut manifest = load_manifest(&local);
+        migrate_legacy_absolute_entries(&mut manifest, &project);
+        save_manifest(&local, &manifest).unwrap();
+        uninstall(&project, &local).unwrap();
+
+        let after = std::fs::read_to_string(&claude_md).unwrap();
+        assert!(after.contains("Encabezado propio") && after.contains("Cola propia"));
+        assert!(
+            !after.contains(MARKER_BEGIN),
+            "el bloque administrado sí debe desaparecer"
+        );
+        assert!(
+            !skill.exists(),
+            "un skill intacto sí pertenece a Rationale y se borra"
+        );
 
         std::fs::remove_dir_all(project).ok();
     }

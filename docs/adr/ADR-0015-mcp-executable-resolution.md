@@ -71,17 +71,24 @@ real de la herramienta `health` durante la sesión en que se escribió este ADR:
 ```
 
 `cargo` vive en `~/.cargo/bin/cargo`, un directorio que **no** está en el `PATH`
-por defecto de macOS: lo añade `~/.profile` vía `. "$HOME/.cargo/env"`. Que el
-servidor arrancara demuestra que Claude Code resolvió un comando pelado a través
-del `PATH` heredado del shell, incluidas sus extensiones de perfil.
+por defecto de macOS: lo añade `~/.profile` vía `. "$HOME/.cargo/env"`.
 
 **Alcance exacto de lo que esto prueba, y lo que no.** Prueba que Claude Code
-hereda un `PATH` que incluye `~/.cargo/bin`. El binario de Rationale vive en
-`~/.local/bin`, que es un directorio *distinto*. La inferencia de que también
-está cubierto se apoya en que ambos los añade el mismo mecanismo de perfil
-(`~/.profile`, `~/.zshrc` y `~/.zprofile` exportan `~/.local/bin`; `~/.profile`
-carga `cargo/env`) y en que el `PATH` observado en esta máquina contiene ambos.
-**No es una comprobación directa** y se cierra con la validación #1 de abajo.
+resuelve un comando pelado contra el `PATH` de su entorno, y que ese entorno
+incluía `~/.cargo/bin`. **No prueba que Claude Code procese `~/.profile`**: el
+mecanismo casi con certeza es que heredó el entorno del proceso que lo lanzó
+—un shell interactivo, que sí había cargado el perfil—. La distinción importa,
+porque un cliente lanzado desde Finder o Spotlight recibiría el entorno de
+`launchd`, sin ninguna extensión de perfil, y ahí un comando pelado fallaría.
+
+Tampoco prueba el directorio que importa: el binario de Rationale vive en
+`~/.local/bin`, no en `~/.cargo/bin`. Que ambos estén en el `PATH` observado en
+esta máquina, y que los añada el mismo mecanismo de perfil, hace la inferencia
+razonable pero **no es comprobación directa**.
+
+Dicho de forma exacta: la evidencia **refuta que la ruta absoluta sea
+necesaria** en el modo de lanzamiento que se probó, y no más que eso. Las
+validaciones #1 y #2 cierran ambos huecos.
 
 **El daño de la alternativa actual sí está medido**, no supuesto: `.mcp.json`
 comiteado con `/Users/roor.osorio/.local/bin/rationale` en Monorepo y BoostAPI,
@@ -155,6 +162,20 @@ Claude Code.
   absoluta lo tapaba; ahora falla. Mitigación: Decision #4, y el instalador ya
   avisa cuando el directorio de instalación no está en el `PATH`.
 
+- **Un cliente lanzado desde la GUI no hereda el `PATH` del shell.** Es el
+  riesgo residual real, y la evidencia no lo cubre: solo se probó un cliente
+  lanzado desde un shell. Un Claude Code o un Cursor abierto desde Finder,
+  Spotlight o el Dock recibe el entorno de `launchd`, sin extensiones de
+  perfil.
+
+  **Se acepta a sabiendas, no por descuido**, porque la comparación es
+  asimétrica: la ruta absoluta falla para *todo* integrante que no sea quien
+  instaló —con certeza, ya medido en dos pilotos— mientras que el comando
+  lógico falla solo en los modos de lanzamiento donde el `PATH` no se hereda, y
+  falla de forma diagnosticable (Decision #4). Cambiar un fallo seguro y
+  silencioso por uno condicional y diagnosticable es una mejora aunque el
+  segundo no sea cero. Las validaciones #1 y #2 acotan cuánto vale ese «solo».
+
 - **Regresión silenciosa al reinstalar en el repo de Rationale.** Ver
   Consequences. Riesgo aceptado y documentado; el arreglo real sería que
   `install-agent` detecte que el proyecto *es* Rationale, y eso no justifica
@@ -165,10 +186,13 @@ Claude Code.
 Pendiente de implementación. Exigida antes de `accepted`:
 
 1. **Comprobación directa con `~/.local/bin`**, cerrando el hueco de la
-   Evidence: en un proyecto piloto, `.mcp.json` con `"command": "rationale"`,
-   reiniciar Claude Code, y llamar la herramienta `health`. Debe responder. Es
-   la misma prueba que ya se hizo con `cargo`, sobre el directorio que importa.
-2. **La misma prueba en Cursor**, contra `.cursor/mcp.json`. Determina si la
+   Evidence: `rationale` realmente instalado ahí, `.mcp.json` de un piloto con
+   `"command": "rationale"`, **cerrar Claude Code por completo y reabrirlo de
+   la forma habitual** —no recargar la sesión— y llamar la herramienta
+   `health`. Debe responder. Cerrar y reabrir es parte de la prueba: es lo que
+   determina de qué proceso se hereda el entorno.
+2. **La misma prueba en Cursor**, contra `.cursor/mcp.json` —no contra el
+   archivo de Claude Code—, igualmente tras cerrar y reabrir. Determina si la
    Decision #2 sostiene o si Cursor necesita su propia decisión.
 3. **Test de regresión** que falle si `upsert_mcp_json` escribe una ruta
    absoluta en cualquier `mcp_config_file` de `TARGETS`.
