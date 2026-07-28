@@ -19,6 +19,7 @@ mod mascot;
 mod mcp;
 mod pipeline;
 mod project;
+mod prompts;
 mod providers;
 mod retrieval;
 mod review;
@@ -282,21 +283,21 @@ fn cmd_init(args: &[String]) {
             "{{\"status\":\"already-initialized\",\"path\":\"{}\"}}",
             rationale_dir.display()
         );
-        return;
+    } else {
+        // `bindings/` deliberadamente NO está en esta lista: ningún código lee
+        // o escribe ahí — los bindings viven embebidos en
+        // `Record.binding_declarations` (ver `.rationale/bindings/README.md`
+        // en proyectos que ya lo tenían). Mantenerlo era una falsa afordancia
+        // que costó tiempo real de diagnóstico durante un dogfood.
+        for sub in ["subjects", "records", "approvals", "schemas", "migrations"] {
+            std::fs::create_dir_all(rationale_dir.join(sub))
+                .unwrap_or_else(|e| fail(format!("no se pudo crear .rationale/{sub}: {e}")));
+        }
+        println!(
+            "{{\"status\":\"initialized\",\"path\":\"{}\"}}",
+            rationale_dir.display()
+        );
     }
-    // `bindings/` deliberadamente NO está en esta lista: ningún código lee
-    // o escribe ahí — los bindings viven embebidos en
-    // `Record.binding_declarations` (ver `.rationale/bindings/README.md`
-    // en proyectos que ya lo tenían). Mantenerlo era una falsa afordancia
-    // que costó tiempo real de diagnóstico durante un dogfood.
-    for sub in ["subjects", "records", "approvals", "schemas", "migrations"] {
-        std::fs::create_dir_all(rationale_dir.join(sub))
-            .unwrap_or_else(|e| fail(format!("no se pudo crear .rationale/{sub}: {e}")));
-    }
-    println!(
-        "{{\"status\":\"initialized\",\"path\":\"{}\"}}",
-        rationale_dir.display()
-    );
 
     // Todo lo que sigue es decoración y conveniencia para humanos — va a
     // stderr para no tocar el contrato de stdout de arriba.

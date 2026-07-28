@@ -36,5 +36,5 @@ export function docsRoot(lang: "en" | "es") {
 }
 
 export function homeHref(lang: "en" | "es") {
-  return "/";
+  return lang === "es" ? "/es/" : "/";
 }

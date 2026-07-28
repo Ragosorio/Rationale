@@ -13,13 +13,17 @@
 //! idempotente.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const MARKER_BEGIN: &str =
     "<!-- rationale:begin (no editar a mano — `rationale uninstall-agent` lo revierte) -->";
 const MARKER_END: &str = "<!-- rationale:end -->";
 const MANIFEST_FILE: &str = "installed-agent-files.json";
 const MASTER_PROMPT: &str = include_str!("../docs/prompt-master.md");
+static OWNED_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct AgentTarget {
     name: &'static str,
@@ -30,6 +34,8 @@ struct AgentTarget {
     /// Archivo de configuración MCP por proyecto, si el agente soporta uno.
     /// `None` significa que el registro es global vía CLI (Codex).
     mcp_config_file: Option<&'static str>,
+    /// Directorio de skills por proyecto, si el agente los consume.
+    skills_dir: Option<&'static str>,
 }
 
 const TARGETS: &[AgentTarget] = &[
@@ -38,18 +44,21 @@ const TARGETS: &[AgentTarget] = &[
         detect_binary: "claude",
         instructions_file: "CLAUDE.md",
         mcp_config_file: Some(".mcp.json"),
+        skills_dir: Some(".claude/skills"),
     },
     AgentTarget {
         name: "codex",
         detect_binary: "codex",
         instructions_file: "AGENTS.md",
         mcp_config_file: None,
+        skills_dir: None,
     },
     AgentTarget {
         name: "cursor",
         detect_binary: "cursor-agent",
         instructions_file: ".cursor/rules/rationale.mdc",
         mcp_config_file: Some(".cursor/mcp.json"),
+        skills_dir: None,
     },
 ];
 
@@ -59,10 +68,12 @@ const TARGETS: &[AgentTarget] = &[
 /// Record del usuario. Única fuente de verdad: si `TARGETS` gana un agente
 /// nuevo, esta lista lo hereda sin tocar `pipeline.rs`.
 pub fn managed_paths() -> Vec<&'static str> {
-    TARGETS
+    let mut paths: Vec<_> = TARGETS
         .iter()
         .flat_map(|t| std::iter::once(t.instructions_file).chain(t.mcp_config_file))
-        .collect()
+        .collect();
+    paths.extend(TARGETS.iter().filter_map(|target| target.skills_dir));
+    paths
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -75,11 +86,25 @@ enum FileAction {
     Modified,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum ReversalStrategy {
+    /// Manifests viejos: extirpar solo el bloque o entrada MCP administrada.
+    #[default]
+    ManagedPart,
+    /// El archivo completo pertenece a Rationale mientras conserve su hash.
+    OwnedFile,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct InstalledEntry {
     agent: String,
     path: PathBuf,
     action: FileAction,
+    #[serde(default)]
+    reversal: ReversalStrategy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    content_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -124,6 +149,19 @@ pub fn install(
 
     for target in detected_targets {
         report.detected.push(target.name.to_string());
+
+        // Valida todas las rutas de archivos completos antes de tocar
+        // instrucciones o MCP. Así un `.claude` enlazado fuera del proyecto
+        // falla sin dejar una instalación parcial.
+        if let Some(skills_dir) = target.skills_dir {
+            for action in crate::prompts::ACTIONS {
+                let path = project_root
+                    .join(skills_dir)
+                    .join(format!("rationale-{}", action.name))
+                    .join("SKILL.md");
+                validate_no_symlink_components(project_root, &path)?;
+            }
+        }
 
         let instructions_path = project_root.join(target.instructions_file);
         let (action, changed) =
@@ -177,6 +215,52 @@ pub fn install(
                 ));
             }
         }
+
+        if let Some(skills_dir) = target.skills_dir {
+            for action in crate::prompts::ACTIONS {
+                let relative = format!("{skills_dir}/rationale-{}/SKILL.md", action.name);
+                let path = project_root.join(&relative);
+                let content = skill_content(action);
+                let previous_hash = manifest
+                    .entries
+                    .iter()
+                    .find(|entry| entry.path == path)
+                    .and_then(|entry| entry.content_hash.as_deref());
+                let outcome = upsert_owned_file(&path, content.as_bytes(), previous_hash, dry_run)?;
+
+                if outcome.preserved {
+                    report.actions.push(format!(
+                        "{}: conservado {} porque contiene cambios del usuario",
+                        target.name, relative
+                    ));
+                } else if outcome.changed {
+                    report.actions.push(format!(
+                        "{}: {} skill {}",
+                        target.name,
+                        if outcome.action == FileAction::Created {
+                            "creado"
+                        } else {
+                            "actualizado"
+                        },
+                        relative
+                    ));
+                } else {
+                    report
+                        .actions
+                        .push(format!("{}: skill al día en {}", target.name, relative));
+                }
+
+                if outcome.owned && !dry_run {
+                    record_owned_entry(
+                        &mut manifest,
+                        target.name,
+                        &path,
+                        outcome.action,
+                        &content_hash(content.as_bytes()),
+                    );
+                }
+            }
+        }
     }
 
     if !dry_run {
@@ -193,11 +277,7 @@ pub fn uninstall(project_root: &Path, rationale_local: &Path) -> Result<Vec<Stri
     let mut actions = Vec::new();
 
     for entry in &manifest.entries {
-        let path = if entry.path.is_absolute() {
-            entry.path.clone()
-        } else {
-            project_root.join(&entry.path)
-        };
+        let path = resolve_managed_entry_path(project_root, entry)?;
         // `entry.action` (Created/Modified) solo describe qué pasó al
         // instalar — nunca decide cómo se revierte. Un archivo que
         // Rationale creó puede haber ganado contenido del usuario después
@@ -207,17 +287,37 @@ pub fn uninstall(project_root: &Path, rationale_local: &Path) -> Result<Vec<Stri
         // — quitar solo lo que Rationale escribió, y borrar el archivo
         // completo únicamente si no queda nada más — es la misma sin
         // importar si la acción original fue Created o Modified.
-        let is_json = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e == "json")
-            .unwrap_or(false);
-        if is_json {
-            remove_mcp_json_entry(&path)?;
-        } else {
-            remove_instructions_block(&path)?;
+        match entry.reversal {
+            ReversalStrategy::ManagedPart => {
+                let is_json = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e == "json")
+                    .unwrap_or(false);
+                if is_json {
+                    remove_mcp_json_entry(&path)?;
+                } else {
+                    remove_instructions_block(&path)?;
+                }
+                actions.push(format!("{}: revertido {}", entry.agent, path.display()));
+            }
+            ReversalStrategy::OwnedFile => {
+                let expected_hash = entry.content_hash.as_deref().unwrap_or("");
+                match remove_owned_file_if_unchanged(&path, expected_hash)? {
+                    OwnedRemoval::Removed => {
+                        actions.push(format!("{}: eliminado {}", entry.agent, path.display()))
+                    }
+                    OwnedRemoval::Preserved => actions.push(format!(
+                        "{}: conservado {} porque fue editado",
+                        entry.agent,
+                        path.display()
+                    )),
+                    OwnedRemoval::Missing => {
+                        actions.push(format!("{}: ya no existe {}", entry.agent, path.display()))
+                    }
+                }
+            }
         }
-        actions.push(format!("{}: revertido {}", entry.agent, path.display()));
     }
 
     let manifest_path = manifest_path(rationale_local);
@@ -232,11 +332,123 @@ pub fn uninstall(project_root: &Path, rationale_local: &Path) -> Result<Vec<Stri
     Ok(actions)
 }
 
+fn expected_managed_entry(
+    project_root: &Path,
+    candidate: &Path,
+) -> Option<(&'static str, ReversalStrategy)> {
+    for target in TARGETS {
+        if candidate == project_root.join(target.instructions_file) {
+            return Some((target.name, ReversalStrategy::ManagedPart));
+        }
+        if target
+            .mcp_config_file
+            .is_some_and(|path| candidate == project_root.join(path))
+        {
+            return Some((target.name, ReversalStrategy::ManagedPart));
+        }
+        if let Some(skills_dir) = target.skills_dir {
+            if crate::prompts::ACTIONS.iter().any(|action| {
+                candidate
+                    == project_root
+                        .join(skills_dir)
+                        .join(format!("rationale-{}", action.name))
+                        .join("SKILL.md")
+            }) {
+                return Some((target.name, ReversalStrategy::OwnedFile));
+            }
+        }
+    }
+    None
+}
+
+fn resolve_managed_entry_path(
+    project_root: &Path,
+    entry: &InstalledEntry,
+) -> Result<PathBuf, String> {
+    let candidate = if entry.path.is_absolute() {
+        entry.path.clone()
+    } else {
+        project_root.join(&entry.path)
+    };
+    let Some((expected_agent, expected_reversal)) =
+        expected_managed_entry(project_root, &candidate)
+    else {
+        return Err(format!(
+            "el manifest contiene una ruta no administrada; se rechaza para no tocar contenido \
+             del usuario: {}",
+            entry.path.display()
+        ));
+    };
+    if entry.agent != expected_agent || entry.reversal != expected_reversal {
+        return Err(format!(
+            "el manifest contiene metadata inválida para {}; se esperaba agent={expected_agent} \
+             y reversal={expected_reversal:?}",
+            entry.path.display()
+        ));
+    }
+    if entry.reversal == ReversalStrategy::OwnedFile
+        && entry
+            .content_hash
+            .as_deref()
+            .is_none_or(|hash| hash.is_empty())
+    {
+        return Err(format!(
+            "el manifest no contiene el hash requerido para el archivo administrado completo: {}",
+            entry.path.display()
+        ));
+    }
+
+    validate_no_symlink_components(project_root, &candidate)?;
+
+    Ok(candidate)
+}
+
+fn validate_no_symlink_components(project_root: &Path, candidate: &Path) -> Result<(), String> {
+    let canonical_root = std::fs::canonicalize(project_root).map_err(|error| {
+        format!(
+            "no se pudo canonicalizar {}: {error}",
+            project_root.display()
+        )
+    })?;
+    let relative = candidate.strip_prefix(project_root).map_err(|_| {
+        format!(
+            "la ruta administrada escapa del proyecto: {}",
+            candidate.display()
+        )
+    })?;
+    let mut current = canonical_root.clone();
+    for component in relative.components() {
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(format!(
+                    "la ruta administrada atraviesa un symlink; se rechaza para no escapar del \
+                     proyecto: {}",
+                    current.display()
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => {
+                return Err(format!(
+                    "no se pudo validar la ruta administrada {}: {error}",
+                    current.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn project_already_uses(project_root: &Path, target: &AgentTarget) -> bool {
     project_root.join(target.instructions_file).exists()
         || target
             .mcp_config_file
             .map(|c| project_root.join(c).exists())
+            .unwrap_or(false)
+        || target
+            .skills_dir
+            .map(|dir| project_root.join(dir).exists())
             .unwrap_or(false)
 }
 
@@ -274,6 +486,328 @@ para preservar el *por qué* del código. Sigue este protocolo:
         bin = binary_path.display(),
         prompt = MASTER_PROMPT.trim()
     )
+}
+
+fn skill_content(action: &crate::prompts::Action) -> String {
+    let description =
+        serde_json::to_string(action.description).expect("serialize skill description");
+    let argument_hint =
+        serde_json::to_string(action.argument_hint).expect("serialize skill argument hint");
+    let arguments = serde_json::to_string(action.arguments).expect("serialize skill arguments");
+    format!(
+        "---\n\
+description: {description}\n\
+argument-hint: {argument_hint}\n\
+arguments: {arguments}\n\
+disable-model-invocation: {}\n\
+---\n\n\
+{}\n",
+        action.user_only,
+        action.body.trim()
+    )
+}
+
+#[derive(Debug, Clone)]
+struct OwnedWriteOutcome {
+    action: FileAction,
+    changed: bool,
+    owned: bool,
+    preserved: bool,
+}
+
+fn upsert_owned_file(
+    path: &Path,
+    desired: &[u8],
+    previous_hash: Option<&str>,
+    dry_run: bool,
+) -> Result<OwnedWriteOutcome, String> {
+    let observed = match std::fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(format!(
+                "no se pudo leer {} antes de actualizarlo: {error}",
+                path.display()
+            ));
+        }
+    };
+    let action = if observed.is_none() {
+        FileAction::Created
+    } else {
+        FileAction::Modified
+    };
+
+    if dry_run {
+        return Ok(classify_owned_write(
+            action,
+            observed.as_deref(),
+            desired,
+            previous_hash,
+        ));
+    }
+
+    // El rename reclama la entrada de directorio antes de comprobarla. Así,
+    // cualquier proceso que recree `path` después del claim obtiene una
+    // entrada distinta que Rationale nunca sobrescribe ni elimina.
+    let claimed = claim_owned_file(path)?;
+    let current = match claimed.as_ref() {
+        Some(claimed_path) => match std::fs::read(claimed_path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) => {
+                if !path.exists() {
+                    restore_claimed_file(path, claimed_path)?;
+                }
+                return Err(format!(
+                    "no se pudo leer el archivo reclamado {}: {error}",
+                    claimed_path.display()
+                ));
+            }
+        },
+        None => None,
+    };
+    let outcome = classify_owned_write(action.clone(), current.as_deref(), desired, previous_hash);
+
+    if outcome.preserved || !outcome.changed {
+        if let Some(claimed_path) = claimed {
+            restore_claimed_file(path, &claimed_path)?;
+        }
+        return Ok(outcome);
+    }
+
+    if let Err(error) = publish_owned_file_noclobber(path, desired) {
+        if let Some(claimed_path) = claimed.as_ref() {
+            if !path.exists() {
+                restore_claimed_file(path, claimed_path)?;
+            }
+        }
+        return Err(error);
+    }
+
+    if let Some(claimed_path) = claimed {
+        std::fs::remove_file(&claimed_path).map_err(|error| {
+            format!(
+                "el archivo nuevo quedó instalado, pero no se pudo retirar la copia reclamada {}: \
+                 {error}",
+                claimed_path.display()
+            )
+        })?;
+    }
+
+    Ok(outcome)
+}
+
+fn classify_owned_write(
+    action: FileAction,
+    existing: Option<&[u8]>,
+    desired: &[u8],
+    previous_hash: Option<&str>,
+) -> OwnedWriteOutcome {
+    let existing_matches_desired = existing == Some(desired);
+    let safe_to_replace = existing_matches_desired
+        || match (existing, previous_hash) {
+            (None, _) => true,
+            (Some(bytes), Some(expected)) => content_hash(bytes) == expected,
+            (Some(_), None) => false,
+        };
+
+    OwnedWriteOutcome {
+        action,
+        changed: safe_to_replace && !existing_matches_desired,
+        owned: safe_to_replace,
+        preserved: !safe_to_replace,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OwnedRemoval {
+    Removed,
+    Preserved,
+    Missing,
+}
+
+fn remove_owned_file_if_unchanged(
+    path: &Path,
+    expected_hash: &str,
+) -> Result<OwnedRemoval, String> {
+    let claimed_path = match claim_owned_file(path)? {
+        Some(claimed_path) => claimed_path,
+        None => return Ok(OwnedRemoval::Missing),
+    };
+    finish_owned_removal(path, &claimed_path, expected_hash)
+}
+
+fn finish_owned_removal(
+    original_path: &Path,
+    claimed_path: &Path,
+    expected_hash: &str,
+) -> Result<OwnedRemoval, String> {
+    let bytes = match std::fs::read(claimed_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            if !original_path.exists() {
+                restore_claimed_file(original_path, claimed_path)?;
+            }
+            return Err(format!(
+                "no se pudo leer el archivo reclamado {}: {error}",
+                claimed_path.display()
+            ));
+        }
+    };
+    if expected_hash.is_empty() || content_hash(&bytes) != expected_hash {
+        restore_claimed_file(original_path, claimed_path)?;
+        return Ok(OwnedRemoval::Preserved);
+    }
+
+    // Se borra la identidad que se verificó, no el nombre original. Si otro
+    // proceso recreó `original_path` durante la operación, queda intacto.
+    std::fs::remove_file(claimed_path).map_err(|error| {
+        format!(
+            "no se pudo borrar el archivo reclamado {}: {error}",
+            claimed_path.display()
+        )
+    })?;
+    if let Some(parent) = original_path.parent() {
+        let _ = std::fs::remove_dir(parent);
+    }
+    Ok(OwnedRemoval::Removed)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ClaimAttempt {
+    Claimed,
+    SourceMissing,
+    DestinationOccupied,
+}
+
+fn try_claim_owned_file(path: &Path, claimed_path: &Path) -> Result<ClaimAttempt, String> {
+    match std::fs::symlink_metadata(claimed_path) {
+        Ok(_) => return Ok(ClaimAttempt::DestinationOccupied),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "no se pudo comprobar el destino de claim {}: {error}",
+                claimed_path.display()
+            ));
+        }
+    }
+    match std::fs::rename(path, claimed_path) {
+        Ok(()) => Ok(ClaimAttempt::Claimed),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(ClaimAttempt::SourceMissing)
+        }
+        Err(error) => Err(format!(
+            "no se pudo reclamar atómicamente {}: {error}",
+            path.display()
+        )),
+    }
+}
+
+fn claim_owned_file(path: &Path) -> Result<Option<PathBuf>, String> {
+    for _ in 0..32 {
+        let claimed_path = unique_sibling_path(path, "claimed")?;
+        match try_claim_owned_file(path, &claimed_path)? {
+            ClaimAttempt::Claimed => return Ok(Some(claimed_path)),
+            ClaimAttempt::SourceMissing => return Ok(None),
+            ClaimAttempt::DestinationOccupied => continue,
+        }
+    }
+    Err(format!(
+        "no se encontró un nombre de claim libre para {}",
+        path.display()
+    ))
+}
+
+fn restore_claimed_file(original_path: &Path, claimed_path: &Path) -> Result<(), String> {
+    // `hard_link` es nuestro publish no-clobber portable: falla si otro
+    // proceso ya recreó el destino y deja la copia reclamada recuperable.
+    std::fs::hard_link(claimed_path, original_path).map_err(|error| {
+        format!(
+            "no se restauró {} porque el destino reapareció o no admite publicación segura; la \
+             copia se conserva en {}: {error}",
+            original_path.display(),
+            claimed_path.display()
+        )
+    })?;
+    std::fs::remove_file(claimed_path).map_err(|error| {
+        format!(
+            "{} fue restaurado, pero no se pudo retirar la copia reclamada {}: {error}",
+            original_path.display(),
+            claimed_path.display()
+        )
+    })
+}
+
+fn publish_owned_file_noclobber(path: &Path, desired: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} no tiene directorio padre", path.display()))?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("no se pudo crear {}: {error}", parent.display()))?;
+    let temp_path = unique_sibling_path(path, "new")?;
+    {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+            .map_err(|error| {
+                format!(
+                    "no se pudo crear el temporal seguro {}: {error}",
+                    temp_path.display()
+                )
+            })?;
+        file.write_all(desired).map_err(|error| {
+            format!(
+                "no se pudo escribir el temporal seguro {}: {error}",
+                temp_path.display()
+            )
+        })?;
+        file.sync_all().map_err(|error| {
+            format!(
+                "no se pudo sincronizar el temporal seguro {}: {error}",
+                temp_path.display()
+            )
+        })?;
+    }
+
+    let publish_result = std::fs::hard_link(&temp_path, path);
+    if let Err(error) = publish_result {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(format!(
+            "no se publicó {} porque el destino reapareció o no admite publicación segura; no se \
+             sobrescribió ningún contenido: {error}",
+            path.display()
+        ));
+    }
+    std::fs::remove_file(&temp_path).map_err(|error| {
+        format!(
+            "{} quedó publicado, pero no se pudo retirar el temporal {}: {error}",
+            path.display(),
+            temp_path.display()
+        )
+    })
+}
+
+fn unique_sibling_path(path: &Path, role: &str) -> Result<PathBuf, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} no tiene directorio padre", path.display()))?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("file");
+    let unique = OWNED_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    Ok(parent.join(format!(
+        ".{name}.rationale-{role}-{}-{timestamp}-{unique}",
+        std::process::id()
+    )))
+}
+
+fn content_hash(content: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(content))
 }
 
 fn upsert_instructions_block(
@@ -511,6 +1045,25 @@ fn record_entry(manifest: &mut Manifest, agent: &str, path: &Path, action: FileA
         agent: agent.to_string(),
         path: path.to_path_buf(),
         action,
+        reversal: ReversalStrategy::ManagedPart,
+        content_hash: None,
+    });
+}
+
+fn record_owned_entry(
+    manifest: &mut Manifest,
+    agent: &str,
+    path: &Path,
+    action: FileAction,
+    hash: &str,
+) {
+    manifest.entries.retain(|entry| entry.path != path);
+    manifest.entries.push(InstalledEntry {
+        agent: agent.to_string(),
+        path: path.to_path_buf(),
+        action,
+        reversal: ReversalStrategy::OwnedFile,
+        content_hash: Some(hash.to_string()),
     });
 }
 
@@ -788,5 +1341,315 @@ mod tests {
         assert!(changed, "dry-run debe reportar lo que haría");
         assert!(!claude_md.exists(), "dry-run no debe escribir nada");
         std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn only_claude_code_declares_a_skills_directory() {
+        assert_eq!(TARGETS[0].name, "claude-code");
+        assert_eq!(TARGETS[0].skills_dir, Some(".claude/skills"));
+        assert!(TARGETS
+            .iter()
+            .filter(|target| target.name != "claude-code")
+            .all(|target| target.skills_dir.is_none()));
+    }
+
+    #[test]
+    fn generated_skill_frontmatter_and_body_come_from_the_action() {
+        let action = crate::prompts::action("preflight").unwrap();
+        let content = skill_content(action);
+        assert!(content.starts_with("---\n"));
+        assert!(content.contains("argument-hint: \"[target] [intent]\""));
+        assert!(content.contains("arguments: [\"target\",\"intent\"]"));
+        assert!(content.contains("disable-model-invocation: false"));
+        assert!(content.contains(action.description));
+        assert!(content.contains(action.body.trim()));
+
+        let review = skill_content(crate::prompts::action("review").unwrap());
+        assert!(review.contains("disable-model-invocation: true"));
+    }
+
+    #[test]
+    fn uninstall_removes_an_intact_owned_skill_and_preserves_an_edited_one() {
+        let project = temp_dir("owned-skill-uninstall");
+        let rationale_local = project.join(".rationale-local");
+        let intact = project.join(".claude/skills/rationale-health/SKILL.md");
+        let edited = project.join(".claude/skills/rationale-review/SKILL.md");
+        let intact_content = skill_content(crate::prompts::action("health").unwrap());
+        let edited_content = skill_content(crate::prompts::action("review").unwrap());
+        crate::storage::atomic_write_bytes(&intact, intact_content.as_bytes()).unwrap();
+        crate::storage::atomic_write_bytes(&edited, edited_content.as_bytes()).unwrap();
+
+        let mut manifest = Manifest::default();
+        record_owned_entry(
+            &mut manifest,
+            "claude-code",
+            &intact,
+            FileAction::Created,
+            &content_hash(intact_content.as_bytes()),
+        );
+        record_owned_entry(
+            &mut manifest,
+            "claude-code",
+            &edited,
+            FileAction::Created,
+            &content_hash(edited_content.as_bytes()),
+        );
+        save_manifest(&rationale_local, &manifest).unwrap();
+        std::fs::write(
+            &edited,
+            format!("{edited_content}\n# edición del usuario\n"),
+        )
+        .unwrap();
+
+        let actions = uninstall(&project, &rationale_local).unwrap();
+        assert!(!intact.exists(), "el skill intacto debe borrarse");
+        assert!(edited.exists(), "el skill editado debe conservarse");
+        assert!(actions
+            .iter()
+            .any(|action| action.contains("conservado") && action.contains("rationale-review")));
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn claimed_removal_never_deletes_a_recreated_destination() {
+        let project = temp_dir("owned-skill-claim-race");
+        let skill = project.join(".claude/skills/rationale-health/SKILL.md");
+        let original = b"contenido administrado";
+        let replacement = b"contenido concurrente del usuario";
+        crate::storage::atomic_write_bytes(&skill, original).unwrap();
+
+        let claimed = claim_owned_file(&skill).unwrap().unwrap();
+        publish_owned_file_noclobber(&skill, replacement).unwrap();
+        let outcome = finish_owned_removal(&skill, &claimed, &content_hash(original)).unwrap();
+
+        assert_eq!(outcome, OwnedRemoval::Removed);
+        assert_eq!(std::fs::read(&skill).unwrap(), replacement);
+        assert!(
+            !claimed.exists(),
+            "solo debe eliminarse la identidad reclamada y verificada"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn claim_skips_an_abandoned_destination_instead_of_overwriting_it() {
+        let project = temp_dir("owned-skill-stale-claim");
+        let skill = project.join(".claude/skills/rationale-health/SKILL.md");
+        let stale_claim = project.join(".claude/skills/rationale-health/.stale-claim");
+        crate::storage::atomic_write_bytes(&skill, b"contenido actual").unwrap();
+        crate::storage::atomic_write_bytes(&stale_claim, b"claim abandonado").unwrap();
+
+        let attempt = try_claim_owned_file(&skill, &stale_claim).unwrap();
+
+        assert_eq!(attempt, ClaimAttempt::DestinationOccupied);
+        assert_eq!(std::fs::read(&skill).unwrap(), b"contenido actual");
+        assert_eq!(
+            std::fs::read(&stale_claim).unwrap(),
+            b"claim abandonado",
+            "un claim viejo nunca debe ser reemplazado"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn no_clobber_publish_preserves_a_destination_that_reappeared() {
+        let project = temp_dir("owned-skill-publish-race");
+        let skill = project.join(".claude/skills/rationale-health/SKILL.md");
+        crate::storage::atomic_write_bytes(&skill, b"contenido concurrente").unwrap();
+
+        let error = publish_owned_file_noclobber(&skill, b"contenido rationale").unwrap_err();
+        assert!(error.contains("no se publicó"));
+        assert_eq!(std::fs::read(&skill).unwrap(), b"contenido concurrente");
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn edited_claim_is_restored_without_overwrite() {
+        let project = temp_dir("owned-skill-restore");
+        let skill = project.join(".claude/skills/rationale-review/SKILL.md");
+        let edited = "edición del usuario".as_bytes();
+        let managed = "versión administrada".as_bytes();
+        crate::storage::atomic_write_bytes(&skill, edited).unwrap();
+
+        let outcome = remove_owned_file_if_unchanged(&skill, &content_hash(managed)).unwrap();
+
+        assert_eq!(outcome, OwnedRemoval::Preserved);
+        assert_eq!(std::fs::read(&skill).unwrap(), edited);
+        assert!(
+            std::fs::read_dir(skill.parent().unwrap())
+                .unwrap()
+                .all(|entry| !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("claimed")),
+            "la restauración normal no debe dejar cuarentena"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn old_manifest_entries_default_to_managed_part_reversal() {
+        let serialized = r#"{
+          "entries": [{
+            "agent": "claude-code",
+            "path": "CLAUDE.md",
+            "action": "created"
+          }]
+        }"#;
+        let manifest: Manifest = serde_json::from_str(serialized).unwrap();
+        assert!(matches!(
+            manifest.entries[0].reversal,
+            ReversalStrategy::ManagedPart
+        ));
+        assert!(manifest.entries[0].content_hash.is_none());
+    }
+
+    #[test]
+    fn uninstall_rejects_manifest_paths_outside_the_managed_set() {
+        let project = temp_dir("malicious-manifest-path");
+        let rationale_local = project.join(".rationale-local");
+        let victim = project
+            .parent()
+            .unwrap()
+            .join(format!("rationale-uninstall-victim-{}", std::process::id()));
+        std::fs::write(&victim, "contenido del usuario").unwrap();
+
+        let mut manifest = Manifest::default();
+        record_owned_entry(
+            &mut manifest,
+            "claude-code",
+            &victim,
+            FileAction::Created,
+            &content_hash(b"contenido del usuario"),
+        );
+        save_manifest(&rationale_local, &manifest).unwrap();
+
+        let error = uninstall(&project, &rationale_local).unwrap_err();
+        assert!(error.contains("ruta no administrada"));
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "contenido del usuario"
+        );
+
+        std::fs::remove_file(victim).ok();
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn uninstall_rejects_owned_file_reversal_for_managed_part_files() {
+        for relative_path in ["CLAUDE.md", ".mcp.json"] {
+            let project = temp_dir("malicious-manifest-reversal");
+            let rationale_local = project.join(".rationale-local");
+            let victim = project.join(relative_path);
+            let content = b"contenido completo del usuario";
+            crate::storage::atomic_write_bytes(&victim, content).unwrap();
+            let manifest = Manifest {
+                entries: vec![InstalledEntry {
+                    agent: "claude-code".to_string(),
+                    path: victim.clone(),
+                    action: FileAction::Created,
+                    reversal: ReversalStrategy::OwnedFile,
+                    content_hash: Some(content_hash(content)),
+                }],
+            };
+            save_manifest(&rationale_local, &manifest).unwrap();
+
+            let error = uninstall(&project, &rationale_local).unwrap_err();
+
+            assert!(error.contains("metadata inválida"));
+            assert_eq!(
+                std::fs::read(&victim).unwrap(),
+                content,
+                "{relative_path} debe conservarse completo"
+            );
+            std::fs::remove_dir_all(project).ok();
+        }
+    }
+
+    #[test]
+    fn uninstall_requires_a_hash_for_owned_skill_files() {
+        let project = temp_dir("manifest-owned-file-without-hash");
+        let rationale_local = project.join(".rationale-local");
+        let skill = project.join(".claude/skills/rationale-health/SKILL.md");
+        crate::storage::atomic_write_bytes(&skill, b"contenido del usuario").unwrap();
+        let manifest = Manifest {
+            entries: vec![InstalledEntry {
+                agent: "claude-code".to_string(),
+                path: skill.clone(),
+                action: FileAction::Created,
+                reversal: ReversalStrategy::OwnedFile,
+                content_hash: None,
+            }],
+        };
+        save_manifest(&rationale_local, &manifest).unwrap();
+
+        let error = uninstall(&project, &rationale_local).unwrap_err();
+
+        assert!(error.contains("hash requerido"));
+        assert_eq!(std::fs::read(&skill).unwrap(), b"contenido del usuario");
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uninstall_rejects_a_managed_path_through_a_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let project = temp_dir("malicious-manifest-symlink");
+        let rationale_local = project.join(".rationale-local");
+        let outside = temp_dir("symlink-victim");
+        let victim = outside.join("SKILL.md");
+        std::fs::write(&victim, "contenido del usuario").unwrap();
+        std::fs::create_dir_all(project.join(".claude/skills")).unwrap();
+        symlink(&outside, project.join(".claude/skills/rationale-health")).unwrap();
+        let managed = project.join(".claude/skills/rationale-health/SKILL.md");
+
+        let mut manifest = Manifest::default();
+        record_owned_entry(
+            &mut manifest,
+            "claude-code",
+            &managed,
+            FileAction::Created,
+            &content_hash(b"contenido del usuario"),
+        );
+        save_manifest(&rationale_local, &manifest).unwrap();
+
+        let error = uninstall(&project, &rationale_local).unwrap_err();
+        assert!(error.contains("symlink"));
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "contenido del usuario"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+        std::fs::remove_dir_all(outside).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_validation_rejects_a_skills_directory_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let project = temp_dir("install-symlink-project");
+        let outside = temp_dir("install-symlink-outside");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        symlink(&outside, project.join(".claude/skills")).unwrap();
+        let skill = project.join(".claude/skills/rationale-health/SKILL.md");
+
+        let error = validate_no_symlink_components(&project, &skill).unwrap_err();
+        assert!(error.contains("symlink"));
+        assert!(
+            std::fs::read_dir(&outside).unwrap().next().is_none(),
+            "la validación no debe escribir fuera del proyecto"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+        std::fs::remove_dir_all(outside).ok();
     }
 }

@@ -78,12 +78,21 @@ impl TestClient {
             resp["result"]["protocolVersion"], "2024-11-05",
             "initialize debe confirmar la versión de protocolo de ADR-0007"
         );
+        assert!(resp["result"]["capabilities"]["prompts"].is_object());
         self.send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}));
     }
 
     fn call(&mut self, id: i64, name: &str, arguments: Value) -> Value {
         self.send(&json!({
             "jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": {"name": name, "arguments": arguments}
+        }));
+        self.recv()
+    }
+
+    fn get_prompt(&mut self, id: i64, name: &str, arguments: Value) -> Value {
+        self.send(&json!({
+            "jsonrpc": "2.0", "id": id, "method": "prompts/get",
             "params": {"name": name, "arguments": arguments}
         }));
         self.recv()
@@ -95,6 +104,65 @@ impl Drop for TestClient {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+#[test]
+fn prompts_list_and_get_expose_the_six_actions_from_one_source() {
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    client.send(&json!({
+        "jsonrpc": "2.0", "id": 1, "method": "prompts/list", "params": {}
+    }));
+    let list = client.recv();
+    let prompts = list["result"]["prompts"].as_array().unwrap();
+    assert_eq!(prompts.len(), 6);
+    assert_eq!(
+        prompts
+            .iter()
+            .map(|prompt| prompt["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            "preflight",
+            "explain",
+            "capture",
+            "review",
+            "health",
+            "protocol"
+        ]
+    );
+
+    let get = client.get_prompt(
+        2,
+        "preflight",
+        json!({"target": "src/main.rs::cmd_init", "intent": "quitar el retorno temprano"}),
+    );
+    let text = get["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .unwrap();
+    assert!(text.contains("src/main.rs::cmd_init"));
+    assert!(text.contains("quitar el retorno temprano"));
+    assert!(!text.contains("$target"));
+    assert!(!text.contains("$intent"));
+
+    let capture = client.get_prompt(3, "capture", json!({}));
+    let capture_text = capture["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .unwrap();
+    assert!(capture_text.contains("prompt MCP"));
+    assert!(capture_text.contains("herramientas Git disponibles"));
+}
+
+#[test]
+fn an_unknown_prompt_is_json_rpc_error_and_the_session_stays_alive() {
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let unknown = client.get_prompt(1, "no-existe", json!({}));
+    assert_eq!(unknown["error"]["code"], -32602);
+
+    let health = client.call(2, "health", json!({}));
+    assert_eq!(health["result"]["isError"], false);
 }
 
 #[test]
@@ -779,6 +847,12 @@ fn finalize_change_excludes_agent_bookkeeping_files_from_bindings() {
     std::fs::write(dir.join("AGENTS.md"), "instrucciones de agente\n").unwrap();
     std::fs::write(dir.join("CLAUDE.md"), "instrucciones de agente\n").unwrap();
     std::fs::write(dir.join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
+    std::fs::create_dir_all(dir.join(".claude/skills/rationale-health")).unwrap();
+    std::fs::write(
+        dir.join(".claude/skills/rationale-health/SKILL.md"),
+        "skill administrado\n",
+    )
+    .unwrap();
 
     let mut client = TestClient::spawn();
     client.initialize();
@@ -810,7 +884,8 @@ fn finalize_change_excludes_agent_bookkeeping_files_from_bindings() {
     assert!(
         !content.contains("AGENTS.md")
             && !content.contains("CLAUDE.md")
-            && !content.contains(".mcp.json"),
+            && !content.contains(".mcp.json")
+            && !content.contains(".claude/skills/"),
         "archivos de bookkeeping de agentes no deben aparecer como binding: {content}"
     );
 

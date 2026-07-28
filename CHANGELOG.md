@@ -5,6 +5,30 @@ cada cambio vive en commits, ADRs y work items enlazados.
 
 ## Sin publicar
 
+- **Dogfood corrigió una falsa idempotencia de `init` y añadió acciones
+  pre-hechas.** Si `.rationale/` ya existía, `cmd_init` emitía
+  `already-initialized` y retornaba antes de `agents::install`; `update`
+  solo registra Codex globalmente, así que un repo inicializado antes de
+  instalar Claude Code quedaba permanentemente sin `.mcp.json`, bloque en
+  `CLAUDE.md` ni manifest. El defecto se observó en Monorepo y afecta los
+  cuatro repos piloto. Ahora `init` conserva el contrato JSON de una línea,
+  respeta los dos mecanismos de skip y converge la configuración de agentes
+  también al reinicializar. Rationale expone seis acciones desde una fuente
+  única: prompts MCP (`preflight`, `explain`, `capture`, `review`, `health`,
+  `protocol`) y skills de Claude Code `/rationale-*`. Los skills se escriben
+  atómicamente, se registran con hash SHA-256 y `uninstall-agent` borra solo
+  los intactos; un archivo editado por el usuario se conserva. La operación
+  destructiva ya no comprueba un path y luego lo borra: reclama la identidad
+  mediante rename atómico y publica reemplazos sin sobrescribir destinos que
+  reaparezcan, cerrando la carrera TOCTOU de pathname documentada en ADR-0008.
+
+- **Landing final para la validación alpha → beta.** Inglés y español ahora
+  son rutas Astro estáticas (`/` y `/es/`) en vez de mutaciones de texto en
+  JavaScript. Documentación abre el manual localizado, Instalar conserva su
+  anchor, el Hero enlaza a un Quick Start que distingue slash commands reales
+  de Claude Code de solicitudes escritas para Codex, y las navegaciones usan
+  View Transitions MPA nativas con fallback normal y reduced motion.
+
 - **`windows-latest` entró a CI real por primera vez y encontró dos defectos
   reales que ubuntu/macOS nunca podían detectar.** `cache::cache_root`
   usaba `$HOME` directo — inexistente en Windows — cuando ADR-0005 ya

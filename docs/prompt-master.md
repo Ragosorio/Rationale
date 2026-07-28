@@ -28,3 +28,28 @@ Use this protocol at the start of every conversation that may change code:
 When Codebase Memory is unavailable, continue with the coverage reported by
 Rationale and state that limitation. Never invent a symbol resolution,
 authority, approval, evidence, or provider result.
+
+## Pre-made actions
+
+`rationale install-agent` installs six project-scoped Claude Code skills. Type
+`/rationale` to filter them in autocomplete:
+
+- `/rationale-preflight <target> <intent>` — locate the target, call
+  `prepare_change`, and state constraints or conflicts before editing.
+- `/rationale-explain <target>` — call `explain_target` before simplifying a
+  possible Chesterton fence.
+- `/rationale-capture [statement]` — inject live Git context and guide
+  `finalize_change` after the change.
+- `/rationale-review` — list pending proposals and hand the interactive
+  `rationale review` decision to the human. Agents cannot invoke this skill
+  automatically.
+- `/rationale-health` — combine MCP `health` with `rationale doctor --check`.
+- `/rationale-protocol` — load this full protocol when project instructions
+  were not loaded by the client.
+
+The MCP server exposes the same source actions as prompts named `preflight`,
+`explain`, `capture`, `review`, `health`, and `protocol`. Prompt discovery and
+command decoration belong to each MCP client; do not assume a slash-command
+name without verifying that client. In Codex, the portable path is to ask in
+plain language, for example: “Prepare this change with Rationale for `<target>`
+with intent `<intent>`.”

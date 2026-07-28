@@ -18,8 +18,10 @@ Mapa factual de `src/` tal como existe tras Fase F. No reinterpreta `Rationale_A
 | [`signals.rs`](../../src/signals.rs) | Señales de alto valor (v0.5 §15.4) y niveles de captura 0-3 (v0.5 §16) — determinista, sin LLM. `CaptureLevel` no tiene variante para Nivel 4 (Critical invariant): estructuralmente inalcanzable fuera de `rationale review`. | Nunca decide bloqueo; nunca asigna autoridad. |
 | [`pipeline.rs`](../../src/pipeline.rs) | El pipeline puro compartido entre CLI y servidor MCP: `prepare`, `explain`, `health`, `finalize`. Sin `println!`/`eprintln!` — devuelve `diagnostics: Vec<String>` y deja que cada caller decida dónde escribirlos. | No imprime nada — ni a stdout ni a stderr. |
 | [`review.rs`](../../src/review.rs) | `rationale review` confirma propuestas y `mutate_record` implementa el lifecycle humano de Records (corregir, disputar, revocar, superseder, autoridad y evidencia), siempre con eventos auditables y claim/TOCTOU. | No corre dentro del servidor MCP — necesita un humano interactivo. |
+| [`prompts.rs`](../../src/prompts.rs) | Fuente única de las seis acciones pre-hechas y sustitución de argumentos para prompts MCP y skills de Claude Code. | No ejecuta herramientas ni aprueba Records; solo describe acciones. |
+| [`agents.rs`](../../src/agents.rs) | Detecta agentes, converge instrucciones/MCP y genera skills de Claude Code con escritura atómica y reversión por hash. | Nunca borra un skill editado por el usuario ni instala skills para Codex/Cursor. |
 | [`mcp/framing.rs`](../../src/mcp/framing.rs) | Codecs JSON-RPC separados: stdio newline para el servidor de Rationale y `Content-Length` para el cliente hacia Codebase Memory (ADR-0007). Límites explícitos tras la revisión adversarial. | No interpreta el contenido del mensaje — solo lo enmarca. |
-| [`mcp/server.rs`](../../src/mcp/server.rs) | Servidor MCP: `prepare_change`, `explain_target`, `health`, `finalize_change`. Sesión de `ProviderHandle` persistente para toda la vida del proceso. `catch_unwind` normaliza panics de herramienta a `isError` sin tumbar la sesión. | stdout es EXCLUSIVAMENTE del protocolo — ver `Arquitectura §11.1`. |
+| [`mcp/server.rs`](../../src/mcp/server.rs) | Servidor MCP: cuatro tools y seis prompts (`prompts/list`/`prompts/get`). Sesión de `ProviderHandle` persistente para toda la vida del proceso. `catch_unwind` normaliza panics de herramienta a `isError` sin tumbar la sesión. | stdout es EXCLUSIVAMENTE del protocolo — ver `Arquitectura §11.1`. |
 | [`configuration.rs`](../../src/configuration.rs) | Localiza `.rationale/` subiendo directorios (como Git busca `.git/`) y carga `config.yaml`. | — |
 | [`evaluation.rs`](../../src/evaluation.rs) | Instrumentación local (`.rationale-local/runs/*.ndjson`) — nunca se envía a ningún servicio. | — |
 
@@ -48,6 +50,8 @@ main.rs: diagnostics → stderr, packet → stdout, evaluation::record_run
 main.rs → mcp::server::run()
   ProviderHandle::spawn()   ← UNA sola vez para toda la vida del proceso
   loop { framing::read_message → despacho por method → framing::write_message }
+    "prompts/list" → prompts::ACTIONS
+    "prompts/get"  → prompts::render
     "tools/call" → handle_tools_call
       catch_unwind( match tool_name {
         "prepare_change"  → pipeline::prepare

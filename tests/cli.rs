@@ -21,6 +21,111 @@ fn run(project: &std::path::Path, args: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
+fn run_with_path(
+    project: &std::path::Path,
+    args: &[&str],
+    extra_path: &std::path::Path,
+) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_rationale"))
+        .current_dir(project)
+        // El test debe detectar solo el `claude` falso. Heredar el PATH del
+        // host podría ejecutar `codex mcp add` y mutar configuración global.
+        .env("PATH", extra_path)
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn init_on_an_existing_project_configures_a_newly_available_claude_code() {
+    let project = unique_temp_project("init-existing-configures-agent");
+    let first = run(&project, &["init", "--skip-agent-config", "--no-mascot"]);
+    assert!(
+        first.status.success(),
+        "primer init debe tener éxito: {first:?}"
+    );
+    assert!(!project.join(".mcp.json").exists());
+    assert!(!project.join("CLAUDE.md").exists());
+
+    let fake_bin = project.join("fake-bin");
+    std::fs::create_dir_all(&fake_bin).unwrap();
+    let fake_claude = fake_bin.join("claude");
+    std::fs::write(&fake_claude, "").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&fake_claude).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_claude, permissions).unwrap();
+    }
+
+    let second = run_with_path(&project, &["init", "--no-mascot"], &fake_bin);
+    assert!(
+        second.status.success(),
+        "segundo init debe configurar el agente: {second:?}"
+    );
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    let lines: Vec<_> = stdout.lines().collect();
+    assert_eq!(lines.len(), 1, "stdout conserva una única línea JSON");
+    let response: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(response["status"], "already-initialized");
+
+    let mcp: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(project.join(".mcp.json")).unwrap()).unwrap();
+    assert_eq!(
+        mcp["mcpServers"]["rationale"]["args"],
+        serde_json::json!(["serve"])
+    );
+    assert!(std::fs::read_to_string(project.join("CLAUDE.md"))
+        .unwrap()
+        .contains("rationale:begin"));
+    for name in [
+        "preflight",
+        "explain",
+        "capture",
+        "review",
+        "health",
+        "protocol",
+    ] {
+        let skill = project.join(format!(".claude/skills/rationale-{name}/SKILL.md"));
+        assert!(skill.is_file(), "falta el skill {}", skill.display());
+    }
+    assert!(
+        !project.join(".cursor/skills").exists(),
+        "los skills no deben escribirse para Cursor"
+    );
+    assert!(
+        project
+            .join(".rationale-local/installed-agent-files.json")
+            .is_file(),
+        "la reinstalación debe registrar archivos reversibles"
+    );
+
+    std::fs::remove_dir_all(project).ok();
+}
+
+#[test]
+fn init_on_an_existing_project_still_honors_skip_and_json_stdout() {
+    let project = unique_temp_project("init-existing-skip");
+    let first = run(&project, &["init", "--skip-agent-config", "--no-mascot"]);
+    assert!(
+        first.status.success(),
+        "primer init debe tener éxito: {first:?}"
+    );
+
+    let second = run(&project, &["init", "--skip-agent-config", "--no-mascot"]);
+    assert!(second.status.success());
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    let lines: Vec<_> = stdout.lines().collect();
+    assert_eq!(lines.len(), 1, "stdout debe contener solo el contrato JSON");
+    let response: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(response["status"], "already-initialized");
+    assert!(!project.join(".mcp.json").exists());
+    assert!(!project.join("CLAUDE.md").exists());
+
+    std::fs::remove_dir_all(project).ok();
+}
+
 #[test]
 fn help_is_successful_and_non_mutating_for_every_command() {
     let project = unique_temp_project("help");

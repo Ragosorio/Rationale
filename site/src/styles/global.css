@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
 :root {
   --canvas: #f0f1ed;
   --surface: #fafbf8;
@@ -326,6 +336,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    @view-transition {
+      navigation: none;
+    }
+
     html {
       scroll-behavior: auto;
     }

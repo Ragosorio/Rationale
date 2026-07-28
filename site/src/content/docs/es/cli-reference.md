@@ -11,7 +11,7 @@ order: 4
 
 | Comando | Propósito |
 | --- | --- |
-| `init` | Crea el canon `.rationale/` y ofrece integrar agentes. |
+| `init` | Crea el canon `.rationale/`, o lo conserva si ya existe, y luego converge la integración de agentes. |
 | `health` | Reporta identidad, revisión Git, proveedor y cobertura. |
 | `prepare <target>` | Compila contexto para un path o símbolo. |
 | `review` | Revisa propuestas pendientes con una persona. |
@@ -32,6 +32,11 @@ rationale install-agent --project-root /ruta/proyecto --dry-run
 `prepare` toma como target el primer argumento posicional que no sea una
 opción. `init --help` y las opciones inválidas no tienen efectos laterales.
 `init` no acepta `--project-root`; ejecútalo desde la raíz del proyecto.
+Volver a correr `init` detecta y configura agentes, de modo que un proyecto
+inicializado antes de instalar Claude Code se recupera sin borrar
+`.rationale/`. `--skip-agent-config` y
+`RATIONALE_SKIP_AGENT_CONFIG=1` desactivan ese paso tanto en la primera
+ejecución como en las siguientes.
 
 ## Frontera de salida
 

@@ -64,7 +64,7 @@ pub fn run() {
                     "id": id,
                     "result": {
                         "protocolVersion": PROTOCOL_VERSION,
-                        "capabilities": {"tools": {}},
+                        "capabilities": {"tools": {}, "prompts": {}},
                         "serverInfo": {"name": "rationale", "version": env!("RATIONALE_BUILD_VERSION")}
                     }
                 });
@@ -85,6 +85,18 @@ pub fn run() {
                 let resp = handle_tools_call(&msg, id, &mut provider);
                 let _ = framing::write_stdio_message(&mut writer, &resp);
             }
+            "prompts/list" => {
+                let resp = json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {"prompts": prompt_definitions()}
+                });
+                let _ = framing::write_stdio_message(&mut writer, &resp);
+            }
+            "prompts/get" => {
+                let resp = handle_prompts_get(&msg, id);
+                let _ = framing::write_stdio_message(&mut writer, &resp);
+            }
             _ => {
                 if let Some(id) = id {
                     let resp = json!({
@@ -96,6 +108,63 @@ pub fn run() {
                 }
             }
         }
+    }
+}
+
+fn prompt_definitions() -> Vec<Value> {
+    crate::prompts::ACTIONS
+        .iter()
+        .map(|action| {
+            let arguments: Vec<Value> = action
+                .arguments
+                .iter()
+                .map(|name| {
+                    json!({
+                        "name": name,
+                        "required": !(action.name == "capture" && *name == "statement")
+                    })
+                })
+                .collect();
+            json!({
+                "name": action.name,
+                "description": action.description,
+                "arguments": arguments
+            })
+        })
+        .collect()
+}
+
+fn handle_prompts_get(msg: &Value, id: Option<Value>) -> Value {
+    let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
+    let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+    let Some(action) = crate::prompts::action(name) else {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {"code": -32602, "message": format!("prompt desconocido: '{name}'")}
+        });
+    };
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    match crate::prompts::render(action, &arguments) {
+        Ok(text) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "description": action.description,
+                "messages": [{
+                    "role": "user",
+                    "content": {"type": "text", "text": text}
+                }]
+            }
+        }),
+        Err(message) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {"code": -32602, "message": message}
+        }),
     }
 }
 

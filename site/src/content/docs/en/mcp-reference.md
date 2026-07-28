@@ -36,6 +36,28 @@ Captures mechanically observed files, provider resolution, intent, evidence,
 and a proposed statement. Uncommitted files are marked provisional and remain
 capturable; a proposal is still pending until a human reviews it.
 
+## Prompts
+
+The server advertises the MCP `prompts` capability. `prompts/list` returns six
+pre-made actions from the same source used to generate Claude Code skills:
+
+| Prompt | Purpose | Arguments |
+| --- | --- | --- |
+| `preflight` | Prepare constraints and intent conflicts before editing. | `target`, `intent` |
+| `explain` | Explain a possible Chesterton fence before simplifying it. | `target` |
+| `capture` | Guide `finalize_change` after a change. | optional `statement` |
+| `review` | List pending proposals and hand approval to the human CLI. | none |
+| `health` | Diagnose MCP, provider, Git, and canon health. | none |
+| `protocol` | Load the complete master protocol. | none |
+
+`prompts/get` substitutes named arguments and returns one user message. An
+unknown prompt is a JSON-RPC error and does not terminate the persistent
+session. Prompt discovery and command decoration belong to each MCP client; do
+not rely on a slash-command name without verifying that client. In Codex, ask
+in plain language, for example: “Prepare this change with Rationale for
+`<target>` with intent `<intent>`.” Claude Code separately receives the clean
+`/rationale-preflight` project skill.
+
 ## Boundary
 
 MCP does not expose approval, correction, dispute, revocation, supersession, or

@@ -42,10 +42,14 @@ confianza del usuario.
   viene `intent`, sin exigir un flag `mode` separado que el prompt maestro
   documentado nunca enseña (bug real corregido esta sesión — antes
   reproducía el síntoma exacto del incidente que motivó el proyecto).
-- **Instalación/actualización en Unix.** Instalación limpia, canal
+- **Instalación/actualización en Unix (alcance corregido).** Instalación
+  limpia, reinstalación y canal
   `preview` sin degradar en silencio a `stable`/`releases/latest`, checksum
   SHA-256 verificado antes de instalar, helper de actualización instalado
-  junto al binario.
+  junto al binario. Esta evidencia no cubría volver a ejecutar `init` sobre
+  un canon existente: el dogfood encontró que esa ruta retornaba antes de
+  configurar agentes. La corrección y su regresión automatizada ya existen,
+  pero los cuatro repos piloto todavía deben convergerse y verificarse.
 - **Windows: `quality (windows-latest)` corre y pasa en CI real** — no solo
   agregado a la matriz, sino verde de punta a punta, incluyendo el smoke
   test que construye el binario, empaqueta el ZIP, lo expande y confirma la
@@ -60,7 +64,10 @@ confianza del usuario.
 - **`uninstall-agent` no destructivo.** Extirpa solo lo que Rationale
   escribió — nunca borra un archivo completo solo porque Rationale lo creó,
   si el usuario le agregó contenido después (verificado con `.mcp.json` con
-  otro servidor MCP, y `CLAUDE.md` con texto propio bajo el bloque).
+  otro servidor MCP, y `CLAUDE.md` con texto propio bajo el bloque). Para
+  skills completos, reclama primero la identidad con rename atómico: un path
+  recreado concurrentemente queda intacto y la publicación del reemplazo
+  falla cerrada en vez de sobrescribirlo (ADR-0008).
 - **Canon atómico.** Todas las escrituras a `.rationale/` (Records,
   Subjects, y ahora también `agents.rs`: `CLAUDE.md`/`AGENTS.md`/
   `.mcp.json`/manifest) usan temp-file + `sync_all` + `rename`. Un proceso
@@ -96,9 +103,14 @@ confianza del usuario.
 [x] Cero panics conocidos en entradas normales.
 [x] Cero pérdida o corrupción del canon (escrituras atómicas, incluyendo
     agents.rs).
-[x] Instalación y actualización idempotentes en Unix.
+[ ] Idempotencia completa de init/install/update en Unix — instalación,
+    reinstalación y update están verificados; la reinicialización ya tiene
+    corrección y test de regresión, pero falta converger y comprobar los
+    cuatro repos piloto afectados. La casilla anterior se marcó demasiado
+    pronto porque solo cubría reinstalar, no re-inicializar.
 [x] Desinstalación conserva .rationale/ Y el contenido que el usuario
-    agregó a archivos que Rationale creó.
+    agregó a archivos que Rationale creó; la carrera TOCTOU de pathname en
+    skills tiene tests deterministas de claim, recreación y no-clobber.
 [x] macOS probado (este entorno).
 [x] Linux — cubierto por CI (ubuntu-latest), no probado a mano en esta
     sesión.
@@ -123,6 +135,12 @@ confianza del usuario.
 
 ## Todavía abierto / no documentado en ningún otro sitio
 
+- **Reparar los cuatro repos piloto afectados por `init`.** Ejecutar el
+  binario corregido con `rationale init` (o `install-agent`) en cada repo,
+  reiniciar Claude Code y comprobar `.mcp.json`, `CLAUDE.md`, manifest,
+  `/rationale-health` y el autocompletado de las seis acciones. Los tests
+  prueban la convergencia del productor; todavía no son evidencia de esas
+  cuatro reparaciones externas.
 - **`.rationale/migrations/` es una afordancia vacía.** `rationale doctor`
   ya detecta `schema_version` desconocido como puerta visible, pero no hay
   lógica de migración real. No hace falta para beta (solo una versión de
