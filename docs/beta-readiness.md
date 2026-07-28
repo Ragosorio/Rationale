@@ -46,11 +46,17 @@ confianza del usuario.
   `preview` sin degradar en silencio a `stable`/`releases/latest`, checksum
   SHA-256 verificado antes de instalar, helper de actualización instalado
   junto al binario.
-- **Windows: layout de ZIP corregido y verificado en CI real**
-  (`windows-latest` en la matriz, smoke test que expande el ZIP y confirma
-  la ruta exacta que `rationale-installer.ps1` espera). Paridad de
-  `install-agent --global-only` y limpieza de `rationale-update.ps1` al
-  desinstalar.
+- **Windows: `quality (windows-latest)` corre y pasa en CI real** — no solo
+  agregado a la matriz, sino verde de punta a punta, incluyendo el smoke
+  test que construye el binario, empaqueta el ZIP, lo expande y confirma la
+  ruta exacta que `rationale-installer.ps1` espera. En el camino,
+  `windows-latest` encontró dos defectos reales que ubuntu/macOS no podían
+  detectar: `cache::cache_root` usaba `$HOME` (inexistente en Windows;
+  ahora usa `%LOCALAPPDATA%`, el candidato que ADR-0005 ya había nombrado)
+  y un test cuyo mock es un script bash que Windows no puede ejecutar como
+  binario nativo (saltado ahí, documentado como limitación del fixture de
+  prueba, no del código de producción). Paridad de `install-agent
+  --global-only` y limpieza de `rationale-update.ps1` al desinstalar.
 - **`uninstall-agent` no destructivo.** Extirpa solo lo que Rationale
   escribió — nunca borra un archivo completo solo porque Rationale lo creó,
   si el usuario le agregó contenido después (verificado con `.mcp.json` con
@@ -96,8 +102,9 @@ confianza del usuario.
 [x] macOS probado (este entorno).
 [x] Linux — cubierto por CI (ubuntu-latest), no probado a mano en esta
     sesión.
-[x] Windows — layout de ZIP corregido y verificado en CI real; no probado
-    a mano en una máquina Windows real (ver "Fuera de alcance" abajo).
+[x] Windows — `windows-latest` corre y pasa en CI real, incluyendo el smoke
+    test del empaquetado; no probado a mano en una máquina Windows física
+    (ver "Fuera de alcance" abajo).
 [x] Ciclo de vida básico de Records funcionando: correct, dispute, revoke,
     supersede, change-authority, add-evidence, y ahora
     add-human-confirmed-binding.
@@ -110,7 +117,8 @@ confianza del usuario.
     intentado; es proceso, no código.
 [ ] Varios días de uso real sin corrupción, pérdida ni bloqueos graves — no
     intentado.
-[ ] Windows probado a mano en una máquina/VM Windows real.
+[ ] Windows probado a mano en una máquina/VM Windows real (CI ya verde en
+    windows-latest, ver arriba — falta la ejecución humana).
 ```
 
 ## Todavía abierto / no documentado en ningún otro sitio
@@ -134,13 +142,11 @@ confianza del usuario.
 
 ## Fuera de alcance de este documento
 
-Validado por revisión de código y tests automatizados, NO por ejecución
-real en el hardware correspondiente:
-
-- Windows: el fix del ZIP se verificó leyendo el código y simulando la
-  extracción; la validación real requiere `windows-latest` en CI (ya
-  agregado) ejecutándose al menos una vez, y idealmente una persona
-  instalando en una máquina Windows real.
+- Windows: CI (`windows-latest`) ya corrió en verde de punta a punta,
+  incluyendo el smoke test de empaquetado — eso es evidencia real de
+  ejecución, no solo lectura de código. Lo que sigue faltando es una
+  persona instalando y usando el binario en una máquina Windows física;
+  eso es trabajo de proceso, no de código.
 - Usuarios externos, uso sostenido en el tiempo, y los "10 flujos en 5
   repos" del checklist de arriba son trabajo de proceso, no de código —
   este documento los deja explícitos, no los resuelve.
