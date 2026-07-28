@@ -296,6 +296,7 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    #[cfg(not(windows))]
     fn mock_slow_server_path() -> String {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/mock-mcp/slow_server.sh")
@@ -322,7 +323,20 @@ mod tests {
     /// nunca responde a una llamada posterior debe reportarse Unavailable
     /// dentro del deadline configurado, y el proceso debe quedar matado
     /// (fail open, Arquitectura §13.5) — nunca colgar la operación llamante.
+    ///
+    /// Se salta en Windows: el mock es un script bash (`dd`, `BASH_REMATCH`,
+    /// framing byte-exacto) — Windows no puede `CreateProcess` un `.sh`
+    /// directamente ("%1 is not a valid Win32 application"). Esto es una
+    /// limitación del fixture de prueba, no del código bajo prueba:
+    /// `spawn_with` en producción siempre lanza un binario real
+    /// (`codebase-memory-mcp` o su `.exe`), nunca un script — el
+    /// comportamiento de timeout/kill que este test verifica no tiene
+    /// ninguna rama específica de plataforma en `spawn_with` ni en
+    /// `health()`. Reescribir el mock en un lenguaje que Windows pueda
+    /// ejecutar nativamente (PowerShell) es trabajo real si hace falta
+    /// cobertura Windows de este camino específico.
     #[test]
+    #[cfg(not(windows))]
     fn provider_timeout_reports_unavailable_and_kills_process() {
         let mut client = CodebaseMemoryClient::spawn_with(
             &mock_slow_server_path(),

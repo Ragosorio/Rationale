@@ -5,6 +5,19 @@ cada cambio vive en commits, ADRs y work items enlazados.
 
 ## Sin publicar
 
+- **`windows-latest` entró a CI real por primera vez y encontró dos defectos
+  reales que ubuntu/macOS nunca podían detectar.** `cache::cache_root`
+  usaba `$HOME` directo — inexistente en Windows — cuando ADR-0005 ya
+  documentaba `%LOCALAPPDATA%\rationale\projects\...` como el candidato a
+  implementar "cuando Fase J necesite resolver Windows de forma real"; ese
+  momento es este. Implementado tal cual el ADR lo nombraba, sin decisión
+  nueva. El test de timeout de proveedor (`provider_timeout_reports_unavailable_and_kills_process`)
+  usa un mock en bash (`dd`, framing byte-exacto) que Windows no puede
+  ejecutar como binario nativo — se salta explícitamente en Windows con la
+  razón documentada en el propio test: es una limitación del fixture de
+  prueba, no del código de producción bajo prueba (`spawn_with` siempre
+  lanza un binario real, nunca un script, en cualquier plataforma).
+
 - **Corrige que `prepare_change` descartaba `intent` en silencio.** El MCP
   exigía `mode: "intent-aware"` explícito además de `intent` para activar
   detección de conflictos; sin ese flag, `intent` se ignoraba sin ningún

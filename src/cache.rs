@@ -41,21 +41,38 @@ impl From<rusqlite::Error> for CacheError {
 /// ADR-0005: `~/.cache/rationale/projects/<ruta-sanitizada>/`. Uniforme en
 /// macOS y Linux (no usa `~/Library/Caches/` nativo de macOS) — mismo
 /// precedente medido en Codebase Memory (`docs/research/codebase-memory/07`).
-/// Windows queda como gap documentado (`docs/dependencies/inventory.yaml`).
+/// Windows era un gap deliberadamente diferido a "cuando Fase J necesite
+/// resolver Windows de forma real" — `windows-latest` entrando a CI real es
+/// exactamente ese momento. Se implementa el candidato que el ADR ya
+/// nombraba (`%LOCALAPPDATA%\rationale\projects\...`), no una decisión
+/// nueva.
 pub fn cache_root(project_root: &Path) -> Result<PathBuf, CacheError> {
-    let home = std::env::var("HOME").map_err(|_| CacheError::NoHomeDir)?;
     let canonical = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());
-    let sanitized = canonical
-        .to_string_lossy()
-        .trim_start_matches('/')
-        .replace('/', "-");
-    Ok(PathBuf::from(home)
-        .join(".cache")
-        .join("rationale")
-        .join("projects")
-        .join(sanitized))
+    // `canonicalize()` en Windows antepone el prefijo UNC extendido
+    // `\\?\` — quitarlo antes de sanitizar, o el nombre de carpeta
+    // resultante arranca con caracteres de ruta sin sentido.
+    let canonical_str = canonical.to_string_lossy();
+    let canonical_str = canonical_str
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&canonical_str);
+    let sanitized = canonical_str
+        .trim_start_matches(['/', '\\'])
+        .replace(['/', '\\', ':'], "-");
+
+    #[cfg(windows)]
+    let base = {
+        let local_app_data = std::env::var("LOCALAPPDATA").map_err(|_| CacheError::NoHomeDir)?;
+        PathBuf::from(local_app_data).join("rationale")
+    };
+    #[cfg(not(windows))]
+    let base = {
+        let home = std::env::var("HOME").map_err(|_| CacheError::NoHomeDir)?;
+        PathBuf::from(home).join(".cache").join("rationale")
+    };
+
+    Ok(base.join("projects").join(sanitized))
 }
 
 /// Abre (creando si hace falta) la base derivada y aplica el schema.
@@ -242,9 +259,14 @@ mod tests {
     #[test]
     fn cache_root_is_stable_and_under_home_cache() {
         let root = cache_root(Path::new(".")).unwrap();
-        assert!(root
-            .to_string_lossy()
-            .contains(".cache/rationale/projects/"));
+        let root_str = root.to_string_lossy();
+        #[cfg(windows)]
+        assert!(root_str.contains(r"rationale\projects\"), "{root_str}");
+        #[cfg(not(windows))]
+        assert!(
+            root_str.contains(".cache/rationale/projects/"),
+            "{root_str}"
+        );
     }
 
     #[test]
