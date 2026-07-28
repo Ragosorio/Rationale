@@ -88,6 +88,35 @@ contra un problema sin resolver.
    como seguida o sin ignorar. La inspección manual fue exactamente lo que
    falló en ADR-0012.
 
+9. **`install-agent` normaliza las entradas heredadas del manifest cuyo
+   destino es reconocible.** No basta con que las entradas *nuevas* sean
+   relativas: un proyecto de `alpha.7` que se haya movido o copiado conserva
+   rutas absolutas apuntando a la ubicación anterior, la guarda las rechaza
+   —correctamente— y el rechazo aborta `uninstall-agent` entero.
+
+   La normalización **no relaja la guarda**. Solo reescribe una entrada cuando
+   su ruta termina en un destino administrado conocido (`CLAUDE.md`,
+   `AGENTS.md`, `.mcp.json`, la regla de Cursor, o un `SKILL.md` bajo el
+   directorio de skills), derivados de `TARGETS` y `prompts::ACTIONS` como
+   fuente única. Una ruta arbitraria —`~/Documents/notas.md`— no coincide con
+   ninguno, se conserva intacta, y la guarda la sigue rechazando. El destino
+   resultante queda siempre dentro del `project_root` por ser relativo.
+
+   Esto es lo que hace que `install-agent` sea de verdad la vía de migración:
+   repara el estado administrativo, no solo los bloques. Sin ello, un piloto
+   movido quedaría permanentemente sin poder desinstalarse.
+
+   **Radio de acción declarado:** si el manifest heredado apuntaba al
+   `CLAUDE.md` de *otro* proyecto, tras normalizar apunta al de éste. No es una
+   escalada de privilegio: `uninstall` solo extirpa el bloque delimitado de
+   Rationale, y si este proyecto está instalado ese archivo ya tenía su propia
+   entrada. Se declara en vez de dejarlo implícito.
+
+   Queda **fuera** de esta decisión que una entrada irreconocible siga
+   abortando la operación entera en vez de saltarse. Con la normalización, ese
+   caso deja de producirse por mover un proyecto y pasa a señalar un manifest
+   corrupto o manipulado, donde fallar ruidosamente es defendible.
+
 ## Evidence
 
 - **Reproducción en dos pilotos reales**, sobre copias, sin tocar los
@@ -181,10 +210,17 @@ contra un problema sin resolver.
   se haya movido. Dar por buena una compatibilidad sin acotarla sería
   exactamente el error que ADR-0012 cometió.
 
-  Arreglo propuesto, **fuera del alcance de este ADR** porque toca una guarda
-  de seguridad y merece su propia decisión: no actuar nunca sobre la entrada
-  rechazada (la propiedad de seguridad se conserva intacta) pero reportarla y
-  continuar con las demás, en vez de abortar.
+  **Resuelto por la Decision #9**, añadida después de detectar esto: en vez de
+  tocar la guarda, `install-agent` normaliza las entradas heredadas cuyo
+  destino es reconocible, de modo que el caso «proyecto movido» deja de
+  producir entradas externas. Verificado end-to-end sobre una copia de BoostAPI
+  con el manifest apuntando a la ubicación original.
+
+  Lo que **no** se resolvió, deliberadamente: una entrada irreconocible sigue
+  abortando la operación entera. Tras la Decision #9 ese caso ya no lo produce
+  un proyecto movido, sino un manifest corrupto o manipulado, donde fallar
+  ruidosamente es la respuesta defendible. Si aparece un caso real de entrada
+  irreconocible legítima, se reabre.
 
 ## Validation
 
@@ -204,6 +240,14 @@ sobre repositorios Git temporales reales:
 6. `manifest_stores_project_relative_paths` — ninguna ruta absoluta.
 7. `uninstall_still_reads_a_legacy_absolute_path_manifest` — compatibilidad
    hacia atrás.
+8. `install_migrates_a_moved_projects_legacy_manifest_and_uninstall_then_works`
+   — el escenario completo de Decision #9: `uninstall` falla antes de migrar,
+   `install-agent` normaliza, `uninstall` completa.
+9. `migration_never_normalizes_an_arbitrary_path` — `~/Documents/notas.md` se
+   conserva intacta y la guarda la sigue rechazando.
+10. `migration_recognizes_every_managed_destination` — recorre `TARGETS` y
+    `prompts::ACTIONS` para que un agente o acción nuevos no queden fuera de la
+    normalización sin que nadie lo note.
 
 **Desviación deliberada respecto al plan original de validación**, que pedía
 fixtures estáticos en `tests/fixtures/alpha7-consumer/`: se descartaron a favor

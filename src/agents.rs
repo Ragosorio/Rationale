@@ -147,6 +147,17 @@ pub fn install(
         report.actions.push(warning);
     }
 
+    // `install-agent` es la vía oficial de actualización, así que también
+    // repara el estado administrativo que una versión anterior dejó — no solo
+    // los bloques. Sin esto, un proyecto de alpha.7 que se haya movido queda
+    // permanentemente sin poder desinstalarse.
+    let migrated = migrate_legacy_absolute_entries(&mut manifest, project_root);
+    if migrated > 0 {
+        report.actions.push(format!(
+            "manifest: {migrated} entrada(s) heredadas normalizadas a rutas relativas"
+        ));
+    }
+
     let detected_targets: Vec<&AgentTarget> = TARGETS
         .iter()
         .filter(|t| {
@@ -207,7 +218,7 @@ pub fn install(
         match target.mcp_config_file {
             Some(config_rel) => {
                 let config_path = project_root.join(config_rel);
-                let (action, changed) = upsert_mcp_json(&config_path, binary_path, dry_run)?;
+                let (action, changed) = upsert_mcp_json(&config_path, dry_run)?;
                 if changed {
                     report.actions.push(format!(
                         "{}: servidor MCP registrado en {}",
@@ -941,11 +952,17 @@ fn remove_instructions_block(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn upsert_mcp_json(
-    path: &Path,
-    binary_path: &Path,
-    dry_run: bool,
-) -> Result<(FileAction, bool), String> {
+/// Comando lógico, nunca una ruta absoluta (ADR-0015 §Decision 1).
+///
+/// La ruta absoluta se justificaba con que un cliente MCP podría no heredar el
+/// `PATH`. Se refutó para Claude Code: este mismo repositorio arranca su
+/// servidor con un `"command": "cargo"` pelado, y `cargo` vive en
+/// `~/.cargo/bin`, que no está en el `PATH` por defecto de macOS. Estos
+/// archivos son configuración compartida y versionada — el `$HOME` de quien
+/// instaló no pertenece ahí.
+const MCP_COMMAND: &str = "rationale";
+
+fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
     let existing = std::fs::read_to_string(path).ok();
     let mut root: serde_json::Value = match &existing {
         Some(content) => serde_json::from_str(content)
@@ -960,14 +977,15 @@ fn upsert_mcp_json(
         .or_insert_with(|| serde_json::json!({}));
 
     let desired = serde_json::json!({
-        "command": binary_path.display().to_string(),
+        "command": MCP_COMMAND,
         "args": ["serve"]
     });
-    // No basta con que la clave "rationale" exista: si el binario se movió
-    // (otro RATIONALE_INSTALL_DIR, global→local), la entrada vieja apunta a
-    // una ruta que ya no existe y el servidor MCP falla en silencio — el
-    // único síntoma es que el agente deja de ver las herramientas de
-    // Rationale. Comparar el valor, no solo la presencia de la clave.
+    // No basta con que la clave "rationale" exista: una entrada escrita por una
+    // versión anterior lleva la ruta absoluta del binario de quien instaló, y
+    // en la máquina de cualquier otro apunta a algo que no existe — el servidor
+    // MCP falla en silencio y el único síntoma es que el agente deja de ver las
+    // herramientas de Rationale. Comparar el valor, no solo la presencia de la
+    // clave, es lo que convierte a `install-agent` en la vía de migración.
     if servers.get("rationale") == Some(&desired) {
         return Ok((FileAction::Modified, false));
     }
@@ -1189,6 +1207,72 @@ fn manifest_relative_path(project_root: &Path, path: &Path) -> PathBuf {
         .unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Normaliza a relativas las entradas heredadas cuyo destino es reconocible
+/// (ADR-0014 §Decision 9).
+///
+/// Un manifest escrito antes de ADR-0014 guarda rutas absolutas. Mientras el
+/// proyecto no se mueva son inofensivas, pero si se movió o copió apuntan
+/// fuera del `project_root` y `resolve_managed_entry_path` las rechaza —
+/// correctamente— abortando `uninstall-agent` entero, entradas legítimas
+/// incluidas.
+///
+/// La normalización **no relaja la guarda**: solo reescribe una entrada cuando
+/// su ruta termina en un destino administrado conocido (`CLAUDE.md`,
+/// `AGENTS.md`, `.mcp.json`, la regla de Cursor, o un `SKILL.md` bajo el
+/// directorio de skills). Una ruta arbitraria —`~/Documents/notas.md`— no
+/// coincide con ninguno y se conserva intacta para que la guarda la siga
+/// rechazando. El destino resultante siempre queda dentro del `project_root`,
+/// porque es relativo por construcción.
+///
+/// Radio de acción declarado: si el manifest heredado apuntaba al `CLAUDE.md`
+/// de *otro* proyecto, tras normalizar apunta al de éste. No es una escalada —
+/// `uninstall` solo extirpa el bloque delimitado de Rationale, y si este
+/// proyecto está instalado ese archivo ya tenía su propia entrada.
+fn migrate_legacy_absolute_entries(manifest: &mut Manifest, project_root: &Path) -> usize {
+    let mut migrated = 0;
+    for entry in &mut manifest.entries {
+        if entry.path.is_relative() {
+            continue;
+        }
+        if entry.path.starts_with(project_root) {
+            // Absoluta pero dentro del proyecto: relativizar es exacto.
+            if let Ok(relative) = entry.path.strip_prefix(project_root) {
+                entry.path = relative.to_path_buf();
+                migrated += 1;
+            }
+            continue;
+        }
+        if let Some(relative) = recognized_managed_suffix(&entry.path) {
+            entry.path = relative;
+            migrated += 1;
+        }
+    }
+    migrated
+}
+
+/// Sufijo administrado que una ruta absoluta heredada reconoce, si alguno.
+fn recognized_managed_suffix(path: &Path) -> Option<PathBuf> {
+    let text = path.to_str()?.replace('\\', "/");
+
+    for target in TARGETS {
+        for candidate in std::iter::once(target.instructions_file).chain(target.mcp_config_file) {
+            if text == candidate || text.ends_with(&format!("/{candidate}")) {
+                return Some(PathBuf::from(candidate));
+            }
+        }
+        let Some(skills_dir) = target.skills_dir else {
+            continue;
+        };
+        for action in crate::prompts::ACTIONS {
+            let candidate = format!("{skills_dir}/rationale-{}/SKILL.md", action.name);
+            if text == candidate || text.ends_with(&format!("/{candidate}")) {
+                return Some(PathBuf::from(candidate));
+            }
+        }
+    }
+    None
+}
+
 /// Descarta la entrada previa del mismo archivo comparando en forma absoluta.
 ///
 /// Un manifest escrito antes de ADR-0014 guarda rutas absolutas y uno nuevo las
@@ -1399,7 +1483,7 @@ mod tests {
         .unwrap();
 
         let mcp_json = project.join(".mcp.json");
-        let (json_action, _) = upsert_mcp_json(&mcp_json, &fake_binary(), false).unwrap();
+        let (json_action, _) = upsert_mcp_json(&mcp_json, false).unwrap();
         assert_eq!(json_action, FileAction::Created);
         let mut root: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&mcp_json).unwrap()).unwrap();
@@ -1453,8 +1537,7 @@ mod tests {
         )
         .unwrap();
 
-        let binary = PathBuf::from("/usr/local/bin/rationale");
-        let (action, changed) = upsert_mcp_json(&config, &binary, false).unwrap();
+        let (action, changed) = upsert_mcp_json(&config, false).unwrap();
         assert_eq!(action, FileAction::Modified);
         assert!(changed);
 
@@ -1472,43 +1555,63 @@ mod tests {
         std::fs::remove_dir_all(project).ok();
     }
 
-    /// Defecto real: `upsert_mcp_json` cortaba en cuanto la clave
-    /// "rationale" existía, sin comparar su valor. Si el binario se mueve
-    /// (otro `RATIONALE_INSTALL_DIR`, global→local), `.mcp.json` sigue
-    /// apuntando a la ruta vieja y el servidor MCP falla en silencio — el
-    /// único síntoma es que el agente deja de ver las herramientas.
+    /// Defecto real: `upsert_mcp_json` cortaba en cuanto la clave "rationale"
+    /// existía, sin comparar su valor — así que un `.mcp.json` escrito por una
+    /// versión anterior se quedaba con la ruta absoluta del binario de quien
+    /// instaló, y en cualquier otra máquina el servidor MCP fallaba en
+    /// silencio. Comparar el valor es lo que convierte a `install-agent` en la
+    /// vía de migración de `alpha.7` a ADR-0015.
     #[test]
-    fn mcp_json_converges_when_the_binary_path_changes() {
+    fn mcp_json_migrates_a_legacy_absolute_command_to_the_logical_one() {
         let project = temp_dir("mcp-converge");
         let config = project.join(".mcp.json");
         std::fs::write(
             &config,
-            r#"{"mcpServers":{"rationale":{"command":"/old/path/rationale","args":["serve"]}}}"#,
+            r#"{"mcpServers":{"rationale":{"command":"/Users/quien-instalo/.local/bin/rationale","args":["serve"]}}}"#,
         )
         .unwrap();
 
-        let new_binary = PathBuf::from("/new/path/rationale");
-        let (action, changed) = upsert_mcp_json(&config, &new_binary, false).unwrap();
+        let (action, changed) = upsert_mcp_json(&config, false).unwrap();
         assert_eq!(action, FileAction::Modified);
-        assert!(
-            changed,
-            "una ruta de binario distinta debe contar como cambio"
-        );
+        assert!(changed, "una entrada heredada debe contar como cambio");
 
         let content = std::fs::read_to_string(&config).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(
-            value["mcpServers"]["rationale"]["command"],
-            "/new/path/rationale"
-        );
+        assert_eq!(value["mcpServers"]["rationale"]["command"], MCP_COMMAND);
 
-        // Repetir con la misma ruta ya actualizada: debe seguir siendo
-        // idempotente, sin re-escribir.
-        let (action2, changed2) = upsert_mcp_json(&config, &new_binary, false).unwrap();
+        // Idempotente una vez migrada.
+        let (action2, changed2) = upsert_mcp_json(&config, false).unwrap();
         assert_eq!(action2, FileAction::Modified);
         assert!(!changed2);
 
         std::fs::remove_dir_all(project).ok();
+    }
+
+    /// ADR-0015 §Validation 3: ningún `mcp_config_file` de `TARGETS` puede
+    /// acabar con una ruta absoluta. Son archivos compartidos y versionados.
+    #[test]
+    fn no_target_writes_an_absolute_command_into_shared_mcp_config() {
+        for target in TARGETS {
+            let Some(config_rel) = target.mcp_config_file else {
+                continue;
+            };
+            let project = temp_dir(&format!("mcp-portable-{}", target.name));
+            let config = project.join(config_rel);
+            upsert_mcp_json(&config, false).unwrap();
+
+            let value: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+            let command = value["mcpServers"]["rationale"]["command"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            assert!(
+                !command.starts_with('/') && !command.contains(":\\"),
+                "{config_rel} es configuración compartida y no puede llevar una ruta \
+                 absoluta; llevaba: {command}"
+            );
+            std::fs::remove_dir_all(project).ok();
+        }
     }
 
     #[test]
@@ -2042,6 +2145,100 @@ mod tests {
         );
 
         std::fs::remove_dir_all(project).ok();
+    }
+
+    /// El escenario que abortaba `uninstall-agent`: proyecto de alpha.7
+    /// movido o copiado, manifest apuntando a la ubicación anterior.
+    #[test]
+    fn install_migrates_a_moved_projects_legacy_manifest_and_uninstall_then_works() {
+        let project = temp_dir("legacy-moved");
+        let local = project.join(".rationale-local");
+        let claude_md = project.join("CLAUDE.md");
+        upsert_instructions_block(&claude_md, false).unwrap();
+
+        // Manifest de alpha.7 escrito cuando el proyecto vivía en otra ruta.
+        save_manifest(
+            &local,
+            &Manifest {
+                entries: vec![InstalledEntry {
+                    agent: "claude-code".to_string(),
+                    path: PathBuf::from("/Users/otra-persona/Desktop/Proyecto/CLAUDE.md"),
+                    action: FileAction::Created,
+                    reversal: ReversalStrategy::ManagedPart,
+                    content_hash: None,
+                }],
+            },
+        )
+        .unwrap();
+
+        // Antes de migrar, la guarda rechaza y aborta todo.
+        assert!(
+            uninstall(&project, &local).is_err(),
+            "sin migración, una entrada externa cancela la desinstalación entera"
+        );
+
+        install(&project, &local, &fake_binary(), false).unwrap();
+
+        let raw = std::fs::read_to_string(manifest_path(&local)).unwrap();
+        assert!(
+            !raw.contains("otra-persona"),
+            "install-agent debe normalizar la entrada heredada:\n{raw}"
+        );
+        uninstall(&project, &local).expect("tras migrar, la desinstalación debe completarse");
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// La migración normaliza destinos administrados, no cualquier ruta: una
+    /// arbitraria debe seguir siendo rechazada por la guarda.
+    #[test]
+    fn migration_never_normalizes_an_arbitrary_path() {
+        let project = temp_dir("legacy-arbitrary");
+        let mut manifest = Manifest {
+            entries: vec![InstalledEntry {
+                agent: "claude-code".to_string(),
+                path: PathBuf::from("/Users/alguien/Documents/notas.md"),
+                action: FileAction::Created,
+                reversal: ReversalStrategy::ManagedPart,
+                content_hash: None,
+            }],
+        };
+
+        assert_eq!(
+            migrate_legacy_absolute_entries(&mut manifest, &project),
+            0,
+            "una ruta que no es un destino administrado no se normaliza"
+        );
+        assert_eq!(
+            manifest.entries[0].path,
+            PathBuf::from("/Users/alguien/Documents/notas.md"),
+            "se conserva intacta para que la guarda la siga rechazando"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn migration_recognizes_every_managed_destination() {
+        for target in TARGETS {
+            assert_eq!(
+                recognized_managed_suffix(&PathBuf::from(format!(
+                    "/viejo/proyecto/{}",
+                    target.instructions_file
+                ))),
+                Some(PathBuf::from(target.instructions_file)),
+                "{} debe reconocerse",
+                target.instructions_file
+            );
+            if let Some(skills_dir) = target.skills_dir {
+                let rel = format!("{skills_dir}/rationale-health/SKILL.md");
+                assert_eq!(
+                    recognized_managed_suffix(&PathBuf::from(format!("/viejo/proyecto/{rel}"))),
+                    Some(PathBuf::from(rel)),
+                    "los skills administrados deben reconocerse"
+                );
+            }
+        }
     }
 
     #[test]
