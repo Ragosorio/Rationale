@@ -1,0 +1,31 @@
+id: constraint.foundational-subjects-are-required-subset
+kind: constraint
+severity: medium
+statement: Las pruebas del canon deben exigir individualmente la presencia de todos los Subjects fundacionales, pero no fijar el número total de Subjects porque finalize_change puede materializar Subjects adicionales legítimos.
+rationale: Evitar que la suite rechace Subjects legítimos materializados por finalize_change; conservar como contrato la presencia de los nueve fundacionales.
+epistemic_status: stated
+approvals: []
+binding_declarations:
+- id: binding.constraint.foundational-subjects-are-required-subset.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/subjects.rs
+  provisional: true
+- id: binding.constraint.foundational-subjects-are-required-subset.symbol
+  type: symbol
+  provider: codebase-memory
+  structural_id: Users-roor.osorio-Desktop-Rationale.src.subjects.lists_every_foundational_subject_without_rejecting_new_ones
+  path_hint: src/subjects.rs
+  provisional: true
+evidence: []
+risks:
+- id: risk.constraint.foundational-subjects-are-required-subset.0
+  statement: Un Subject fundacional renombrado exige actualizar explícitamente la lista del test y la migración canónica correspondiente.
+  epistemic_status: stated
+bound_revision: 4dc922a25b4d0e9af020c291b4f808208012d1db
+subject:
+  id: subject-registry-tests
+schema_version: rationale/0.1
+project_id: rationale
+status: pending

@@ -695,14 +695,27 @@ mod tests {
     }
 
     #[test]
-    fn lists_all_nine_foundational_subjects_after_f8_governance() {
+    fn lists_every_foundational_subject_without_rejecting_new_ones() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(".rationale/subjects");
         let subjects = list_subjects(&dir).unwrap();
-        assert_eq!(
-            subjects.len(),
-            9,
-            "deben existir los 7 Subjects de Fase A más los 2 de gobernanza F8/Fase G"
-        );
+        let foundational = [
+            "architecture.provider-boundary",
+            "architecture.revision-consistency",
+            "evaluation.no-self-certification",
+            "governance.project-declared-authority",
+            "policy.local-first",
+            "policy.no-inferred-blocks",
+            "retrieval.context-budget",
+            "review.proposal-lifecycle-integrity",
+            "storage.canonical-vs-derived",
+        ];
+
+        for expected in foundational {
+            assert!(
+                subjects.iter().any(|subject| subject.id == expected),
+                "falta el Subject fundacional {expected}"
+            );
+        }
     }
 
     #[test]
