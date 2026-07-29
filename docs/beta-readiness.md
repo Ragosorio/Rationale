@@ -5,7 +5,7 @@ no una opinión. Cubre solo funcionalidad — no proceso (usuarios externos,
 uso sostenido en el tiempo), aunque esos puntos se listan al final porque sin
 ellos beta no es defendible.
 
-**Estado: `v0.1.0-beta.1` publicada.** Las casillas funcionales están
+**Estado: `v0.1.0-beta.2` publicada.** Las casillas funcionales están
 cerradas con la evidencia que se describe abajo; las de proceso siguen
 abiertas y declaradas como tales. Beta.1 no afirma que Rationale esté
 terminado: afirma que el flujo funciona de forma repetible y que los fallos

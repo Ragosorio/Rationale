@@ -7,7 +7,7 @@ $Tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("rationale-update-" + [guid]
 try {
   if ([string]::IsNullOrWhiteSpace($Version) -or $Version -eq "latest") {
     if ($Channel -eq "preview") {
-      $release = (Invoke-RestMethod "https://api.github.com/repos/$Repository/releases?per_page=100" | Where-Object { $_.prerelease } | Select-Object -First 1)
+      $release = (Invoke-RestMethod "https://api.github.com/repos/$Repository/releases?per_page=100" | Select-Object -First 1)  # la más reciente, prerelease o no
       if (-not $release) { throw "no se encontró una Release preview para $Repository" }
       $Version = $release.tag_name
       $InstallerUrl = "https://github.com/$Repository/releases/download/$Version/rationale-installer.ps1"

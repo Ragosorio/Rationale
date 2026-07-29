@@ -1,6 +1,6 @@
 # Release runbook
 
-La Release pública vigente es `v0.1.0-beta.1`, construida directamente desde
+La Release pública vigente es `v0.1.0-beta.2`, construida directamente desde
 `main`. La rama `release/v0.1.0-alpha.1` contuvo el desarrollo hasta alpha.6 y
 ya se fusionó a `main`; el trabajo activo no vive ahí. Los tags `dogfood.*`
 quedan como iteraciones históricas de hardening y no deben usarse para validar
@@ -34,8 +34,8 @@ git rev-parse origin/main          # ...con este
 Solo entonces:
 
 ```bash
-git tag -a v0.1.0-beta.1 -m "Rationale beta 1"
-git push origin v0.1.0-beta.1
+git tag -a v0.1.0-beta.2 -m "Rationale beta 2"
+git push origin v0.1.0-beta.2
 ```
 
 `release.yml` marca `--prerelease` únicamente para `-alpha.`, `-rc.` y

@@ -93,5 +93,23 @@ if [[ "$en_steps" != "$es_steps" ]]; then
   exit 1
 fi
 
+# --- El canal `preview` no puede seleccionar por el flag prerelease ---------
+#
+# `preview` significa "la Release más reciente", no "la más reciente marcada
+# prerelease". Seleccionar por el flag funcionó mientras TODAS las versiones
+# eran prerelease y se rompió en el momento exacto en que dejó de ser cierto:
+# `v0.1.0-beta.1` es una Release completa, así que el canal la saltaba y
+# `rationale update` devolvía `alpha.7` — una versión ANTERIOR. Se observó en la
+# prueba de actualización real, no en ningún test.
+# Se busca el patrón de SELECCIÓN, no la palabra: los comentarios que explican
+# por qué no se selecciona así son justamente lo que se quiere conservar.
+if rg -n '"prerelease".*true|Where-Object \{ \$_\.prerelease \}' \
+     scripts/rationale-installer.sh scripts/rationale-update.sh \
+     scripts/rationale-installer.ps1 scripts/rationale-update.ps1; then
+  echo "el canal preview no debe seleccionar por el flag prerelease: la Release más \
+reciente puede ser una Release completa" >&2
+  exit 1
+fi
+
 git diff --check
 echo "documentation checks passed"

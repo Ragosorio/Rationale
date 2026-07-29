@@ -11,14 +11,17 @@ trap 'rm -f "$tmp"' EXIT
 if [[ -z "$VERSION" || "$VERSION" == "latest" ]]; then
   if [[ "$CHANNEL" == "preview" ]]; then
     VERSION="$(curl -fsSL "https://api.github.com/repos/$REPOSITORY/releases?per_page=100" | awk '
-      /"tag_name"[[:space:]]*:/ {
+      # `preview` significa "la Release más reciente, sea prerelease o no".
+      # La API las devuelve de más nueva a más vieja, así que basta el primer
+      # tag_name. Antes se buscaba el primer prerelease, y eso rompió en
+      # cuanto una Release completa pasó a ser la más nueva: `beta.1` no es
+      # prerelease, así que el canal saltaba a `alpha.7` y "actualizar"
+      # devolvía una versión anterior.
+      /"tag_name"[[:space:]]*:/ && !found {
         value = $0
         sub(/^.*"tag_name"[[:space:]]*:[[:space:]]*"/, "", value)
         sub(/".*$/, "", value)
-        latest_tag = value
-      }
-      /"prerelease"[[:space:]]*:[[:space:]]*true/ && latest_tag != "" && !found {
-        print latest_tag
+        print value
         found = 1
       }
     ')"

@@ -7,12 +7,12 @@ necesitan instalar Rust.
 ## Instalación desde GitHub
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.1/rationale-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.2/rationale-installer.sh | sh
 ```
 
 Variables soportadas:
 
-- `RATIONALE_VERSION=v0.1.0-beta.1` fija una versión concreta (sustitúyela
+- `RATIONALE_VERSION=v0.1.0-beta.2` fija una versión concreta (sustitúyela
   por el tag publicado que quieras usar).
 - `RATIONALE_CHANNEL=stable` hace que el instalador y `rationale update`
   usen `GET /releases/latest` de GitHub en vez de la prerelease más
@@ -82,7 +82,7 @@ Para un usuario que todavía tiene una versión anterior a la que incluye el
 helper, ejecuta una vez:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.1/rationale-update.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.2/rationale-update.sh | sh
 ```
 
 El helper conserva `RATIONALE_VERSION` si se fija para rollback o preview.
