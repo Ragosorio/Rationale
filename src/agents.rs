@@ -561,12 +561,20 @@ fn skill_content(action: &crate::prompts::Action) -> String {
     let argument_hint =
         serde_json::to_string(action.argument_hint).expect("serialize skill argument hint");
     let arguments = serde_json::to_string(action.arguments).expect("serialize skill arguments");
+    // Solo las acciones que inyectan un comando Bash concreto declaran
+    // `allowed-tools` — sin esto, Claude Code pide aprobación interactiva
+    // la primera vez que el skill corre, incluso en una instalación limpia.
+    let allowed_tools_line = match action.allowed_tools {
+        Some(pattern) => format!("allowed-tools: {pattern}\n"),
+        None => String::new(),
+    };
     format!(
         "---\n\
 description: {description}\n\
 argument-hint: {argument_hint}\n\
 arguments: {arguments}\n\
 disable-model-invocation: {}\n\
+{allowed_tools_line}\
 ---\n\n\
 {}\n",
         action.user_only,
@@ -1754,9 +1762,34 @@ mod tests {
         assert!(content.contains("disable-model-invocation: false"));
         assert!(content.contains(action.description));
         assert!(content.contains(action.body.trim()));
+        assert!(
+            !content.contains("allowed-tools:"),
+            "preflight no ejecuta ningún comando Bash — no debe declarar un permiso sin uso"
+        );
 
         let review = skill_content(crate::prompts::action("review").unwrap());
         assert!(review.contains("disable-model-invocation: true"));
+    }
+
+    /// Sin esto, Claude Code pedía aprobación interactiva la primera vez que
+    /// `/rationale-health` corría en una instalación limpia — el skill
+    /// promete ejecutar `rationale doctor --check` pero no declaraba el
+    /// permiso Bash exacto que esa inyección necesita.
+    #[test]
+    fn health_skill_declares_the_exact_bash_permission_it_needs() {
+        let health = skill_content(crate::prompts::action("health").unwrap());
+        assert!(
+            health.contains("allowed-tools: Bash(rationale doctor --check:*)"),
+            "el skill de health debe declarar el permiso exacto de su propia inyección:\n{health}"
+        );
+
+        for other in ["preflight", "explain", "capture", "review", "protocol"] {
+            let content = skill_content(crate::prompts::action(other).unwrap());
+            assert!(
+                !content.contains("allowed-tools:"),
+                "{other} no inyecta un comando Bash propio — no debe declarar allowed-tools"
+            );
+        }
     }
 
     #[test]

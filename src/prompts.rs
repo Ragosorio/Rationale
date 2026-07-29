@@ -11,6 +11,11 @@ pub struct Action {
     pub argument_hint: &'static str,
     pub arguments: &'static [&'static str],
     pub user_only: bool,
+    /// Valor de `allowed-tools` en el frontmatter del SKILL.md, si la acción
+    /// inyecta un comando Bash específico. `None` para acciones que no
+    /// ejecutan shell — declarar un permiso sin uso solo confundiría al
+    /// usuario que revisa qué autoriza cada skill.
+    pub allowed_tools: Option<&'static str>,
     pub body: &'static str,
 }
 
@@ -21,6 +26,7 @@ pub const ACTIONS: &[Action] = &[
         argument_hint: "[target] [intent]",
         arguments: &["target", "intent"],
         user_only: false,
+        allowed_tools: None,
         body: r#"Haz el preflight de Rationale para `$target` con esta intención real:
 
 `$intent`
@@ -37,6 +43,7 @@ pub const ACTIONS: &[Action] = &[
         argument_hint: "[target]",
         arguments: &["target"],
         user_only: false,
+        allowed_tools: None,
         body: r#"Aplica la valla de Chesterton a `$target`.
 
 1. Llama `explain_target(target: "$target")`.
@@ -50,6 +57,7 @@ pub const ACTIONS: &[Action] = &[
         argument_hint: "[statement]",
         arguments: &["statement"],
         user_only: false,
+        allowed_tools: None,
         body: r#"Cierra el cambio actual con Rationale. Statement opcional del humano:
 
 `$statement`
@@ -75,6 +83,7 @@ con las herramientas Git disponibles antes de continuar.
         argument_hint: "",
         arguments: &[],
         user_only: true,
+        allowed_tools: None,
         body: r#"Prepara la revisión humana de Rationale.
 
 1. Lista los archivos YAML pendientes bajo `.rationale/proposals/` sin alterar su estado.
@@ -88,11 +97,22 @@ con las herramientas Git disponibles antes de continuar.
         argument_hint: "",
         arguments: &[],
         user_only: false,
+        // `doctor --check` sale 1 tanto si encuentra hallazgos (diagnóstico
+        // normal — el propósito mismo de este skill) como si falla por una
+        // razón operativa real (comparten el helper `fail()`). Claude Code
+        // trata cualquier exit code distinto de cero como "Shell command
+        // failed" y descarta el output — así que un hallazgo normal dejaba
+        // el skill inservible. La línea inyectada distingue los dos casos
+        // por contenido, no por el código: `fail()` escribe a stderr y sale
+        // 1 sin haber impreso el reporte a stdout; los hallazgos normales
+        // imprimen el reporte a stdout y dejan stderr vacío. Solo cuando
+        // stderr está vacío se normaliza el 1 a éxito.
+        allowed_tools: Some("Bash(rationale doctor --check:*)"),
         body: r#"Diagnostica la salud de Rationale.
 
 Resultado local de `doctor` inyectado por el skill:
 
-!`rationale doctor --check`
+!`rationale doctor --check 2>/tmp/.rationale-doctor-check.$$; code=$?; if [ "$code" -eq 1 ] && [ ! -s /tmp/.rationale-doctor-check.$$ ]; then rm -f /tmp/.rationale-doctor-check.$$; exit 0; fi; cat /tmp/.rationale-doctor-check.$$ >&2; rm -f /tmp/.rationale-doctor-check.$$; exit "$code"`
 
 Si la línea anterior todavía aparece como un literal `!`comando`` (por
 ejemplo, mediante un prompt MCP), ejecuta el chequeo equivalente antes de
@@ -108,6 +128,7 @@ responder.
         argument_hint: "",
         arguments: &[],
         user_only: false,
+        allowed_tools: None,
         body: include_str!("../docs/prompt-master.md"),
     },
 ];
