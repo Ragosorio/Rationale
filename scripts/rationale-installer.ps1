@@ -5,7 +5,7 @@ $Version = if ($env:RATIONALE_VERSION -and $env:RATIONALE_VERSION -ne "latest") 
   if ($Channel -eq "stable") {
     ((Invoke-RestMethod "https://api.github.com/repos/$Repository/releases/latest").tag_name).TrimStart('v')
   } elseif ($Channel -eq "preview") {
-    $release = (Invoke-RestMethod "https://api.github.com/repos/$Repository/releases?per_page=100" | Where-Object { $_.prerelease } | Select-Object -First 1)
+    $release = (Invoke-RestMethod "https://api.github.com/repos/$Repository/releases?per_page=100" | Select-Object -First 1)  # la más reciente, prerelease o no
     if (-not $release) { throw "no se encontró una Release preview para $Repository" }
     $release.tag_name.TrimStart('v')
   } else {

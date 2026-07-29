@@ -3,6 +3,31 @@
 Los cambios importantes se registran aquí por Release. El detalle técnico de
 cada cambio vive en commits, ADRs y work items enlazados.
 
+## v0.1.0-beta.2
+
+**`rationale update` devolvía una versión anterior.** Defecto observado en la
+prueba de actualización real de beta.1, no en ningún test: `update` sobre una
+instalación de `alpha.7` instaló `alpha.7` otra vez.
+
+La causa es una consecuencia directa del cambio de canal de beta.1. El canal
+`preview` de los instaladores seleccionaba «la Release más reciente **marcada
+prerelease**», lo que funcionó mientras todas las versiones lo eran. `beta.1`
+es una Release completa a propósito —para que el canal `stable` pueda
+resolverla— así que `preview` la saltaba y caía en `alpha.7`.
+
+`preview` significa ahora «la Release más reciente, prerelease o no», que es lo
+que siempre debió significar: la API las devuelve de más nueva a más vieja, así
+que basta la primera. `stable` sigue usando `releases/latest`. Los dos canales
+resuelven a la misma versión cuando la más reciente es completa, y `preview`
+adelanta cuando existe una prerelease más nueva.
+
+`check-docs.sh` gana una guarda que rechaza volver a seleccionar por el flag,
+verificada reintroduciendo el defecto a propósito.
+
+Los binarios de beta.1 eran correctos; el defecto estaba solo en los scripts
+auxiliares. No se reemplazaron los artefactos ya publicados: llevan attestation
+y sobrescribirlos la invalidaría. Se publica beta.2 en su lugar.
+
 ## v0.1.0-beta.1
 
 Primera beta. Rationale entra en beta porque el flujo completo —preparar,

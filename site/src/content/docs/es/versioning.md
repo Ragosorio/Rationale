@@ -22,7 +22,7 @@ agentes son artefactos del entorno salvo que tu equipo decida versionarlos.
 
 ## Verdad de release
 
-El preview público documentado aquí es `v0.1.0-beta.1`. Los cambios del árbol
+El preview público documentado aquí es `v0.1.0-beta.2`. Los cambios del árbol
 de trabajo siguen en Unreleased hasta cortar una release y completar checksums,
 instaladores, tests y gates de revisión humana.
 
