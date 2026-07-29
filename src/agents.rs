@@ -195,6 +195,9 @@ pub fn install(
     if let Some(warning) = tracked_local_data_warning(project_root) {
         report.actions.push(warning);
     }
+    if let Some(warning) = gui_path_resolution_warning() {
+        report.actions.push(warning);
+    }
 
     // `install-agent` es la vía oficial de actualización, así que también
     // repara el estado administrativo que una versión anterior dejó — no solo
@@ -1147,6 +1150,41 @@ fn remove_instructions_block(path: &Path, preamble: Option<&str>) -> Result<(), 
 /// archivos son configuración compartida y versionada.
 const MCP_COMMAND: &str = "rationale";
 
+/// Directorios que un cliente lanzado desde la GUI puede resolver.
+///
+/// En macOS una app abierta desde el Dock hereda el `PATH` de `launchd`, no el
+/// del shell: `~/.local/bin` —donde el instalador pone el binario— queda
+/// invisible. El comando lógico de la configuración MCP entonces no resuelve y
+/// el cliente reporta el servidor como no disponible, sin explicación.
+const GUI_VISIBLE_BIN_DIRS: &[&str] = &["/usr/local/bin", "/usr/bin", "/bin", "/opt/homebrew/bin"];
+
+/// Aviso cuando el comando lógico de la config MCP no sería resoluble por un
+/// cliente lanzado desde la GUI.
+///
+/// No cambia lo que se escribe: ADR-0015 decide el comando lógico
+/// deliberadamente, para no dejar la ruta personal de alguien en una
+/// configuración compartida y versionada. Lo que faltaba era decirle al
+/// usuario por qué su cliente gráfico no lo encuentra.
+fn gui_path_resolution_warning() -> Option<String> {
+    let resolved = find_on_path(MCP_COMMAND)?;
+    let dir = resolved.parent()?;
+    if GUI_VISIBLE_BIN_DIRS
+        .iter()
+        .any(|known| dir == Path::new(known))
+    {
+        return None;
+    }
+    Some(format!(
+        "aviso: `{MCP_COMMAND}` resuelve a {} desde este terminal, pero un cliente lanzado \
+         desde la GUI (Cursor o la app de escritorio) hereda un PATH distinto y puede no \
+         encontrarlo — reportaría el servidor MCP como no disponible. Remedios: abrir el \
+         cliente desde un terminal, o exponer el binario en un directorio visible para apps \
+         GUI, por ejemplo:\n    sudo ln -sf {} /usr/local/bin/{MCP_COMMAND}",
+        resolved.display(),
+        resolved.display()
+    ))
+}
+
 fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
     let existing = std::fs::read_to_string(path).ok();
     let mut root: serde_json::Value = match &existing {
@@ -1977,6 +2015,44 @@ mod tests {
         std::fs::remove_dir_all(project).ok();
     }
 
+    /// El síntoma que esto evita: Cursor abierto desde el Dock reportando
+    /// "MCP rationale no disponible" sin ninguna explicación, mientras Codex y
+    /// Claude Code en terminal funcionan. La causa es el `PATH` de `launchd`,
+    /// que no incluye `~/.local/bin`.
+    #[test]
+    fn gui_path_warning_fires_only_for_dirs_a_gui_client_cannot_see() {
+        // No se puede mover el binario real, así que se comprueba la regla que
+        // decide: qué directorios cuentan como visibles para una app GUI.
+        for visible in GUI_VISIBLE_BIN_DIRS {
+            assert!(
+                Path::new(visible).is_absolute(),
+                "{visible} debe ser absoluto para comparar contra el padre resuelto"
+            );
+        }
+        assert!(
+            GUI_VISIBLE_BIN_DIRS.contains(&"/usr/local/bin"),
+            "/usr/local/bin es el destino que el propio aviso recomienda"
+        );
+        assert!(
+            !GUI_VISIBLE_BIN_DIRS
+                .iter()
+                .any(|d| d.contains(".local/bin")),
+            "~/.local/bin es justo el caso que debe disparar el aviso"
+        );
+
+        // Y el aviso, cuando aplica, debe nombrar el remedio concreto.
+        if let Some(warning) = gui_path_resolution_warning() {
+            assert!(
+                warning.contains("/usr/local/bin"),
+                "el aviso debe dar el remedio, no solo el diagnóstico: {warning}"
+            );
+            assert!(
+                warning.contains(MCP_COMMAND),
+                "y nombrar el comando afectado: {warning}"
+            );
+        }
+    }
+
     /// `git diff --check` es una puerta de CI en este repo y el propio
     /// escritor de bloques la rompía: `instructions_block()` ya termina en
     /// `\n`, así que al reemplazar un bloque que ocupaba el archivo entero se
@@ -2268,7 +2344,7 @@ mod tests {
     fn health_skill_declares_the_exact_bash_permission_it_needs() {
         let health = skill_content(crate::prompts::action("health").unwrap());
         assert!(
-            health.contains("allowed-tools: Bash(rationale doctor --check:*)"),
+            health.contains("allowed-tools: Bash(rationale doctor:*)"),
             "el skill de health debe declarar el permiso exacto de su propia inyección:\n{health}"
         );
 

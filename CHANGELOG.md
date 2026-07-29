@@ -52,6 +52,16 @@ usuario que lo leyera recibía instrucciones distintas de las que su agente
 tenía instaladas. Y el sitio nunca se construía en CI: `npm run check` existía
 y no lo ejecutaba nadie.
 
+**Un cliente GUI no encontraba el binario, y nadie lo explicaba.** La
+configuración MCP declara el comando lógico `rationale` a propósito, para que el
+archivo pueda versionarse sin la ruta personal de nadie. Pero en macOS una app
+abierta desde el Dock hereda el entorno de `launchd`, no el del shell, así que
+`~/.local/bin` —donde el instalador pone el binario— le es invisible: Cursor
+reportaba el servidor como no disponible mientras Codex y Claude Code en
+terminal funcionaban. `install-agent` ahora lo detecta y imprime el remedio, y
+troubleshooting lo documenta en los dos idiomas. La configuración del proyecto
+no cambia.
+
 **Limitaciones conocidas de esta beta**, declaradas en vez de omitidas:
 
 - Windows pasa CI de punta a punta, incluido el smoke test de empaquetado, pero

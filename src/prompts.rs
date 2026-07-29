@@ -99,22 +99,28 @@ con las herramientas Git disponibles antes de continuar.
         argument_hint: "",
         arguments: &[],
         user_only: false,
-        // `doctor --check` sale 1 tanto si encuentra hallazgos (diagnóstico
-        // normal — el propósito mismo de este skill) como si falla por una
-        // razón operativa real (comparten el helper `fail()`). Claude Code
-        // trata cualquier exit code distinto de cero como "Shell command
-        // failed" y descarta el output — así que un hallazgo normal dejaba
-        // el skill inservible. La línea inyectada distingue los dos casos
-        // por contenido, no por el código: `fail()` escribe a stderr y sale
-        // 1 sin haber impreso el reporte a stdout; los hallazgos normales
-        // imprimen el reporte a stdout y dejan stderr vacío. Solo cuando
-        // stderr está vacío se normaliza el 1 a éxito.
-        allowed_tools: Some("Bash(rationale doctor --check:*)"),
+        // `doctor --check` existe para CI: sale 1 cuando hay hallazgos, y ese
+        // contrato está testeado. Pero un skill de diagnóstico necesita lo
+        // contrario — mostrar los hallazgos ES su propósito, y Claude Code
+        // trata cualquier código distinto de cero como "Shell command failed"
+        // y descarta el output.
+        //
+        // `doctor` SIN `--check` ya tiene exactamente la semántica correcta:
+        // imprime el reporte y sale 0 con hallazgos, y sigue saliendo 1 ante
+        // un fallo operativo real (`fail()`). No hace falta normalizar nada.
+        //
+        // Un intento anterior envolvió `--check` en un compuesto de shell con
+        // `$?`/`$$` para traducir el código. Claude Code lo rechazó con
+        // "Contains simple_expansion": su verificador de permisos no puede
+        // comprobar estáticamente un comando con expansión de variables
+        // contra un patrón permitido, y hace bien. La inyección debe ser un
+        // comando simple.
+        allowed_tools: Some("Bash(rationale doctor:*)"),
         body: r#"Diagnostica la salud de Rationale.
 
 Resultado local de `doctor` inyectado por el skill:
 
-!`rationale doctor --check 2>/tmp/.rationale-doctor-check.$$; code=$?; if [ "$code" -eq 1 ] && [ ! -s /tmp/.rationale-doctor-check.$$ ]; then rm -f /tmp/.rationale-doctor-check.$$; exit 0; fi; cat /tmp/.rationale-doctor-check.$$ >&2; rm -f /tmp/.rationale-doctor-check.$$; exit "$code"`
+!`rationale doctor`
 
 Si la línea anterior todavía aparece como un literal `!`comando`` (por
 ejemplo, mediante un prompt MCP), ejecuta el chequeo equivalente antes de

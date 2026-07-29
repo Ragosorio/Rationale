@@ -36,3 +36,24 @@ fence whose reason is stored in an approved Record.
 Do not delete one by hand. Review the pending proposals, compare their evidence
 and bindings, and reject or correct the duplicate through the interactive
 review path.
+
+## A GUI client reports the MCP server as unavailable
+
+Cursor or a desktop app launched from the Dock reports `rationale` as
+unavailable, while Codex and a terminal Claude Code work fine.
+
+The MCP configuration deliberately declares the logical command `rationale`
+rather than a personal absolute path, so the file can be committed and shared.
+That command only resolves if the client can see the directory holding the
+binary. On macOS, an application launched from the Dock inherits the `launchd`
+environment, not your shell's, so `~/.local/bin` — where the installer places
+the binary — is invisible to it.
+
+`install-agent` warns about this and prints the remedy. Either launch the client
+from a terminal, or expose the binary where GUI applications can see it:
+
+```bash
+sudo ln -sf ~/.local/bin/rationale /usr/local/bin/rationale
+```
+
+Nothing in the project configuration needs to change.
