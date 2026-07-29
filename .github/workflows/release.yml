@@ -84,15 +84,15 @@ jobs:
       - name: Add installers
         run: |
           mkdir -p release
+          # Los scripts se publican tal cual están en el tag. Aquí hubo dos
+          # `sed` que reescribían `DEFAULT_CHANNEL` de "stable" a "preview";
+          # ambos scripts ya declaran "preview" en el repo, así que eran
+          # no-ops silenciosos que sugerían una transformación inexistente.
           git show "${GITHUB_REF_NAME}:scripts/rationale-installer.sh" > release/rationale-installer.sh
-          git show "${GITHUB_REF_NAME}:scripts/rationale-update.sh" \
-            | sed "s/^DEFAULT_CHANNEL=\"stable\"/DEFAULT_CHANNEL=\"preview\"/" \
-            > release/rationale-update.sh
+          git show "${GITHUB_REF_NAME}:scripts/rationale-update.sh" > release/rationale-update.sh
           git show "${GITHUB_REF_NAME}:scripts/rationale-uninstall.sh" > release/rationale-uninstall.sh
           git show "${GITHUB_REF_NAME}:scripts/rationale-installer.ps1" > release/rationale-installer.ps1
-          git show "${GITHUB_REF_NAME}:scripts/rationale-update.ps1" \
-            | sed "s/^\$DefaultChannel = \"stable\"/\$DefaultChannel = \"preview\"/" \
-            > release/rationale-update.ps1
+          git show "${GITHUB_REF_NAME}:scripts/rationale-update.ps1" > release/rationale-update.ps1
           git show "${GITHUB_REF_NAME}:scripts/rationale-uninstall.ps1" > release/rationale-uninstall.ps1
           chmod +x release/rationale-installer.sh release/rationale-update.sh release/rationale-uninstall.sh
       - name: Create release
@@ -102,9 +102,18 @@ jobs:
           mapfile -t release_assets < <(find release -type f -print)
           test "${#release_assets[@]}" -gt 0
           release_flags=(--title "Rationale ${GITHUB_REF_NAME}" --generate-notes)
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
-            release_flags+=(--prerelease)
-          fi
+          # GitHub solo marca «latest» una Release que NO sea prerelease, y
+          # `releases/latest` es lo que resuelve el canal `stable` de los dos
+          # instaladores. Marcar por "cualquier tag con guión" dejaba TODAS
+          # las versiones etiquetadas como prerelease, así que `stable` se
+          # quedó sirviendo `v0.0.0-dogfood.7` — un build de dogfood— durante
+          # las siete alphas. Beta y final son releases completas y sí deben
+          # poder ser «latest» (ADR-0010).
+          case "${GITHUB_REF_NAME}" in
+            *-alpha.*|*-rc.*|*-dogfood.*)
+              release_flags+=(--prerelease)
+              ;;
+          esac
           gh release create "${GITHUB_REF_NAME}" "${release_assets[@]}" \
             "${release_flags[@]}"
       - name: Attest release artifacts
