@@ -77,6 +77,19 @@ pub fn managed_paths() -> Vec<&'static str> {
     paths
 }
 
+/// Cómo adquirió Rationale la administración de un archivo, **la primera vez**.
+///
+/// Es un hecho histórico, no el estado de la ejecución actual: una entrada que
+/// nació `Created` sigue siendo `Created` en toda reinstalación posterior, y
+/// una que nació `Modified` sigue siendo `Modified`. Reinstalar puede
+/// actualizar el hash, la estrategia de reversión y normalizar la ruta —
+/// nunca el `action` histórico. La migración desde rutas absolutas también lo
+/// preserva.
+///
+/// Antes se sobrescribía con el estado observado en cada pasada, así que la
+/// segunda ejecución volteaba todas las entradas de `Created` a `Modified`
+/// mientras el reporte decía «ya al día». Se detectó en el piloto Monorepo;
+/// ver `docs/work-items/manifest-action-not-convergent.md`.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 enum FileAction {
@@ -1275,20 +1288,63 @@ fn recognized_managed_suffix(path: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Descarta la entrada previa del mismo archivo comparando en forma absoluta.
+/// Posición de la entrada de este archivo, comparando en forma absoluta.
 ///
 /// Un manifest escrito antes de ADR-0014 guarda rutas absolutas y uno nuevo las
 /// guarda relativas: comparar los campos crudos duplicaría cada entrada al
 /// reinstalar sobre una instalación vieja.
-fn drop_existing_entry(manifest: &mut Manifest, project_root: &Path, absolute: &Path) {
-    manifest.entries.retain(|entry| {
-        let existing = if entry.path.is_absolute() {
+fn existing_entry_index(
+    manifest: &Manifest,
+    project_root: &Path,
+    absolute: &Path,
+) -> Option<usize> {
+    manifest.entries.iter().position(|entry| {
+        let resolved = if entry.path.is_absolute() {
             entry.path.clone()
         } else {
             project_root.join(&entry.path)
         };
-        existing != absolute
-    });
+        resolved == absolute
+    })
+}
+
+/// Escribe la entrada de un archivo administrado, **en su sitio** si ya
+/// existía.
+///
+/// Actualizar en sitio y no `remove` + `push` es lo que hace convergente al
+/// manifest. Con el patrón anterior, una segunda ejecución re-registraba solo
+/// algunas entradas —los skills, que se re-escriben siempre; no las
+/// instrucciones ni el MCP, que solo se registran si cambiaron— y esas pocas
+/// saltaban al final, desplazando a las demás. El archivo cambiaba byte a byte
+/// aunque ningún dato lo hiciera.
+///
+/// `action` es un hecho histórico y se conserva de la entrada previa; `hash`,
+/// `reversal` y la ruta normalizada sí se actualizan (ver `FileAction`).
+fn upsert_entry(
+    manifest: &mut Manifest,
+    project_root: &Path,
+    agent: &str,
+    path: &Path,
+    observed_action: FileAction,
+    reversal: ReversalStrategy,
+    content_hash: Option<String>,
+) {
+    let index = existing_entry_index(manifest, project_root, path);
+    let action = match index {
+        Some(i) => manifest.entries[i].action.clone(),
+        None => observed_action,
+    };
+    let entry = InstalledEntry {
+        agent: agent.to_string(),
+        path: manifest_relative_path(project_root, path),
+        action,
+        reversal,
+        content_hash,
+    };
+    match index {
+        Some(i) => manifest.entries[i] = entry,
+        None => manifest.entries.push(entry),
+    }
 }
 
 fn record_entry(
@@ -1298,14 +1354,15 @@ fn record_entry(
     path: &Path,
     action: FileAction,
 ) {
-    drop_existing_entry(manifest, project_root, path);
-    manifest.entries.push(InstalledEntry {
-        agent: agent.to_string(),
-        path: manifest_relative_path(project_root, path),
+    upsert_entry(
+        manifest,
+        project_root,
+        agent,
+        path,
         action,
-        reversal: ReversalStrategy::ManagedPart,
-        content_hash: None,
-    });
+        ReversalStrategy::ManagedPart,
+        None,
+    );
 }
 
 fn record_owned_entry(
@@ -1316,14 +1373,15 @@ fn record_owned_entry(
     action: FileAction,
     hash: &str,
 ) {
-    drop_existing_entry(manifest, project_root, path);
-    manifest.entries.push(InstalledEntry {
-        agent: agent.to_string(),
-        path: manifest_relative_path(project_root, path),
+    upsert_entry(
+        manifest,
+        project_root,
+        agent,
+        path,
         action,
-        reversal: ReversalStrategy::OwnedFile,
-        content_hash: Some(hash.to_string()),
-    });
+        ReversalStrategy::OwnedFile,
+        Some(hash.to_string()),
+    );
 }
 
 fn manifest_path(rationale_local: &Path) -> PathBuf {
@@ -2376,6 +2434,217 @@ mod tests {
                 );
             }
         }
+    }
+
+    // --- Convergencia del manifest en la segunda ejecución ---
+    //
+    // `action` es un hecho histórico: cómo adquirió Rationale la
+    // administración del archivo la primera vez. Antes se sobrescribía con el
+    // estado observado en cada pasada, y la segunda ejecución volteaba todas
+    // las entradas mientras el reporte decía «ya al día».
+
+    fn manifest_bytes(local: &Path) -> String {
+        std::fs::read_to_string(manifest_path(local)).unwrap()
+    }
+
+    /// (1) Instalación nueva: la segunda pasada no toca el manifest.
+    #[test]
+    fn fresh_install_manifest_is_byte_identical_on_the_second_run() {
+        let repo = git_repo("converge-fresh");
+        let local = repo.join(".rationale-local");
+
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        let first = manifest_bytes(&local);
+        install(&repo, &local, &fake_binary(), false).unwrap();
+
+        assert_eq!(
+            first,
+            manifest_bytes(&local),
+            "la segunda ejecución no puede cambiar el manifest"
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// (2) Manifest de alpha.7: la primera pasada migra, la segunda no mueve
+    /// nada. Es el escenario exacto observado en Monorepo.
+    #[test]
+    fn legacy_manifest_migrates_once_then_converges() {
+        let repo = git_repo("converge-legacy");
+        let local = repo.join(".rationale-local");
+        let claude_md = repo.join("CLAUDE.md");
+        std::fs::write(&claude_md, "# Del usuario\n").unwrap();
+
+        save_manifest(
+            &local,
+            &Manifest {
+                entries: vec![InstalledEntry {
+                    agent: "claude-code".to_string(),
+                    path: repo.join("CLAUDE.md"),
+                    action: FileAction::Created,
+                    reversal: ReversalStrategy::ManagedPart,
+                    content_hash: None,
+                }],
+            },
+        )
+        .unwrap();
+
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        let migrated = manifest_bytes(&local);
+        assert!(
+            !migrated.contains(repo.to_str().unwrap()),
+            "la primera pasada migra las rutas absolutas"
+        );
+
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        assert_eq!(
+            migrated,
+            manifest_bytes(&local),
+            "la segunda pasada debe ser byte-idéntica tras migrar"
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// (3) Una entrada histórica `created` permanece `created`, aunque el
+    /// archivo ya exista en las pasadas siguientes.
+    #[test]
+    fn a_historically_created_entry_stays_created() {
+        let repo = git_repo("converge-created");
+        let local = repo.join(".rationale-local");
+
+        // Primera instalación: CLAUDE.md no existe, se crea.
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        let entry_action = |local: &Path, path: &str| {
+            let m: Manifest = serde_json::from_str(&manifest_bytes(local)).unwrap();
+            m.entries
+                .iter()
+                .find(|e| e.path == Path::new(path))
+                .unwrap_or_else(|| panic!("falta la entrada {path}"))
+                .action
+                .clone()
+        };
+        assert_eq!(entry_action(&local, "CLAUDE.md"), FileAction::Created);
+        assert_eq!(
+            entry_action(&local, ".claude/skills/rationale-health/SKILL.md"),
+            FileAction::Created
+        );
+
+        // Segunda y tercera: los archivos ya existen, pero el hecho histórico
+        // no cambia.
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        assert_eq!(
+            entry_action(&local, "CLAUDE.md"),
+            FileAction::Created,
+            "reinstalar no reescribe cómo se adquirió el archivo"
+        );
+        assert_eq!(
+            entry_action(&local, ".claude/skills/rationale-health/SKILL.md"),
+            FileAction::Created
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// (4) Una entrada histórica `modified` permanece `modified`, aunque la
+    /// pasada actual observe otra cosa.
+    #[test]
+    fn a_historically_modified_entry_stays_modified() {
+        let repo = git_repo("converge-modified");
+        let local = repo.join(".rationale-local");
+        let claude_md = repo.join("CLAUDE.md");
+        std::fs::write(&claude_md, "# Ya existía cuando Rationale llegó\n").unwrap();
+
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        let action_of = |local: &Path| {
+            let m: Manifest = serde_json::from_str(&manifest_bytes(local)).unwrap();
+            m.entries
+                .iter()
+                .find(|e| e.path == Path::new("CLAUDE.md"))
+                .unwrap()
+                .action
+                .clone()
+        };
+        assert_eq!(action_of(&local), FileAction::Modified);
+
+        // Borrar el archivo y reinstalar: ahora Rationale lo *crea*, pero la
+        // entrada histórica dice que originalmente lo adquirió modificando.
+        std::fs::remove_file(&claude_md).unwrap();
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        assert_eq!(
+            action_of(&local),
+            FileAction::Modified,
+            "el hecho histórico no se sobrescribe con lo observado ahora"
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// (5) La desinstalación tras migrar sigue conservando lo del usuario.
+    /// Complementa `a_relocated_manifest_never_deletes_preexisting_user_files`
+    /// sobre el camino de `install` completo, no solo la migración aislada.
+    #[test]
+    fn uninstall_after_convergence_still_preserves_user_content() {
+        let repo = git_repo("converge-uninstall");
+        let local = repo.join(".rationale-local");
+        let claude_md = repo.join("CLAUDE.md");
+        std::fs::write(&claude_md, "# Encabezado propio\n").unwrap();
+
+        save_manifest(
+            &local,
+            &Manifest {
+                entries: vec![InstalledEntry {
+                    agent: "claude-code".to_string(),
+                    path: PathBuf::from("/otro/proyecto/CLAUDE.md"),
+                    action: FileAction::Created,
+                    reversal: ReversalStrategy::ManagedPart,
+                    content_hash: None,
+                }],
+            },
+        )
+        .unwrap();
+
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false).unwrap();
+        uninstall(&repo, &local).unwrap();
+
+        let after = std::fs::read_to_string(&claude_md)
+            .expect("el archivo tenía contenido del usuario: no puede borrarse");
+        assert!(after.contains("Encabezado propio"));
+        assert!(!after.contains(MARKER_BEGIN), "el bloque sí se extirpa");
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// (6) Las rutas arbitrarias siguen rechazadas: preservar `action` no
+    /// relaja ninguna guarda.
+    #[test]
+    fn convergence_does_not_weaken_the_arbitrary_path_guard() {
+        let repo = git_repo("converge-guard");
+        let local = repo.join(".rationale-local");
+
+        save_manifest(
+            &local,
+            &Manifest {
+                entries: vec![InstalledEntry {
+                    agent: "claude-code".to_string(),
+                    path: PathBuf::from("/Users/alguien/Documents/notas.md"),
+                    action: FileAction::Created,
+                    reversal: ReversalStrategy::ManagedPart,
+                    content_hash: None,
+                }],
+            },
+        )
+        .unwrap();
+
+        install(&repo, &local, &fake_binary(), false).unwrap();
+
+        let raw = manifest_bytes(&local);
+        assert!(
+            raw.contains("/Users/alguien/Documents/notas.md"),
+            "una ruta arbitraria no se normaliza: se conserva intacta"
+        );
+        assert!(
+            uninstall(&repo, &local).is_err(),
+            "y la guarda debe seguir rechazándola"
+        );
+        std::fs::remove_dir_all(repo).ok();
     }
 
     #[test]
