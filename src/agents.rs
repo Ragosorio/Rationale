@@ -2733,8 +2733,10 @@ mod tests {
     /// mutar una variable de entorno es intrínsecamente global al proceso,
     /// así que sin esto un panic dejaría el resto de la suite corriendo con
     /// un `PATH` equivocado.
+    #[cfg(unix)]
     struct PathOverride(Option<std::ffi::OsString>);
 
+    #[cfg(unix)]
     impl PathOverride {
         /// Sin ningún directorio que pueda contener `claude`, `codex` o
         /// `cursor-agent` — pero con `/usr/bin` y `/bin`, para que `git`
@@ -2746,6 +2748,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl Drop for PathOverride {
         fn drop(&mut self) {
             match &self.0 {
@@ -2759,6 +2762,11 @@ mod tests {
     /// `AGENTS.md` heredado, sin el binario en `PATH`, abortaba la
     /// instalación completa — incluidos los demás agentes — en vez de
     /// omitirse con un aviso.
+    ///
+    /// La simulación usa un `PATH` Unix deliberadamente mínimo. En Windows
+    /// esas rutas eliminan también `git` y, al ser `PATH` global al proceso,
+    /// pueden romper en paralelo tests ajenos antes de que el guard lo restaure.
+    #[cfg(unix)]
     #[test]
     fn codex_detected_without_a_binary_is_skipped_without_aborting_other_agents() {
         let repo = git_repo("codex-no-binary");

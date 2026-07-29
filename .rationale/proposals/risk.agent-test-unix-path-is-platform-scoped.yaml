@@ -1,0 +1,31 @@
+id: risk.agent-test-unix-path-is-platform-scoped
+kind: risk
+severity: medium
+statement: Las pruebas que simulan ausencia de binarios mediante un PATH formado por rutas Unix solo deben compilarse y ejecutarse en Unix; en Windows esas rutas eliminan también git y la mutación global puede romper pruebas paralelas.
+rationale: Evitar que un test basado en un PATH Unix rompa de forma no determinista la suite de Windows antes de publicar v0.1.0-beta.2.
+epistemic_status: stated
+approvals: []
+binding_declarations:
+- id: binding.risk.agent-test-unix-path-is-platform-scoped.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/agents.rs
+  provisional: true
+- id: binding.risk.agent-test-unix-path-is-platform-scoped.symbol
+  type: symbol
+  provider: codebase-memory
+  structural_id: Users-roor.osorio-Desktop-Rationale.src.agents.codex_detected_without_a_binary_is_skipped_without_aborting_other_agents
+  path_hint: src/agents.rs
+  provisional: true
+evidence: []
+risks:
+- id: risk.risk.agent-test-unix-path-is-platform-scoped.0
+  statement: El test sigue mutando PATH globalmente en Unix, aunque conserva directorios donde git resuelve; una futura ampliación debería preferir inyección de lookup si aparecen nuevas carreras.
+  epistemic_status: stated
+bound_revision: 31836d8f5924009602f098c361bcc447ab8200f3
+subject:
+  id: agent-integration-tests
+schema_version: rationale/0.1
+project_id: rationale
+status: pending

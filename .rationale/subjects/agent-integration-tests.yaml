@@ -1,0 +1,16 @@
+id: agent-integration-tests
+type: testing
+title: Pruebas de integración con agentes
+scope: project
+aliases: []
+applies_to:
+- src/agents.rs
+- src/agents.rs
+schema_version: rationale/0.1
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: mcp-client
+  proposed_at: epoch:1785367927
+  note: Propuesto por finalize_change. Sin autoridad hasta rationale review (evaluation.no-self-certification, Proceso §21).
