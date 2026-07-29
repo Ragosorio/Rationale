@@ -279,10 +279,7 @@ fn cmd_init(args: &[String]) {
         std::env::current_dir().unwrap_or_else(|e| fail(format!("no se pudo determinar cwd: {e}")));
     let rationale_dir = cwd.join(".rationale");
     if rationale_dir.exists() {
-        println!(
-            "{{\"status\":\"already-initialized\",\"path\":\"{}\"}}",
-            rationale_dir.display()
-        );
+        print_status_json("already-initialized", &rationale_dir);
     } else {
         // `bindings/` deliberadamente NO está en esta lista: ningún código lee
         // o escribe ahí — los bindings viven embebidos en
@@ -293,10 +290,7 @@ fn cmd_init(args: &[String]) {
             std::fs::create_dir_all(rationale_dir.join(sub))
                 .unwrap_or_else(|e| fail(format!("no se pudo crear .rationale/{sub}: {e}")));
         }
-        println!(
-            "{{\"status\":\"initialized\",\"path\":\"{}\"}}",
-            rationale_dir.display()
-        );
+        print_status_json("initialized", &rationale_dir);
     }
 
     // Todo lo que sigue es decoración y conveniencia para humanos — va a
@@ -365,30 +359,47 @@ fn cmd_health(args: &[String]) {
         }
     }
 
-    let provider_line = match &outcome.provider_error {
-        Some(e) => format!("\"provider_status\":\"unreachable\",\"provider_error\":\"{e}\""),
-        None => format!(
-            "\"provider_status\":\"{}\",\"provider_coverage\":\"{:?}\"",
-            match outcome.provider_status {
+    let mut payload = serde_json::json!({
+        "project_id": outcome.project_id,
+        "project_root": outcome.project_root.display().to_string(),
+        "git_revision": outcome.git_revision,
+        "working_tree_dirty": outcome.working_tree_dirty,
+    });
+    let object = payload.as_object_mut().expect("payload es un objeto");
+    match &outcome.provider_error {
+        Some(e) => {
+            object.insert("provider_status".into(), "unreachable".into());
+            object.insert("provider_error".into(), e.as_str().into());
+        }
+        None => {
+            let status = match outcome.provider_status {
                 providers::ProviderStatus::Successful => "successful",
                 providers::ProviderStatus::Degraded => "degraded",
                 providers::ProviderStatus::Unavailable => "unavailable",
-            },
-            outcome.provider_coverage
-        ),
-    };
+            };
+            object.insert("provider_status".into(), status.into());
+            object.insert(
+                "provider_coverage".into(),
+                format!("{:?}", outcome.provider_coverage).into(),
+            );
+        }
+    }
+    println!("{payload}");
+}
 
-    println!(
-        "{{\"project_id\":\"{}\",\"project_root\":\"{}\",\"git_revision\":{},\"working_tree_dirty\":{},{}}}",
-        outcome.project_id,
-        outcome.project_root.display(),
-        outcome
-            .git_revision
-            .map(|h| format!("\"{h}\""))
-            .unwrap_or_else(|| "null".to_string()),
-        outcome.working_tree_dirty,
-        provider_line
-    );
+/// Contrato JSON de una línea de `init`.
+///
+/// Se serializa con `serde_json`, nunca interpolando la ruta en un literal:
+/// en Windows `path` contiene `\`, que no es un escape JSON válido, y el
+/// contrato salía corrupto — dos tests de `tests/cli.rs` fallaban solo en esa
+/// plataforma con `Error("invalid escape")`. Escapar a mano habría sido
+/// reimplementar mal lo que `serde_json` ya hace.
+fn print_status_json(status: &str, path: &Path) {
+    println!("{}", status_json(status, path));
+}
+
+fn status_json(status: &str, path: &Path) -> String {
+    serde_json::json!({ "status": status, "path": path.display().to_string() }).to_string()
 }
 
 fn cmd_prepare(args: &[String]) {
@@ -1131,5 +1142,37 @@ fn run_git_config(repo_path: &Path, key: &str) -> Option<String> {
         None
     } else {
         Some(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// El contrato JSON de `init` se rompía en Windows porque la ruta se
+    /// interpolaba en un literal y `\` no es un escape JSON válido.
+    ///
+    /// `\` también es un carácter legal en un nombre de archivo Unix, así que
+    /// este test reproduce el fallo en cualquier plataforma: con el código
+    /// anterior, `from_str` devolvía `Error("invalid escape")`.
+    #[test]
+    fn init_status_json_survives_a_backslash_in_the_path() {
+        let path = Path::new(r"C:\Users\alguien\Desktop\Proyecto\.rationale");
+        let raw = status_json("already-initialized", path);
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&raw).expect("el contrato debe ser JSON válido");
+        assert_eq!(parsed["status"], "already-initialized");
+        assert_eq!(
+            parsed["path"].as_str().unwrap(),
+            path.display().to_string(),
+            "la ruta debe sobrevivir el round-trip sin alterarse"
+        );
+    }
+
+    #[test]
+    fn init_status_json_is_a_single_line() {
+        let raw = status_json("initialized", Path::new("/tmp/p/.rationale"));
+        assert_eq!(raw.lines().count(), 1, "stdout conserva una única línea");
     }
 }
