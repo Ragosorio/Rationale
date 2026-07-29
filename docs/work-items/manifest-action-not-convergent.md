@@ -1,6 +1,7 @@
 # Work item: manifest-action-not-convergent
 
-**Bloquea `v0.1.0-alpha.8`.** No bloquea la migración de los pilotos.
+**Estado: `implemented — pending integration and pilot validation`.**
+Bloqueaba `v0.1.0-alpha.8`. No bloqueó la migración de los pilotos.
 
 ## Problema
 
@@ -101,3 +102,49 @@ manifest: por eso este defecto llegó a un piloto real sin que nadie lo viera.
 `install-agent` corrido dos veces seguidas sobre un proyecto sin cambios deja
 el árbol de trabajo idéntico, y el test de convergencia lo garantiza contra
 regresión.
+
+## Resolución (2026-07-28)
+
+Implementado en `fix/manifest-action-convergence`. **Eran dos causas, no una.**
+El diagnóstico original de este work item nombraba solo la primera; la segunda
+apareció al exigir byte-identidad en los tests, y no se habría visto comparando
+campos uno a uno.
+
+**Causa 1 — sobrescritura del `action` histórico.** `record_entry` y
+`record_owned_entry` recibían `outcome.action`, que describe el estado del
+archivo *en la ejecución actual* (existía → `Modified`), y lo escribían encima
+del hecho histórico. La primera pasada registraba `Created`; la segunda lo
+volteaba a `Modified`.
+
+**Causa 2 — reordenamiento de entradas por `remove` + `push`.** Preservar
+`action` no bastaba. En una segunda pasada solo *algunas* entradas se
+re-registran —los skills se reescriben siempre; instrucciones y MCP solo si
+cambiaron— y con `remove` + `push` esas pocas saltaban al final, desplazando
+al resto. `AGENTS.md` pasaba de la posición 9 a la 3 sin que ningún dato
+cambiara.
+
+**Corrección.** `action` queda definido como hecho histórico —cómo adquirió
+Rationale la administración del archivo la primera vez— y documentado en el
+doc-comment de `FileAction`, que era el requisito de no dejar el campo
+ambiguo. `upsert_entry` sustituye a `remove` + `push`: actualiza la entrada
+existente **en su posición**, y solo añade al final lo que es nuevo. Se
+actualizan hash, `reversal` y la normalización de ruta; nunca el `action`. La
+migración desde rutas absolutas también lo preserva.
+
+**Evidencia.** Seis tests nuevos, escritos antes del arreglo:
+
+| Test | Cubre |
+|---|---|
+| `fresh_install_manifest_is_byte_identical_on_the_second_run` | Instalación nueva converge |
+| `legacy_manifest_migrates_once_then_converges` | Manifest de alpha.7: migra una vez, luego byte-idéntico |
+| `a_historically_created_entry_stays_created` | `created` sobrevive dos reinstalaciones |
+| `a_historically_modified_entry_stays_modified` | `modified` sobrevive incluso si se borra el archivo y la pasada observa una creación |
+| `uninstall_after_convergence_still_preserves_user_content` | La reversión sigue conservando lo del usuario |
+| `convergence_does_not_weaken_the_arbitrary_path_guard` | Las rutas arbitrarias se siguen rechazando |
+
+Los dos primeros **fallaron con el arreglo parcial** (solo causa 1) y son los
+que encontraron el reordenamiento. Suite completa: 247 tests, clippy y fmt
+limpios.
+
+Pendiente para cerrar: integración en `main` y comprobación de convergencia en
+disco sobre el piloto Monorepo.
