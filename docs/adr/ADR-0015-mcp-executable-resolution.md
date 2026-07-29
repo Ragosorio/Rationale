@@ -162,11 +162,12 @@ Claude Code.
   absoluta lo tapaba; ahora falla. Mitigación: Decision #4, y el instalador ya
   avisa cuando el directorio de instalación no está en el `PATH`.
 
-- **Un cliente lanzado desde la GUI no hereda el `PATH` del shell.** Es el
-  riesgo residual real, y la evidencia no lo cubre: solo se probó un cliente
-  lanzado desde un shell. Un Claude Code o un Cursor abierto desde Finder,
-  Spotlight o el Dock recibe el entorno de `launchd`, sin extensiones de
-  perfil.
+- **Un cliente podría recibir un `PATH` sin el directorio de instalación.**
+  Riesgo residual real y **abierto**. La validación #1 lo cierra únicamente
+  para Claude Code en la máquina y modalidad de lanzamiento probadas; como el
+  mecanismo por el que ese cliente obtuvo su `PATH` no se determinó, el
+  resultado no puede extrapolarse a otros clientes, otras máquinas ni otras
+  formas de arranque. Cursor sigue sin probar (validación #2).
 
   **Se acepta a sabiendas, no por descuido**, porque la comparación es
   asimétrica: la ruta absoluta falla para *todo* integrante que no sea quien
@@ -222,17 +223,19 @@ resolución del `PATH` y a nada más.
    cliente resolvió `rationale` **a `~/.local/bin`**, el directorio que la
    Evidence no cubría. Cierra ese hueco.
 
-   **Y cierra también el riesgo residual del lanzamiento desde GUI**, que era
-   la objeción más fuerte contra la Decision #1. El cliente probado es la
-   aplicación de escritorio de Claude Code, abierta como app, no desde un
-   shell — y aun así pasó a su subproceso un `PATH` que contiene
-   `~/.local/bin`, duplicado, lo cual es la firma de una resolución del perfil
-   del usuario (`~/.zshrc` y `~/.zprofile` lo exportan ambos) y no de una
-   herencia cruda de `launchd`.
+   **Qué se observó exactamente sobre el `PATH`:** el proceso recibió un
+   `PATH` que contenía `~/.local/bin` (aparecía dos veces). **El mecanismo por
+   el cual el cliente obtuvo ese `PATH` no se determinó.** Podría ser
+   resolución del perfil del usuario, herencia del entorno de un proceso
+   ancestro, o configuración propia del cliente; nada de lo medido distingue
+   entre esas hipótesis, y la duplicación por sí sola no prueba ninguna.
 
-   Alcance: vale para esta aplicación en esta máquina. No generaliza a todo
-   cliente MCP lanzado desde GUI, y el riesgo declarado se mantiene para los
-   que no se han probado.
+   **Alcance de lo que esta validación cierra:** el riesgo de resolución de
+   `PATH` queda cerrado **para Claude Code, en esta máquina y en esta
+   modalidad de lanzamiento**, y nada más. No se cierra para Cursor
+   (validación #2, pendiente), ni para otras modalidades de lanzamiento de
+   este mismo cliente, ni para clientes MCP no probados. El riesgo declarado
+   en §Risks se mantiene abierto para todos ellos.
 
 2. **Resolución en runtime en Cursor — ⏳ `pending validation`.** No ejecutada:
    `cursor-agent` no está en el `PATH` de la máquina de prueba. Se declara

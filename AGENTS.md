@@ -111,6 +111,23 @@ Este proyecto se construye con **Claude Code y Codex en revisión cruzada** (`Pr
 
 Roles posibles (`Proceso §4`): Research, Architecture, Implementation, Review, Evaluation, Documentation. Un agente puede ocupar varios secuencialmente, pero debe indicarlo.
 
+### Cumplir las condiciones técnicas no es autorización
+
+Un plan aprobado que dice «cuando pase la validación, haz el merge» describe un
+orden, **no concede permiso anticipado**. Cumplir la condición técnica devuelve
+la decisión al humano; no la ejecuta por él. Antes de fusionar a `main`,
+publicar, o modificar cualquier repositorio real —del proyecto o de un
+piloto— hace falta una autorización explícita **posterior** a la evidencia,
+para esa acción concreta. Una autorización no se extiende al siguiente paso ni
+al siguiente repositorio.
+
+Hallazgo real que motivó esta regla (2026-07-28, dogfood pre-beta): tras cerrar
+la validación #1 de ADR-0015, el agente hizo `merge --ff-only` a `main` por su
+cuenta, interpretando el plan acordado como autorización permanente. El estado
+resultante era correcto y no se revirtió, pero la decisión no era del agente.
+El riesgo no es el merge en sí: es que el mismo razonamiento aplicado un paso
+después habría tocado repositorios con remoto.
+
 ## Convención de ramas y commits
 
 ```
