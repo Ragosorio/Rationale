@@ -251,6 +251,16 @@ pub fn install(
                     ));
                 }
             }
+            None if find_on_path(target.detect_binary).is_none() => {
+                // Detectado por configuración del proyecto (p. ej. `AGENTS.md`
+                // heredado), no por PATH: no hay binario que invocar. Fallar
+                // aquí abortaría la instalación completa de los demás agentes
+                // por un target que ni siquiera está instalado en esta máquina.
+                report.actions.push(format!(
+                    "{}: no se encontró el binario en PATH, se omite el registro global de MCP",
+                    target.name
+                ));
+            }
             None => {
                 let registered = register_codex_mcp(binary_path, dry_run)?;
                 report.actions.push(format!(
@@ -2101,6 +2111,74 @@ mod tests {
         assert!(
             manifest_path(&local).exists(),
             "si hay agentes detectados, install debe llegar a escribir el manifest"
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// Restaura `PATH` al salir del scope, incluso si el test panica —
+    /// mutar una variable de entorno es intrínsecamente global al proceso,
+    /// así que sin esto un panic dejaría el resto de la suite corriendo con
+    /// un `PATH` equivocado.
+    struct PathOverride(Option<std::ffi::OsString>);
+
+    impl PathOverride {
+        /// Sin ningún directorio que pueda contener `claude`, `codex` o
+        /// `cursor-agent` — pero con `/usr/bin` y `/bin`, para que `git`
+        /// (que `install` invoca internamente) siga resolviendo.
+        fn without_any_agent_binary() -> Self {
+            let original = std::env::var_os("PATH");
+            std::env::set_var("PATH", "/usr/bin:/bin");
+            PathOverride(original)
+        }
+    }
+
+    impl Drop for PathOverride {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(value) => std::env::set_var("PATH", value),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+    }
+
+    /// El defecto que sembrar la detección expuso: `codex` detectado por un
+    /// `AGENTS.md` heredado, sin el binario en `PATH`, abortaba la
+    /// instalación completa — incluidos los demás agentes — en vez de
+    /// omitirse con un aviso.
+    #[test]
+    fn codex_detected_without_a_binary_is_skipped_without_aborting_other_agents() {
+        let repo = git_repo("codex-no-binary");
+        let local = repo.join(".rationale-local");
+
+        let report = {
+            let _path = PathOverride::without_any_agent_binary();
+            install(&repo, &local, &fake_binary(), false).expect(
+                "la ausencia del binario de codex no puede abortar la instalación de los demás agentes",
+            )
+        };
+
+        assert!(
+            report.detected.contains(&"codex".to_string()),
+            "codex se detecta por AGENTS.md aunque el binario no exista: {:?}",
+            report.detected
+        );
+        assert!(
+            report.detected.contains(&"claude-code".to_string())
+                && report.detected.contains(&"cursor".to_string()),
+            "los demás agentes deben seguir instalándose: {:?}",
+            report.detected
+        );
+        assert!(
+            report
+                .actions
+                .iter()
+                .any(|a| a.contains("codex") && a.contains("no se encontró el binario en PATH")),
+            "el reporte debe avisar que se omitió el registro global de codex: {:?}",
+            report.actions
+        );
+        assert!(
+            manifest_path(&local).exists(),
+            "el manifest debe escribirse aunque codex se haya omitido"
         );
         std::fs::remove_dir_all(repo).ok();
     }
