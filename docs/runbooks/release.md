@@ -1,6 +1,6 @@
 # Release runbook
 
-La Release pública vigente es `v0.1.0-alpha.7`, construida directamente desde
+La Release pública vigente es `v0.1.0-beta.1`, construida directamente desde
 `main`. La rama `release/v0.1.0-alpha.1` contuvo el desarrollo hasta alpha.6 y
 ya se fusionó a `main`; el trabajo activo no vive ahí. Los tags `dogfood.*`
 quedan como iteraciones históricas de hardening y no deben usarse para validar
@@ -20,8 +20,8 @@ el flujo actual.
 ## Tag y publicación
 
 ```bash
-git tag -a v0.1.0-alpha.7 -m "Rationale alpha 7"
-git push origin v0.1.0-alpha.7
+git tag -a v0.1.0-beta.1 -m "Rationale beta 1"
+git push origin v0.1.0-beta.1
 ```
 
 La workflow [`release.yml`](../../.github/workflows/release.yml) construye los

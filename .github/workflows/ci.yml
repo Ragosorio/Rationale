@@ -5,6 +5,26 @@ on:
   pull_request:
 
 jobs:
+  # La landing y la documentación pública nunca se construían en CI: `npm run
+  # check` existía desde el principio y no lo ejecutaba nadie, así que el sitio
+  # podía romperse —o quedar con una versión rancia— sin que ningún check lo
+  # notara. Las páginas del prompt maestro inyectan `docs/prompt-master.md` con
+  # `?raw`, así que este job también es lo que detecta que ese archivo se rompa.
+  site:
+    name: site (build + static checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+        working-directory: site
+      - run: npm run check
+        working-directory: site
+
   quality:
     name: quality (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

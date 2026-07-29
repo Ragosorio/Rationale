@@ -16,7 +16,7 @@ optional: without it, Rationale reports degraded coverage and keeps working.
 ## Install
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.7/rationale-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.1/rationale-installer.sh | sh
 rationale --version
 ```
 

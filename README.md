@@ -19,7 +19,7 @@ está el código, sino también **por qué** debe seguir funcionando así.
 
 `main` contiene el núcleo funcional y el ciclo completo de captura y
 revisión (la rama `release/v0.1.0-alpha.1` desarrolló hasta alpha.6 y ya se
-fusionó ahí). La Release pública verificable actual es `v0.1.0-alpha.7`.
+fusionó ahí). La Release pública verificable actual es `v0.1.0-beta.1`.
 Consulta los
 gates y la historia en [`CHANGELOG.md`](CHANGELOG.md) y
 [`docs/runbooks/release.md`](docs/runbooks/release.md).
@@ -35,7 +35,7 @@ prepara; la CLI interactiva es la frontera humana de aprobación y lifecycle.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.7/rationale-installer.sh | sh
+  https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.1/rationale-installer.sh | sh
 rationale --help
 ```
 
@@ -43,7 +43,7 @@ rationale --help
 
 ```powershell
 $installer = Join-Path $env:TEMP "rationale-installer.ps1"
-Invoke-WebRequest https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.7/rationale-installer.ps1 -OutFile $installer
+Invoke-WebRequest https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.1/rationale-installer.ps1 -OutFile $installer
 & $installer
 rationale.exe --help
 ```

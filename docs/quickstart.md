@@ -11,7 +11,7 @@ Es local-first: sin servidor, sin cuenta, sin API de pago. La memoria de código
 ## Instalar
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-alpha.7/rationale-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.1/rationale-installer.sh | sh
 ```
 
 Esto coloca el binario en `~/.local/bin` (o `$RATIONALE_INSTALL_DIR`) y, si detecta `codex` en el `PATH`, registra el servidor MCP globalmente. Todavía no toca ningún proyecto — eso ocurre en el siguiente paso.
