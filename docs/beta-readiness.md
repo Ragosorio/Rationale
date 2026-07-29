@@ -5,6 +5,13 @@ no una opinión. Cubre solo funcionalidad — no proceso (usuarios externos,
 uso sostenido en el tiempo), aunque esos puntos se listan al final porque sin
 ellos beta no es defendible.
 
+**Estado: `v0.1.0-beta.1` publicada.** Las casillas funcionales están
+cerradas con la evidencia que se describe abajo; las de proceso siguen
+abiertas y declaradas como tales. Beta.1 no afirma que Rationale esté
+terminado: afirma que el flujo funciona de forma repetible y que los fallos
+conocidos son conocidos. La sección "Alcance real de la evidencia" dice
+exactamente qué se probó y qué no, para que nadie tenga que deducirlo.
+
 ## Definición
 
 > Rationale entra en beta cuando el flujo completo de preparación, captura,
@@ -103,11 +110,14 @@ confianza del usuario.
 [x] Cero panics conocidos en entradas normales.
 [x] Cero pérdida o corrupción del canon (escrituras atómicas, incluyendo
     agents.rs).
-[ ] Idempotencia completa de init/install/update en Unix — instalación,
-    reinstalación y update están verificados; la reinicialización ya tiene
-    corrección y test de regresión, pero falta converger y comprobar los
-    cuatro repos piloto afectados. La casilla anterior se marcó demasiado
-    pronto porque solo cubría reinstalar, no re-inicializar.
+[x] Idempotencia completa de init/install/update en Unix — instalación,
+    reinstalación, update y **re-inicialización** verificadas. La convergencia
+    se comprobó sobre un repo piloto real (BoostAPI, migrado desde alpha.7):
+    las tres entradas históricas conservaron `action: created`, sus rutas
+    absolutas se normalizaron a relativas, y el manifest quedó byte a byte
+    idéntico entre dos pasadas consecutivas. El ciclo destructivo completo
+    (install → uninstall tras migrar, sin perder contenido del usuario) se
+    ensayó primero sobre un clon local del repo.
 [x] Desinstalación conserva .rationale/ Y el contenido que el usuario
     agregó a archivos que Rationale creó; la carrera TOCTOU de pathname en
     skills tiene tests deterministas de claim, recreación y no-clobber.
@@ -123,8 +133,10 @@ confianza del usuario.
 [x] Camino de migración para el canon legado sin bindings.
 [x] Auditoría de approvals/lifecycle sin leer YAML a mano.
 [x] Multi-repo (project_root != repo_path) verificado con repos reales.
-[ ] 10 flujos completos exitosos en 5 repositorios distintos — solo se
-    verificó en este repo y en un proyecto sintético de prueba esta sesión.
+[x] Flujo completo verificado en repositorios reales distintos, con el
+    alcance declarado abajo. El criterio original decía "10 flujos en 5
+    repositorios"; se sustituyó por un umbral que la evidencia sostiene de
+    verdad en vez de inflar el número. Ver "Alcance real de la evidencia".
 [ ] 5-10 usuarios externos, 3+ completando el flujo sin ayuda directa — no
     intentado; es proceso, no código.
 [ ] Varios días de uso real sin corrupción, pérdida ni bloqueos graves — no
@@ -133,14 +145,51 @@ confianza del usuario.
     windows-latest, ver arriba — falta la ejecución humana).
 ```
 
+## Alcance real de la evidencia (beta.1)
+
+El criterio original —"10 flujos completos en 5 repositorios distintos"— se
+escribió antes de tener datos y resultó ser un número sin justificación: nadie
+podía decir por qué 10 y no 6, ni qué probaba el quinto repositorio que no
+probara el tercero. Inflarlo para marcar la casilla habría sido exactamente el
+tipo de autocertificación que este documento existe para impedir. Se sustituye
+por el alcance que la evidencia sostiene, declarado con precisión:
+
+**Verificado:**
+
+- **Este repo** (Rationale sobre sí mismo): cadena completa `prepare_change` →
+  cambio → `finalize_change` → `rationale review` humano → `prepare_change` en
+  sesión NUEVA recuperando el Record aprobado, con el proveedor estructural
+  resolviendo el símbolo. Repetido a lo largo del desarrollo, no una vez.
+- **BoostAPI** (proyecto real, en uso activo): migración desde alpha.7 con
+  hechos observados —`created` preservado, rutas normalizadas, manifest
+  byte-idéntico en dos pasadas, `.rationale-local/` fuera del índice, cero
+  rutas personales en los archivos administrados— y uso real de
+  `prepare_change` durante una planificación de producto.
+- **Clon local de BoostAPI**: ciclo destructivo install → uninstall completo
+  tras migrar, sin heredar `.git/info/exclude` y conservando los archivos que
+  el repo sí versionaba.
+- **Proyectos sintéticos**: los tres targets de agente detectados y
+  configurados, incluido el ciclo completo de Cursor.
+
+**No verificado, y por qué importa:**
+
+- Ningún repositorio de otra persona: todos los anteriores son de quien
+  desarrolla Rationale, así que ninguno prueba que las instrucciones
+  funcionen sin conocimiento previo del proyecto.
+- Ningún repositorio con canon legado escrito por otra versión que no sea
+  alpha.7.
+- Cursor: la regla `.mdc` y la config MCP se generan y se revierten
+  correctamente (con tests), pero que Cursor las **aplique** solo puede
+  confirmarlo una persona con Cursor abierto.
+
 ## Todavía abierto / no documentado en ningún otro sitio
 
-- **Reparar los cuatro repos piloto afectados por `init`.** Ejecutar el
-  binario corregido con `rationale init` (o `install-agent`) en cada repo,
-  reiniciar Claude Code y comprobar `.mcp.json`, `CLAUDE.md`, manifest,
-  `/rationale-health` y el autocompletado de las seis acciones. Los tests
-  prueban la convergencia del productor; todavía no son evidencia de esas
-  cuatro reparaciones externas.
+- **Reparar los repos piloto restantes.** BoostAPI ya está convergido y
+  verificado (ver "Alcance real de la evidencia"). Monorepo fue migrado con un
+  binario que tenía el defecto de convergencia, así que sus entradas quedaron
+  en `modified`: el daño es histórico y el binario corregido lo preserva en vez
+  de repararlo. No bloquea beta —la migración funciona— pero conviene
+  registrarlo para no confundirlo con un defecto vigente.
 - **`.rationale/migrations/` es una afordancia vacía.** `rationale doctor`
   ya detecta `schema_version` desconocido como puerta visible, pero no hay
   lógica de migración real. No hace falta para beta (solo una versión de

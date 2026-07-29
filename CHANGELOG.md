@@ -3,6 +3,67 @@
 Los cambios importantes se registran aquí por Release. El detalle técnico de
 cada cambio vive en commits, ADRs y work items enlazados.
 
+## v0.1.0-beta.1
+
+Primera beta. Rationale entra en beta porque el flujo completo —preparar,
+capturar, revisar y recuperar decisiones— funciona de forma repetible sobre un
+proyecto real en uso, no porque esté terminado. `docs/beta-readiness.md`
+declara con precisión qué se probó y qué no.
+
+**El canal `stable` servía un build de dogfood.** GitHub solo marca «latest»
+una Release que no sea prerelease, y `releases/latest` es lo que resuelve el
+canal `stable` de los instaladores. El workflow marcaba `--prerelease` a
+cualquier tag con guión, así que las siete alphas quedaron todas como
+prerelease y «latest» se quedó anclado en `v0.0.0-dogfood.7` — anterior a
+`install-agent` y a la mitad del CLI actual. Cualquiera que instalara por ese
+canal recibía ese binario. Ahora solo `-alpha.`, `-rc.` y `-dogfood.` son
+prerelease (ADR-0010).
+
+**Cursor estaba roto, no solo sin validar.** `install-agent` escribía en
+`.cursor/rules/rationale.mdc` el mismo bloque markdown que en `CLAUDE.md`, sin
+el frontmatter YAML que Cursor exige para aplicar una regla: el protocolo
+terminaba en un archivo que el agente ignoraba. Además Cursor no se detectaba
+si el proyecto solo tenía `.cursor/` sin `mcp.json` y el usuario no tenía el
+CLI `cursor-agent`. Se corrigen las dos cosas, y `uninstall-agent` ya no deja
+el frontmatter huérfano. Que Cursor **aplique** la regla lo confirma una
+persona, no CI.
+
+**Una decisión por Record.** `finalize_change` ataba un binding a todo archivo
+del diff, lo que empujaba a escribir un Record único gigante en vez de varios
+pequeños. Se observó en uso real: una planificación produjo un Record atando
+doce documentos cuando su propio contenido especificaba diez decisiones. El
+prompt maestro ahora instruye dividir —con criterio de cuándo y cuándo no— y
+`governs_paths` permite que cada Record ate solo lo que gobierna. Omitirlo
+conserva el comportamiento anterior; declarar una ruta que no está en el diff
+falla en vez de fabricar un binding no verificable.
+
+**`/rationale-health` no funcionaba en una instalación limpia.** El skill no
+declaraba el permiso Bash de su propia inyección, así que pedía aprobación
+interactiva; y una vez concedida, seguía marcándose como fallo porque
+`doctor --check` sale 1 tanto por hallazgos normales —su propósito— como por
+errores reales. Ahora declara el permiso exacto y distingue los dos casos por
+contenido, sin `|| true` indiscriminado.
+
+**La documentación pública dejó de ir a la deriva.** La versión estaba copiada
+a mano en diecinueve sitios sin ninguna guarda; `docs/RELEASE_VERSION` es ahora
+la única fuente y CI falla si alguna mención se desvía. El prompt maestro en
+español estaba un paso detrás del inglés —el que se compila al binario— y un
+usuario que lo leyera recibía instrucciones distintas de las que su agente
+tenía instaladas. Y el sitio nunca se construía en CI: `npm run check` existía
+y no lo ejecutaba nadie.
+
+**Limitaciones conocidas de esta beta**, declaradas en vez de omitidas:
+
+- Windows pasa CI de punta a punta, incluido el smoke test de empaquetado, pero
+  nadie ha instalado y usado el binario en una máquina Windows física.
+- Cursor: los archivos se generan y revierten correctamente, con tests; que
+  Cursor los aplique requiere confirmación humana.
+- Ningún repositorio de otra persona: toda la evidencia proviene de proyectos
+  de quien desarrolla Rationale, así que nada prueba todavía que las
+  instrucciones funcionen sin conocimiento previo.
+- `.rationale/migrations/` sigue siendo una afordancia vacía: solo existe una
+  versión de schema, y `doctor` ya detecta una desconocida como puerta visible.
+
 ## Sin publicar
 
 - **`windows-latest` y CI sin agentes instalados encontraron cuatro defectos
