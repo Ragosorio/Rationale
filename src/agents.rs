@@ -1246,43 +1246,82 @@ fn manifest_relative_path(project_root: &Path, path: &Path) -> PathBuf {
 fn migrate_legacy_absolute_entries(manifest: &mut Manifest, project_root: &Path) -> usize {
     let mut migrated = 0;
     for entry in &mut manifest.entries {
-        if entry.path.is_relative() {
+        // Ya es exactamente un destino administrado relativo: nada que migrar,
+        // y saltarlo evita reescribirlo en cada pasada.
+        if recognized_managed_suffix(&entry.path).as_deref() == Some(entry.path.as_path()) {
             continue;
         }
-        if entry.path.starts_with(project_root) {
-            // Absoluta pero dentro del proyecto: relativizar es exacto.
-            if let Ok(relative) = entry.path.strip_prefix(project_root) {
-                entry.path = relative.to_path_buf();
+        // Ni `is_absolute()` ni `starts_with` deciden esto. En Windows,
+        // `/otro/proyecto/CLAUDE.md` **no** es absoluta —le falta la letra de
+        // unidad— así que la versión anterior la trataba como ya relativa y la
+        // saltaba, dejando una entrada externa que abortaba `uninstall-agent`.
+        // Lo que importa no es la forma de la ruta sino a qué destino apunta.
+        let normalized = entry
+            .path
+            .strip_prefix(project_root)
+            .ok()
+            .map(Path::to_path_buf)
+            .or_else(|| recognized_managed_suffix(&entry.path));
+
+        if let Some(new_path) = normalized {
+            if new_path != entry.path {
+                entry.path = new_path;
                 migrated += 1;
             }
-            continue;
-        }
-        if let Some(relative) = recognized_managed_suffix(&entry.path) {
-            entry.path = relative;
-            migrated += 1;
         }
     }
     migrated
 }
 
-/// Sufijo administrado que una ruta absoluta heredada reconoce, si alguno.
-fn recognized_managed_suffix(path: &Path) -> Option<PathBuf> {
-    let text = path.to_str()?.replace('\\', "/");
+/// Componentes de una ruta tratando `/` y `\` como separadores **en cualquier
+/// plataforma**.
+///
+/// `Path::components` no basta: en Unix `\` no es separador, así que una ruta
+/// escrita en Windows se leería como un único componente, y en Windows una
+/// ruta escrita en Unix no se reconocería como absoluta. Canonizar así los
+/// **dos** operandos —no solo uno— es lo que hace la comparación simétrica.
+fn portable_components(path: &Path) -> Vec<String> {
+    path.to_string_lossy()
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != ".")
+        .map(str::to_string)
+        .collect()
+}
 
+/// Todos los destinos que `install-agent` administra, como rutas relativas.
+/// Fuente única: `TARGETS` + `prompts::ACTIONS`, para que un agente o una
+/// acción nuevos queden cubiertos sin tocar esta lista.
+fn managed_destinations() -> Vec<String> {
+    let mut destinations = Vec::new();
     for target in TARGETS {
-        for candidate in std::iter::once(target.instructions_file).chain(target.mcp_config_file) {
-            if text == candidate || text.ends_with(&format!("/{candidate}")) {
-                return Some(PathBuf::from(candidate));
+        destinations.push(target.instructions_file.to_string());
+        if let Some(config) = target.mcp_config_file {
+            destinations.push(config.to_string());
+        }
+        if let Some(skills_dir) = target.skills_dir {
+            for action in crate::prompts::ACTIONS {
+                destinations.push(format!("{skills_dir}/rationale-{}/SKILL.md", action.name));
             }
         }
-        let Some(skills_dir) = target.skills_dir else {
+    }
+    destinations
+}
+
+/// Destino administrado en el que termina esta ruta, si alguno.
+///
+/// Compara por componentes, no por subcadena: `…/mi-CLAUDE.md` no debe
+/// reconocerse como `CLAUDE.md`. La guarda contra rutas arbitrarias depende de
+/// que esto sea estricto.
+fn recognized_managed_suffix(path: &Path) -> Option<PathBuf> {
+    let actual = portable_components(path);
+    for candidate in managed_destinations() {
+        let wanted = portable_components(Path::new(&candidate));
+        if wanted.is_empty() || actual.len() < wanted.len() {
             continue;
-        };
-        for action in crate::prompts::ACTIONS {
-            let candidate = format!("{skills_dir}/rationale-{}/SKILL.md", action.name);
-            if text == candidate || text.ends_with(&format!("/{candidate}")) {
-                return Some(PathBuf::from(candidate));
-            }
+        }
+        if actual[actual.len() - wanted.len()..] == wanted[..] {
+            // Reconstruido desde componentes: separadores nativos.
+            return Some(wanted.iter().collect());
         }
     }
     None
@@ -1298,13 +1337,14 @@ fn existing_entry_index(
     project_root: &Path,
     absolute: &Path,
 ) -> Option<usize> {
+    // Ambos operandos se canonizan a componentes portables, y se acepta tanto
+    // la forma relativa como la absoluta: un manifest heredado puede tener
+    // cualquiera de las dos, y `is_absolute()` no es fiable entre plataformas.
+    let relative = portable_components(&manifest_relative_path(project_root, absolute));
+    let full = portable_components(absolute);
     manifest.entries.iter().position(|entry| {
-        let resolved = if entry.path.is_absolute() {
-            entry.path.clone()
-        } else {
-            project_root.join(&entry.path)
-        };
-        resolved == absolute
+        let existing = portable_components(&entry.path);
+        existing == relative || existing == full
     })
 }
 
@@ -2410,6 +2450,95 @@ mod tests {
             "se conserva intacta para que la guarda la siga rechazando"
         );
 
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// El reconocimiento debe ser simétrico entre plataformas: una ruta con
+    /// separadores Windows y otra con separadores Unix apuntan al mismo
+    /// destino y deben reconocerse igual, se ejecute donde se ejecute.
+    #[test]
+    fn managed_suffix_is_recognized_with_either_separator() {
+        let unix = Path::new("/otro/proyecto/.claude/skills/rationale-health/SKILL.md");
+        let windows =
+            Path::new(r"C:\Users\alguien\Proyecto\.claude\skills\rationale-health\SKILL.md");
+        let mixed =
+            Path::new(r"C:\Users\alguien\Proyecto/.claude\skills/rationale-health/SKILL.md");
+
+        let expected: PathBuf = [".claude", "skills", "rationale-health", "SKILL.md"]
+            .iter()
+            .collect();
+        for path in [unix, windows, mixed] {
+            assert_eq!(
+                recognized_managed_suffix(path),
+                Some(expected.clone()),
+                "no se reconoció el destino administrado en {}",
+                path.display()
+            );
+        }
+
+        // Y lo mismo para un archivo de instrucciones en la raíz.
+        for path in [
+            Path::new("/otro/proyecto/CLAUDE.md"),
+            Path::new(r"C:\Users\alguien\Proyecto\CLAUDE.md"),
+        ] {
+            assert_eq!(
+                recognized_managed_suffix(path),
+                Some(PathBuf::from("CLAUDE.md")),
+                "no se reconoció CLAUDE.md en {}",
+                path.display()
+            );
+        }
+    }
+
+    /// La comparación es por componentes, no por subcadena: si fuera textual,
+    /// `mi-CLAUDE.md` terminaría en «CLAUDE.md» y la guarda se caería.
+    #[test]
+    fn managed_suffix_never_matches_a_partial_component() {
+        for path in [
+            Path::new("/otro/proyecto/mi-CLAUDE.md"),
+            Path::new(r"C:\Proyecto\notasCLAUDE.md"),
+            Path::new("/otro/proyecto/CLAUDE.md.bak"),
+            Path::new("/otro/proyecto/.claude/skills/rationale-health/SKILL.md.orig"),
+        ] {
+            assert_eq!(
+                recognized_managed_suffix(path),
+                None,
+                "{} no es un destino administrado y no puede reconocerse",
+                path.display()
+            );
+        }
+    }
+
+    /// Una ruta estilo Unix **no es** `is_absolute()` en Windows: le falta la
+    /// letra de unidad. La versión anterior la saltaba como «ya relativa» y
+    /// dejaba una entrada externa que abortaba `uninstall-agent`.
+    #[test]
+    fn migration_normalizes_a_unix_style_path_on_any_platform() {
+        let project = temp_dir("migrate-unix-style");
+        let mut manifest = Manifest {
+            entries: vec![InstalledEntry {
+                agent: "claude-code".to_string(),
+                path: PathBuf::from("/otro/proyecto/CLAUDE.md"),
+                action: FileAction::Created,
+                reversal: ReversalStrategy::ManagedPart,
+                content_hash: None,
+            }],
+        };
+
+        assert_eq!(migrate_legacy_absolute_entries(&mut manifest, &project), 1);
+        assert_eq!(manifest.entries[0].path, PathBuf::from("CLAUDE.md"));
+        assert_eq!(
+            manifest.entries[0].action,
+            FileAction::Created,
+            "migrar preserva el hecho histórico"
+        );
+
+        // Segunda pasada: ya está normalizada, no vuelve a contarse.
+        assert_eq!(
+            migrate_legacy_absolute_entries(&mut manifest, &project),
+            0,
+            "una entrada ya normalizada no se re-migra"
+        );
         std::fs::remove_dir_all(project).ok();
     }
 
