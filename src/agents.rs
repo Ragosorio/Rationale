@@ -2054,12 +2054,55 @@ mod tests {
             .expect("git debe estar disponible para estos tests")
     }
 
+    /// Siembra la condición de detección de los tres agentes en el proyecto.
+    ///
+    /// `install` detecta un agente si su binario está en el `PATH` **o** si el
+    /// proyecto ya tiene su configuración. Sin sembrar, el resultado dependía
+    /// de si la máquina tenía `claude`, `codex` o `cursor-agent` instalados:
+    /// en la del desarrollador sí, en los runners de CI no, y `install`
+    /// retornaba temprano sin escribir nada. Tres tests fallaban en las tres
+    /// plataformas de CI y otro pasaba por la razón equivocada.
+    ///
+    /// Se siembra lo mínimo que dispara la detección sin predeterminar lo que
+    /// los tests comprueban: el **directorio** de skills para claude-code —no
+    /// `CLAUDE.md` ni `.mcp.json`, cuyo `action` varios tests afirman—, y la
+    /// configuración de los otros dos.
+    fn seed_agent_detection(project: &Path) {
+        std::fs::create_dir_all(project.join(".claude/skills")).unwrap();
+        std::fs::write(project.join("AGENTS.md"), "# Del proyecto\n").unwrap();
+        std::fs::create_dir_all(project.join(".cursor")).unwrap();
+        std::fs::write(project.join(".cursor/mcp.json"), "{}\n").unwrap();
+    }
+
     fn git_repo(label: &str) -> PathBuf {
         let repo = temp_dir(label);
         git(&repo, &["init", "-q"]);
         git(&repo, &["config", "user.email", "test@example.com"]);
         git(&repo, &["config", "user.name", "Test"]);
+        seed_agent_detection(&repo);
         repo
+    }
+
+    /// Ningún test puede depender de qué agentes tenga instalados la máquina.
+    #[test]
+    fn seeded_fixture_detects_every_agent_without_any_binary_on_path() {
+        let repo = git_repo("seed-detection");
+        let local = repo.join(".rationale-local");
+        let report = install(&repo, &local, &fake_binary(), false).unwrap();
+
+        for target in TARGETS {
+            assert!(
+                report.detected.iter().any(|d| d == target.name),
+                "{} debe detectarse por configuración del proyecto, no por PATH: {:?}",
+                target.name,
+                report.detected
+            );
+        }
+        assert!(
+            manifest_path(&local).exists(),
+            "si hay agentes detectados, install debe llegar a escribir el manifest"
+        );
+        std::fs::remove_dir_all(repo).ok();
     }
 
     /// El test que ADR-0012 necesitaba y no tuvo: qué dice Git, no qué creemos.
@@ -2186,6 +2229,7 @@ mod tests {
     #[test]
     fn install_outside_a_git_repository_does_not_fail() {
         let project = temp_dir("exclude-no-git");
+        seed_agent_detection(&project);
         let local = project.join(".rationale-local");
         assert!(
             !ensure_local_data_excluded(&project, false).unwrap(),
@@ -2252,6 +2296,7 @@ mod tests {
     #[test]
     fn install_migrates_a_moved_projects_legacy_manifest_and_uninstall_then_works() {
         let project = temp_dir("legacy-moved");
+        seed_agent_detection(&project);
         let local = project.join(".rationale-local");
         let claude_md = project.join("CLAUDE.md");
         upsert_instructions_block(&claude_md, false).unwrap();
@@ -2762,16 +2807,36 @@ mod tests {
         )
         .unwrap();
 
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        let report = install(&repo, &local, &fake_binary(), false).unwrap();
 
-        let raw = manifest_bytes(&local);
+        // Sin esto el test pasaba por la razón equivocada: si `install`
+        // retornaba temprano por no detectar agentes, el manifest quedaba
+        // intacto y las dos afirmaciones de abajo se cumplían sin haber
+        // ejercitado nada. Primero hay que demostrar que la instalación
+        // ocurrió de verdad.
         assert!(
-            raw.contains("/Users/alguien/Documents/notas.md"),
-            "una ruta arbitraria no se normaliza: se conserva intacta"
+            !report.detected.is_empty(),
+            "el fixture debe detectar agentes; si no, nada de lo que sigue prueba algo"
+        );
+        let manifest: Manifest = serde_json::from_str(&manifest_bytes(&local)).unwrap();
+        assert!(
+            manifest
+                .entries
+                .iter()
+                .any(|e| e.path == Path::new("CLAUDE.md")),
+            "install debe haber registrado sus propios destinos administrados"
+        );
+
+        assert!(
+            manifest
+                .entries
+                .iter()
+                .any(|e| e.path == Path::new("/Users/alguien/Documents/notas.md")),
+            "y aun así una ruta arbitraria no se normaliza: se conserva intacta"
         );
         assert!(
             uninstall(&repo, &local).is_err(),
-            "y la guarda debe seguir rechazándola"
+            "la guarda debe seguir rechazándola"
         );
         std::fs::remove_dir_all(repo).ok();
     }
