@@ -1156,6 +1156,7 @@ const MCP_COMMAND: &str = "rationale";
 /// del shell: `~/.local/bin` —donde el instalador pone el binario— queda
 /// invisible. El comando lógico de la configuración MCP entonces no resuelve y
 /// el cliente reporta el servidor como no disponible, sin explicación.
+#[cfg(unix)]
 const GUI_VISIBLE_BIN_DIRS: &[&str] = &["/usr/local/bin", "/usr/bin", "/bin", "/opt/homebrew/bin"];
 
 /// Aviso cuando el comando lógico de la config MCP no sería resoluble por un
@@ -1165,6 +1166,20 @@ const GUI_VISIBLE_BIN_DIRS: &[&str] = &["/usr/local/bin", "/usr/bin", "/bin", "/
 /// deliberadamente, para no dejar la ruta personal de alguien en una
 /// configuración compartida y versionada. Lo que faltaba era decirle al
 /// usuario por qué su cliente gráfico no lo encuentra.
+///
+/// Solo Unix. El diagnóstico describe un mecanismo concreto —el `PATH` de
+/// `launchd` en macOS, y los lanzadores de escritorio en Linux— que no existe
+/// en Windows: allí una aplicación gráfica hereda el `PATH` del usuario desde
+/// el registro, el mismo que ve un terminal. Emitirlo ahí sería afirmar un
+/// problema que no se comprobó. `windows-latest` lo encontró de inmediato: una
+/// ruta estilo Unix no es `is_absolute()` en Windows, el mismo patrón que ya
+/// había roto la migración de manifests.
+#[cfg(not(unix))]
+fn gui_path_resolution_warning() -> Option<String> {
+    None
+}
+
+#[cfg(unix)]
 fn gui_path_resolution_warning() -> Option<String> {
     let resolved = find_on_path(MCP_COMMAND)?;
     let dir = resolved.parent()?;
@@ -2019,6 +2034,7 @@ mod tests {
     /// "MCP rationale no disponible" sin ninguna explicación, mientras Codex y
     /// Claude Code en terminal funcionan. La causa es el `PATH` de `launchd`,
     /// que no incluye `~/.local/bin`.
+    #[cfg(unix)]
     #[test]
     fn gui_path_warning_fires_only_for_dirs_a_gui_client_cannot_see() {
         // No se puede mover el binario real, así que se comprueba la regla que
