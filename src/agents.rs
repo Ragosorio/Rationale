@@ -37,7 +37,36 @@ struct AgentTarget {
     mcp_config_file: Option<&'static str>,
     /// Directorio de skills por proyecto, si el agente los consume.
     skills_dir: Option<&'static str>,
+    /// Cabecera que el archivo de instrucciones necesita para que el agente
+    /// lo reconozca, escrita **solo al crearlo**.
+    ///
+    /// `CLAUDE.md` y `AGENTS.md` son markdown que el cliente lee entero, así
+    /// que no necesitan ninguna: `None`. Una regla de Cursor
+    /// (`.cursor/rules/*.mdc`) sí — sin su frontmatter YAML, Cursor no la
+    /// aplica, y el bloque quedaba escrito en un archivo que el agente
+    /// ignoraba. Va solo al crear porque un archivo que ya existe tiene su
+    /// propia cabecera: insertar una segunda a mitad del archivo lo
+    /// corrompería.
+    file_preamble: Option<&'static str>,
+    /// Directorio cuya presencia prueba que el proyecto ya usa este agente,
+    /// cuando no hay un archivo concreto que lo delate.
+    ///
+    /// `claude-code` ya se detecta por `skills_dir` (`.claude/skills`).
+    /// Cursor no tenía equivalente: se detectaba solo por `.cursor/mcp.json`
+    /// o por su propia regla, así que un proyecto abierto en el IDE de Cursor
+    /// —que crea `.cursor/` pero no `mcp.json`— nunca se detectaba si el
+    /// usuario no tenía el CLI `cursor-agent` en el `PATH`.
+    detect_dir: Option<&'static str>,
 }
+
+/// Frontmatter de una regla de Cursor. `alwaysApply: true` la incluye en todo
+/// el proyecto, que es lo que un protocolo de invocación necesita; con
+/// `alwaysApply` activo, `globs` no acota nada y se deja vacío.
+const CURSOR_RULE_PREAMBLE: &str = "---\n\
+description: Protocolo de invocación de Rationale — preserva el porqué del código.\n\
+globs:\n\
+alwaysApply: true\n\
+---\n\n";
 
 const TARGETS: &[AgentTarget] = &[
     AgentTarget {
@@ -46,6 +75,8 @@ const TARGETS: &[AgentTarget] = &[
         instructions_file: "CLAUDE.md",
         mcp_config_file: Some(".mcp.json"),
         skills_dir: Some(".claude/skills"),
+        file_preamble: None,
+        detect_dir: None,
     },
     AgentTarget {
         name: "codex",
@@ -53,6 +84,8 @@ const TARGETS: &[AgentTarget] = &[
         instructions_file: "AGENTS.md",
         mcp_config_file: None,
         skills_dir: None,
+        file_preamble: None,
+        detect_dir: None,
     },
     AgentTarget {
         name: "cursor",
@@ -60,6 +93,8 @@ const TARGETS: &[AgentTarget] = &[
         instructions_file: ".cursor/rules/rationale.mdc",
         mcp_config_file: Some(".cursor/mcp.json"),
         skills_dir: None,
+        file_preamble: Some(CURSOR_RULE_PREAMBLE),
+        detect_dir: Some(".cursor"),
     },
 ];
 
@@ -202,7 +237,8 @@ pub fn install(
         }
 
         let instructions_path = project_root.join(target.instructions_file);
-        let (action, changed) = upsert_instructions_block(&instructions_path, dry_run)?;
+        let (action, changed) =
+            upsert_instructions_block(&instructions_path, target.file_preamble, dry_run)?;
         if changed {
             report.actions.push(format!(
                 "{}: {} bloque de instrucciones en {}",
@@ -357,7 +393,10 @@ pub fn uninstall(project_root: &Path, rationale_local: &Path) -> Result<Vec<Stri
                 if is_json {
                     remove_mcp_json_entry(&path)?;
                 } else {
-                    remove_instructions_block(&path)?;
+                    remove_instructions_block(
+                        &path,
+                        preamble_for_instructions_path(project_root, &path),
+                    )?;
                 }
                 actions.push(format!("{}: revertido {}", entry.agent, path.display()));
             }
@@ -509,6 +548,10 @@ fn project_already_uses(project_root: &Path, target: &AgentTarget) -> bool {
         || target
             .skills_dir
             .map(|dir| project_root.join(dir).exists())
+            .unwrap_or(false)
+        || target
+            .detect_dir
+            .map(|dir| project_root.join(dir).is_dir())
             .unwrap_or(false)
 }
 
@@ -885,14 +928,26 @@ fn content_hash(content: &[u8]) -> String {
     format!("{:x}", Sha256::digest(content))
 }
 
-fn upsert_instructions_block(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
+fn upsert_instructions_block(
+    path: &Path,
+    preamble: Option<&str>,
+    dry_run: bool,
+) -> Result<(FileAction, bool), String> {
     let existing = std::fs::read_to_string(path).ok();
     let block = instructions_block();
 
     match existing {
         None => {
+            // El preámbulo solo participa aquí: es la cabecera que el archivo
+            // necesita para existir como tal (el frontmatter de una regla de
+            // Cursor). En las ramas de abajo el archivo ya existe y tiene la
+            // suya, si su formato la exige.
+            let contents = match preamble {
+                Some(preamble) => format!("{preamble}{block}"),
+                None => block.clone(),
+            };
             if !dry_run {
-                crate::storage::atomic_write_bytes(path, block.as_bytes())
+                crate::storage::atomic_write_bytes(path, contents.as_bytes())
                     .map_err(|e| format!("no se pudo escribir {}: {e}", path.display()))?;
             }
             Ok((FileAction::Created, true))
@@ -961,7 +1016,17 @@ fn replace_block(content: &str, new_block: &str) -> Result<String, String> {
     }
 }
 
-fn remove_instructions_block(path: &Path) -> Result<(), String> {
+/// Cabecera que Rationale escribiría en este archivo de instrucciones, si
+/// alguna. Se busca por destino administrado, no por extensión: la lista de
+/// `TARGETS` es la única fuente.
+fn preamble_for_instructions_path(project_root: &Path, path: &Path) -> Option<&'static str> {
+    TARGETS
+        .iter()
+        .find(|target| project_root.join(target.instructions_file) == path)
+        .and_then(|target| target.file_preamble)
+}
+
+fn remove_instructions_block(path: &Path, preamble: Option<&str>) -> Result<(), String> {
     let Some(content) = std::fs::read_to_string(path).ok() else {
         return Ok(());
     };
@@ -973,7 +1038,16 @@ fn remove_instructions_block(path: &Path) -> Result<(), String> {
         remaining.pop();
     }
     let trimmed = remaining.trim();
-    if trimmed.is_empty() {
+    // La cabecera también la escribió Rationale: si es todo lo que queda, el
+    // archivo no tiene nada del usuario y dejarlo ahí sería filtrar 100 bytes
+    // de Rationale en un proyecto que pidió desinstalar. Si en cambio el
+    // usuario añadió contenido propio, el archivo se conserva **con** su
+    // cabecera: en un `.mdc` quitarla invalidaría la regla que el usuario
+    // quiere mantener.
+    let only_our_preamble = preamble
+        .map(|preamble| !trimmed.is_empty() && trimmed == preamble.trim())
+        .unwrap_or(false);
+    if trimmed.is_empty() || only_our_preamble {
         std::fs::remove_file(path)
             .map_err(|e| format!("no se pudo borrar {}: {e}", path.display()))?;
     } else {
@@ -1487,11 +1561,11 @@ mod tests {
     fn instructions_block_is_idempotent() {
         let project = temp_dir("idempotent");
         let claude_md = project.join("CLAUDE.md");
-        let (action1, changed1) = upsert_instructions_block(&claude_md, false).unwrap();
+        let (action1, changed1) = upsert_instructions_block(&claude_md, None, false).unwrap();
         assert_eq!(action1, FileAction::Created);
         assert!(changed1);
 
-        let (action2, changed2) = upsert_instructions_block(&claude_md, false).unwrap();
+        let (action2, changed2) = upsert_instructions_block(&claude_md, None, false).unwrap();
         assert_eq!(action2, FileAction::Modified);
         assert!(
             !changed2,
@@ -1511,12 +1585,12 @@ mod tests {
         )
         .unwrap();
 
-        upsert_instructions_block(&claude_md, false).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
         let content = std::fs::read_to_string(&claude_md).unwrap();
         assert!(content.contains("Mis instrucciones"));
         assert!(content.contains(MARKER_BEGIN));
 
-        remove_instructions_block(&claude_md).unwrap();
+        remove_instructions_block(&claude_md, None).unwrap();
         let after = std::fs::read_to_string(&claude_md).unwrap();
         assert!(after.contains("Mis instrucciones"));
         assert!(!after.contains(MARKER_BEGIN));
@@ -1536,8 +1610,8 @@ mod tests {
     fn remove_instructions_block_deletes_file_it_created_entirely() {
         let project = temp_dir("delete-created");
         let claude_md = project.join("CLAUDE.md");
-        upsert_instructions_block(&claude_md, false).unwrap();
-        remove_instructions_block(&claude_md).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
+        remove_instructions_block(&claude_md, None).unwrap();
         assert!(!claude_md.exists());
         std::fs::remove_dir_all(project).ok();
     }
@@ -1558,7 +1632,7 @@ mod tests {
         );
         std::fs::write(&claude_md, &corrupted).unwrap();
 
-        let result = upsert_instructions_block(&claude_md, false);
+        let result = upsert_instructions_block(&claude_md, None, false);
         assert!(
             result.is_err(),
             "debe rechazar marcadores invertidos, no panicar ni escribir"
@@ -1569,7 +1643,7 @@ mod tests {
             "el archivo no debe tocarse cuando los marcadores están invertidos"
         );
 
-        let remove_result = remove_instructions_block(&claude_md);
+        let remove_result = remove_instructions_block(&claude_md, None);
         assert!(remove_result.is_err());
         assert_eq!(std::fs::read_to_string(&claude_md).unwrap(), corrupted);
 
@@ -1591,7 +1665,7 @@ mod tests {
         let rationale_local = project.join(".rationale-local");
 
         let claude_md = project.join("CLAUDE.md");
-        let (action, _) = upsert_instructions_block(&claude_md, false).unwrap();
+        let (action, _) = upsert_instructions_block(&claude_md, None, false).unwrap();
         assert_eq!(action, FileAction::Created);
         let existing = std::fs::read_to_string(&claude_md).unwrap();
         std::fs::write(
@@ -1736,7 +1810,7 @@ mod tests {
     fn dry_run_touches_nothing() {
         let project = temp_dir("dry-run");
         let claude_md = project.join("CLAUDE.md");
-        let (_, changed) = upsert_instructions_block(&claude_md, true).unwrap();
+        let (_, changed) = upsert_instructions_block(&claude_md, None, true).unwrap();
         assert!(changed, "dry-run debe reportar lo que haría");
         assert!(!claude_md.exists(), "dry-run no debe escribir nada");
         std::fs::remove_dir_all(project).ok();
@@ -1750,6 +1824,169 @@ mod tests {
             .iter()
             .filter(|target| target.name != "claude-code")
             .all(|target| target.skills_dir.is_none()));
+    }
+
+    /// Solo Cursor exige una cabecera en su archivo de instrucciones.
+    /// `CLAUDE.md` y `AGENTS.md` son markdown que el cliente lee entero:
+    /// darles frontmatter sería ruido visible para el usuario.
+    #[test]
+    fn only_cursor_declares_a_file_preamble() {
+        for target in TARGETS {
+            match target.name {
+                "cursor" => assert_eq!(
+                    target.file_preamble,
+                    Some(CURSOR_RULE_PREAMBLE),
+                    "la regla de Cursor necesita su frontmatter o Cursor la ignora"
+                ),
+                other => assert!(
+                    target.file_preamble.is_none(),
+                    "{other} no necesita cabecera y no debe recibir una"
+                ),
+            }
+        }
+    }
+
+    /// El defecto: `install-agent` escribía en `.cursor/rules/rationale.mdc`
+    /// el mismo bloque markdown que en `CLAUDE.md`, sin el frontmatter YAML
+    /// que Cursor exige para aplicar una regla — el bloque acababa en un
+    /// archivo que el agente ignoraba.
+    #[test]
+    fn cursor_rule_is_created_with_valid_frontmatter_and_converges() {
+        let project = temp_dir("cursor-mdc");
+        let cursor_target = TARGETS
+            .iter()
+            .find(|t| t.name == "cursor")
+            .expect("el target cursor debe existir");
+        let rule = project.join(cursor_target.instructions_file);
+
+        let (action, changed) =
+            upsert_instructions_block(&rule, cursor_target.file_preamble, false).unwrap();
+        assert_eq!(action, FileAction::Created);
+        assert!(changed);
+
+        let written = std::fs::read_to_string(&rule).unwrap();
+        assert!(
+            written.starts_with("---\n"),
+            "una regla .mdc debe empezar por su frontmatter:\n{written}"
+        );
+        for key in ["description:", "globs:", "alwaysApply: true"] {
+            assert!(
+                written.contains(key),
+                "falta {key} en el frontmatter:\n{written}"
+            );
+        }
+        // El frontmatter va ANTES del bloque: si el orden se invirtiera,
+        // Cursor no vería el frontmatter en la primera línea.
+        assert!(
+            written.find("---\n").unwrap() < written.find(MARKER_BEGIN).unwrap(),
+            "el frontmatter debe preceder al bloque administrado"
+        );
+        assert!(written.contains(MARKER_END));
+
+        // Segunda pasada: converge byte a byte y no duplica el frontmatter.
+        let (action2, changed2) =
+            upsert_instructions_block(&rule, cursor_target.file_preamble, false).unwrap();
+        assert_eq!(action2, FileAction::Modified);
+        assert!(!changed2, "la segunda pasada no debe cambiar nada");
+        let second = std::fs::read_to_string(&rule).unwrap();
+        assert_eq!(written, second, "el archivo debe ser byte-idéntico");
+        assert_eq!(
+            second.matches("alwaysApply").count(),
+            1,
+            "el frontmatter no debe duplicarse:\n{second}"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// La cabecera que Rationale escribe también es contenido de Rationale:
+    /// si es todo lo que queda tras extirpar el bloque, el archivo se borra.
+    /// Sin esto, `uninstall-agent` dejaba un `.mdc` huérfano con el
+    /// frontmatter de Rationale dentro — un defecto que introdujo el propio
+    /// preámbulo y que solo apareció al probar el ciclo completo.
+    #[test]
+    fn uninstall_removes_a_rule_file_that_holds_only_our_preamble() {
+        let project = temp_dir("cursor-mdc-uninstall");
+        let rule = project.join(".cursor/rules/rationale.mdc");
+
+        upsert_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE), false).unwrap();
+        assert!(rule.exists());
+
+        remove_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE)).unwrap();
+        assert!(
+            !rule.exists(),
+            "no debe quedar un archivo con solo el frontmatter de Rationale"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// Pero si el usuario añadió contenido propio, el archivo se conserva
+    /// **con** su cabecera: en un `.mdc`, quitarla invalidaría la regla que
+    /// el usuario quiere mantener.
+    #[test]
+    fn uninstall_preserves_a_rule_file_that_has_user_content() {
+        let project = temp_dir("cursor-mdc-uninstall-user");
+        let rule = project.join(".cursor/rules/rationale.mdc");
+
+        upsert_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE), false).unwrap();
+        let with_user = format!(
+            "{}\n\n## Regla propia del usuario\n",
+            std::fs::read_to_string(&rule).unwrap().trim_end()
+        );
+        std::fs::write(&rule, with_user).unwrap();
+
+        remove_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE)).unwrap();
+
+        let left = std::fs::read_to_string(&rule)
+            .expect("el archivo debe sobrevivir porque tiene contenido del usuario");
+        assert!(left.contains("## Regla propia del usuario"));
+        assert!(
+            left.starts_with("---\n") && left.contains("alwaysApply: true"),
+            "la regla debe seguir siendo válida para Cursor:\n{left}"
+        );
+        assert!(
+            !left.contains(MARKER_BEGIN) && !left.contains(MARKER_END),
+            "el bloque administrado sí debe desaparecer:\n{left}"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// Un `.mdc` que ya existe tiene su propio frontmatter. Insertar otro a
+    /// mitad del archivo lo corrompería, así que el preámbulo solo participa
+    /// al crear.
+    #[test]
+    fn an_existing_rule_file_never_receives_a_second_preamble() {
+        let project = temp_dir("cursor-mdc-existing");
+        let rule = project.join(".cursor/rules/rationale.mdc");
+        std::fs::create_dir_all(rule.parent().unwrap()).unwrap();
+        let user_content =
+            "---\ndescription: regla del usuario\nalwaysApply: false\n---\n\nTexto propio.\n";
+        std::fs::write(&rule, user_content).unwrap();
+
+        let (action, changed) =
+            upsert_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE), false).unwrap();
+        assert_eq!(action, FileAction::Modified);
+        assert!(changed);
+
+        let written = std::fs::read_to_string(&rule).unwrap();
+        assert!(
+            written.starts_with("---\ndescription: regla del usuario"),
+            "el frontmatter del usuario debe conservarse intacto y primero:\n{written}"
+        );
+        assert!(
+            written.contains("Texto propio."),
+            "el contenido del usuario se conserva"
+        );
+        assert_eq!(
+            written.matches("alwaysApply").count(),
+            1,
+            "no se añade un segundo frontmatter:\n{written}"
+        );
+        assert!(written.contains(MARKER_BEGIN) && written.contains(MARKER_END));
+
+        std::fs::remove_dir_all(project).ok();
     }
 
     #[test]
@@ -2379,7 +2616,7 @@ mod tests {
         let project = temp_dir("legacy-manifest");
         let local = project.join(".rationale-local");
         let claude_md = project.join("CLAUDE.md");
-        upsert_instructions_block(&claude_md, false).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
 
         // Manifest en el formato anterior a ADR-0014: ruta absoluta.
         let legacy = Manifest {
@@ -2410,7 +2647,7 @@ mod tests {
         seed_agent_detection(&project);
         let local = project.join(".rationale-local");
         let claude_md = project.join("CLAUDE.md");
-        upsert_instructions_block(&claude_md, false).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
 
         // Manifest de alpha.7 escrito cuando el proyecto vivía en otra ruta.
         save_manifest(
@@ -2527,7 +2764,7 @@ mod tests {
 
         let claude_md = project.join("CLAUDE.md");
         std::fs::write(&claude_md, "# Encabezado propio\n\n").unwrap();
-        upsert_instructions_block(&claude_md, false).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
         let with_block = std::fs::read_to_string(&claude_md).unwrap();
         std::fs::write(&claude_md, format!("{with_block}\n## Cola propia\n")).unwrap();
 
