@@ -5,6 +5,50 @@ cada cambio vive en commits, ADRs y work items enlazados.
 
 ## Sin publicar
 
+- **`windows-latest` y CI sin agentes instalados encontraron cuatro defectos
+  que la máquina del desarrollador nunca podía ver.** `cargo test --locked`
+  estaba rojo en las tres plataformas (`main` en `eb35bfb5`), y eran cuatro
+  causas distintas:
+  - **JSON inválido en Windows.** `cmd_init` y `cmd_health` interpolaban la
+    ruta del proyecto en un literal JSON escrito a mano; `\` no es un escape
+    válido, así que el contrato de una línea salía corrupto. Ambos comandos
+    generan ahora el JSON con `serde_json`.
+  - **Comparación de rutas no portable en Windows.** `/otro/proyecto/CLAUDE.md`
+    **no es** `is_absolute()` en Windows — le falta la letra de unidad — así
+    que la migración de manifests heredados la trataba como ya relativa y la
+    saltaba, dejando una entrada externa que después abortaba
+    `uninstall-agent`. La migración decide ahora por el destino al que
+    apunta la ruta, no por su forma, comparando componentes portables (`/` y
+    `\` como separador en cualquier plataforma) en vez de `is_absolute()` o
+    subcadenas.
+  - **Tests de `agents::install` dependientes del PATH del desarrollador.**
+    `install()` detecta un agente si su binario está en `PATH` o si el
+    proyecto ya usa su configuración. En la Mac del desarrollador `claude` y
+    `codex` estaban en `PATH`, así que la detección siempre ocurría y
+    `install` siempre llegaba a escribir el manifest; en los runners de CI no
+    existe ninguno de los tres binarios, `install` retornaba temprano, y tres
+    tests que asumían un manifest ya escrito fallaban con `NotFound`. Un
+    cuarto test pasaba, pero por la razón equivocada: la guarda contra rutas
+    arbitrarias nunca se ejercitó porque `install` no hizo nada. Los tests
+    ahora siembran explícitamente la condición de detección (`AGENTS.md`,
+    `.cursor/mcp.json`, el directorio de skills) en vez de depender de qué
+    tenga instalado quien los corre.
+  - **`install-agent` abortaba por completo si Codex se detectaba sin
+    binario invocable.** Sembrar la detección de arriba expuso un defecto de
+    producción real, no solo de tests: al detectar `codex` por configuración
+    del proyecto (`AGENTS.md` heredado) sin que el binario `codex` exista en
+    esta máquina, `install-agent` intentaba de todos modos ejecutar
+    `codex mcp list` para el registro global y abortaba la instalación
+    completa — incluida la de los demás agentes detectados en la misma
+    pasada — con un error de proceso. Ahora, sin binario invocable, el
+    registro global de MCP se omite con un aviso; los demás agentes se
+    instalan con normalidad.
+
+  Los cuatro defectos son independientes entre sí. Los dos tests de
+  `tests/cli.rs` que ya fallaban en Windows antes de esta sesión se
+  corrigieron en el mismo esfuerzo para que la matriz de alpha.8 pudiera
+  quedar completamente verde.
+
 - **Dogfood corrigió una falsa idempotencia de `init` y añadió acciones
   pre-hechas.** Si `.rationale/` ya existía, `cmd_init` emitía
   `already-initialized` y retornaba antes de `agents::install`; `update`

@@ -251,6 +251,16 @@ pub fn install(
                     ));
                 }
             }
+            None if find_on_path(target.detect_binary).is_none() => {
+                // Detectado por configuración del proyecto (p. ej. `AGENTS.md`
+                // heredado), no por PATH: no hay binario que invocar. Fallar
+                // aquí abortaría la instalación completa de los demás agentes
+                // por un target que ni siquiera está instalado en esta máquina.
+                report.actions.push(format!(
+                    "{}: no se encontró el binario en PATH, se omite el registro global de MCP",
+                    target.name
+                ));
+            }
             None => {
                 let registered = register_codex_mcp(binary_path, dry_run)?;
                 report.actions.push(format!(
@@ -1246,43 +1256,82 @@ fn manifest_relative_path(project_root: &Path, path: &Path) -> PathBuf {
 fn migrate_legacy_absolute_entries(manifest: &mut Manifest, project_root: &Path) -> usize {
     let mut migrated = 0;
     for entry in &mut manifest.entries {
-        if entry.path.is_relative() {
+        // Ya es exactamente un destino administrado relativo: nada que migrar,
+        // y saltarlo evita reescribirlo en cada pasada.
+        if recognized_managed_suffix(&entry.path).as_deref() == Some(entry.path.as_path()) {
             continue;
         }
-        if entry.path.starts_with(project_root) {
-            // Absoluta pero dentro del proyecto: relativizar es exacto.
-            if let Ok(relative) = entry.path.strip_prefix(project_root) {
-                entry.path = relative.to_path_buf();
+        // Ni `is_absolute()` ni `starts_with` deciden esto. En Windows,
+        // `/otro/proyecto/CLAUDE.md` **no** es absoluta —le falta la letra de
+        // unidad— así que la versión anterior la trataba como ya relativa y la
+        // saltaba, dejando una entrada externa que abortaba `uninstall-agent`.
+        // Lo que importa no es la forma de la ruta sino a qué destino apunta.
+        let normalized = entry
+            .path
+            .strip_prefix(project_root)
+            .ok()
+            .map(Path::to_path_buf)
+            .or_else(|| recognized_managed_suffix(&entry.path));
+
+        if let Some(new_path) = normalized {
+            if new_path != entry.path {
+                entry.path = new_path;
                 migrated += 1;
             }
-            continue;
-        }
-        if let Some(relative) = recognized_managed_suffix(&entry.path) {
-            entry.path = relative;
-            migrated += 1;
         }
     }
     migrated
 }
 
-/// Sufijo administrado que una ruta absoluta heredada reconoce, si alguno.
-fn recognized_managed_suffix(path: &Path) -> Option<PathBuf> {
-    let text = path.to_str()?.replace('\\', "/");
+/// Componentes de una ruta tratando `/` y `\` como separadores **en cualquier
+/// plataforma**.
+///
+/// `Path::components` no basta: en Unix `\` no es separador, así que una ruta
+/// escrita en Windows se leería como un único componente, y en Windows una
+/// ruta escrita en Unix no se reconocería como absoluta. Canonizar así los
+/// **dos** operandos —no solo uno— es lo que hace la comparación simétrica.
+fn portable_components(path: &Path) -> Vec<String> {
+    path.to_string_lossy()
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != ".")
+        .map(str::to_string)
+        .collect()
+}
 
+/// Todos los destinos que `install-agent` administra, como rutas relativas.
+/// Fuente única: `TARGETS` + `prompts::ACTIONS`, para que un agente o una
+/// acción nuevos queden cubiertos sin tocar esta lista.
+fn managed_destinations() -> Vec<String> {
+    let mut destinations = Vec::new();
     for target in TARGETS {
-        for candidate in std::iter::once(target.instructions_file).chain(target.mcp_config_file) {
-            if text == candidate || text.ends_with(&format!("/{candidate}")) {
-                return Some(PathBuf::from(candidate));
+        destinations.push(target.instructions_file.to_string());
+        if let Some(config) = target.mcp_config_file {
+            destinations.push(config.to_string());
+        }
+        if let Some(skills_dir) = target.skills_dir {
+            for action in crate::prompts::ACTIONS {
+                destinations.push(format!("{skills_dir}/rationale-{}/SKILL.md", action.name));
             }
         }
-        let Some(skills_dir) = target.skills_dir else {
+    }
+    destinations
+}
+
+/// Destino administrado en el que termina esta ruta, si alguno.
+///
+/// Compara por componentes, no por subcadena: `…/mi-CLAUDE.md` no debe
+/// reconocerse como `CLAUDE.md`. La guarda contra rutas arbitrarias depende de
+/// que esto sea estricto.
+fn recognized_managed_suffix(path: &Path) -> Option<PathBuf> {
+    let actual = portable_components(path);
+    for candidate in managed_destinations() {
+        let wanted = portable_components(Path::new(&candidate));
+        if wanted.is_empty() || actual.len() < wanted.len() {
             continue;
-        };
-        for action in crate::prompts::ACTIONS {
-            let candidate = format!("{skills_dir}/rationale-{}/SKILL.md", action.name);
-            if text == candidate || text.ends_with(&format!("/{candidate}")) {
-                return Some(PathBuf::from(candidate));
-            }
+        }
+        if actual[actual.len() - wanted.len()..] == wanted[..] {
+            // Reconstruido desde componentes: separadores nativos.
+            return Some(wanted.iter().collect());
         }
     }
     None
@@ -1298,13 +1347,14 @@ fn existing_entry_index(
     project_root: &Path,
     absolute: &Path,
 ) -> Option<usize> {
+    // Ambos operandos se canonizan a componentes portables, y se acepta tanto
+    // la forma relativa como la absoluta: un manifest heredado puede tener
+    // cualquiera de las dos, y `is_absolute()` no es fiable entre plataformas.
+    let relative = portable_components(&manifest_relative_path(project_root, absolute));
+    let full = portable_components(absolute);
     manifest.entries.iter().position(|entry| {
-        let resolved = if entry.path.is_absolute() {
-            entry.path.clone()
-        } else {
-            project_root.join(&entry.path)
-        };
-        resolved == absolute
+        let existing = portable_components(&entry.path);
+        existing == relative || existing == full
     })
 }
 
@@ -2014,12 +2064,123 @@ mod tests {
             .expect("git debe estar disponible para estos tests")
     }
 
+    /// Siembra la condición de detección de los tres agentes en el proyecto.
+    ///
+    /// `install` detecta un agente si su binario está en el `PATH` **o** si el
+    /// proyecto ya tiene su configuración. Sin sembrar, el resultado dependía
+    /// de si la máquina tenía `claude`, `codex` o `cursor-agent` instalados:
+    /// en la del desarrollador sí, en los runners de CI no, y `install`
+    /// retornaba temprano sin escribir nada. Tres tests fallaban en las tres
+    /// plataformas de CI y otro pasaba por la razón equivocada.
+    ///
+    /// Se siembra lo mínimo que dispara la detección sin predeterminar lo que
+    /// los tests comprueban: el **directorio** de skills para claude-code —no
+    /// `CLAUDE.md` ni `.mcp.json`, cuyo `action` varios tests afirman—, y la
+    /// configuración de los otros dos.
+    fn seed_agent_detection(project: &Path) {
+        std::fs::create_dir_all(project.join(".claude/skills")).unwrap();
+        std::fs::write(project.join("AGENTS.md"), "# Del proyecto\n").unwrap();
+        std::fs::create_dir_all(project.join(".cursor")).unwrap();
+        std::fs::write(project.join(".cursor/mcp.json"), "{}\n").unwrap();
+    }
+
     fn git_repo(label: &str) -> PathBuf {
         let repo = temp_dir(label);
         git(&repo, &["init", "-q"]);
         git(&repo, &["config", "user.email", "test@example.com"]);
         git(&repo, &["config", "user.name", "Test"]);
+        seed_agent_detection(&repo);
         repo
+    }
+
+    /// Ningún test puede depender de qué agentes tenga instalados la máquina.
+    #[test]
+    fn seeded_fixture_detects_every_agent_without_any_binary_on_path() {
+        let repo = git_repo("seed-detection");
+        let local = repo.join(".rationale-local");
+        let report = install(&repo, &local, &fake_binary(), false).unwrap();
+
+        for target in TARGETS {
+            assert!(
+                report.detected.iter().any(|d| d == target.name),
+                "{} debe detectarse por configuración del proyecto, no por PATH: {:?}",
+                target.name,
+                report.detected
+            );
+        }
+        assert!(
+            manifest_path(&local).exists(),
+            "si hay agentes detectados, install debe llegar a escribir el manifest"
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// Restaura `PATH` al salir del scope, incluso si el test panica —
+    /// mutar una variable de entorno es intrínsecamente global al proceso,
+    /// así que sin esto un panic dejaría el resto de la suite corriendo con
+    /// un `PATH` equivocado.
+    struct PathOverride(Option<std::ffi::OsString>);
+
+    impl PathOverride {
+        /// Sin ningún directorio que pueda contener `claude`, `codex` o
+        /// `cursor-agent` — pero con `/usr/bin` y `/bin`, para que `git`
+        /// (que `install` invoca internamente) siga resolviendo.
+        fn without_any_agent_binary() -> Self {
+            let original = std::env::var_os("PATH");
+            std::env::set_var("PATH", "/usr/bin:/bin");
+            PathOverride(original)
+        }
+    }
+
+    impl Drop for PathOverride {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(value) => std::env::set_var("PATH", value),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+    }
+
+    /// El defecto que sembrar la detección expuso: `codex` detectado por un
+    /// `AGENTS.md` heredado, sin el binario en `PATH`, abortaba la
+    /// instalación completa — incluidos los demás agentes — en vez de
+    /// omitirse con un aviso.
+    #[test]
+    fn codex_detected_without_a_binary_is_skipped_without_aborting_other_agents() {
+        let repo = git_repo("codex-no-binary");
+        let local = repo.join(".rationale-local");
+
+        let report = {
+            let _path = PathOverride::without_any_agent_binary();
+            install(&repo, &local, &fake_binary(), false).expect(
+                "la ausencia del binario de codex no puede abortar la instalación de los demás agentes",
+            )
+        };
+
+        assert!(
+            report.detected.contains(&"codex".to_string()),
+            "codex se detecta por AGENTS.md aunque el binario no exista: {:?}",
+            report.detected
+        );
+        assert!(
+            report.detected.contains(&"claude-code".to_string())
+                && report.detected.contains(&"cursor".to_string()),
+            "los demás agentes deben seguir instalándose: {:?}",
+            report.detected
+        );
+        assert!(
+            report
+                .actions
+                .iter()
+                .any(|a| a.contains("codex") && a.contains("no se encontró el binario en PATH")),
+            "el reporte debe avisar que se omitió el registro global de codex: {:?}",
+            report.actions
+        );
+        assert!(
+            manifest_path(&local).exists(),
+            "el manifest debe escribirse aunque codex se haya omitido"
+        );
+        std::fs::remove_dir_all(repo).ok();
     }
 
     /// El test que ADR-0012 necesitaba y no tuvo: qué dice Git, no qué creemos.
@@ -2146,6 +2307,7 @@ mod tests {
     #[test]
     fn install_outside_a_git_repository_does_not_fail() {
         let project = temp_dir("exclude-no-git");
+        seed_agent_detection(&project);
         let local = project.join(".rationale-local");
         assert!(
             !ensure_local_data_excluded(&project, false).unwrap(),
@@ -2212,6 +2374,7 @@ mod tests {
     #[test]
     fn install_migrates_a_moved_projects_legacy_manifest_and_uninstall_then_works() {
         let project = temp_dir("legacy-moved");
+        seed_agent_detection(&project);
         let local = project.join(".rationale-local");
         let claude_md = project.join("CLAUDE.md");
         upsert_instructions_block(&claude_md, false).unwrap();
@@ -2410,6 +2573,95 @@ mod tests {
             "se conserva intacta para que la guarda la siga rechazando"
         );
 
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// El reconocimiento debe ser simétrico entre plataformas: una ruta con
+    /// separadores Windows y otra con separadores Unix apuntan al mismo
+    /// destino y deben reconocerse igual, se ejecute donde se ejecute.
+    #[test]
+    fn managed_suffix_is_recognized_with_either_separator() {
+        let unix = Path::new("/otro/proyecto/.claude/skills/rationale-health/SKILL.md");
+        let windows =
+            Path::new(r"C:\Users\alguien\Proyecto\.claude\skills\rationale-health\SKILL.md");
+        let mixed =
+            Path::new(r"C:\Users\alguien\Proyecto/.claude\skills/rationale-health/SKILL.md");
+
+        let expected: PathBuf = [".claude", "skills", "rationale-health", "SKILL.md"]
+            .iter()
+            .collect();
+        for path in [unix, windows, mixed] {
+            assert_eq!(
+                recognized_managed_suffix(path),
+                Some(expected.clone()),
+                "no se reconoció el destino administrado en {}",
+                path.display()
+            );
+        }
+
+        // Y lo mismo para un archivo de instrucciones en la raíz.
+        for path in [
+            Path::new("/otro/proyecto/CLAUDE.md"),
+            Path::new(r"C:\Users\alguien\Proyecto\CLAUDE.md"),
+        ] {
+            assert_eq!(
+                recognized_managed_suffix(path),
+                Some(PathBuf::from("CLAUDE.md")),
+                "no se reconoció CLAUDE.md en {}",
+                path.display()
+            );
+        }
+    }
+
+    /// La comparación es por componentes, no por subcadena: si fuera textual,
+    /// `mi-CLAUDE.md` terminaría en «CLAUDE.md» y la guarda se caería.
+    #[test]
+    fn managed_suffix_never_matches_a_partial_component() {
+        for path in [
+            Path::new("/otro/proyecto/mi-CLAUDE.md"),
+            Path::new(r"C:\Proyecto\notasCLAUDE.md"),
+            Path::new("/otro/proyecto/CLAUDE.md.bak"),
+            Path::new("/otro/proyecto/.claude/skills/rationale-health/SKILL.md.orig"),
+        ] {
+            assert_eq!(
+                recognized_managed_suffix(path),
+                None,
+                "{} no es un destino administrado y no puede reconocerse",
+                path.display()
+            );
+        }
+    }
+
+    /// Una ruta estilo Unix **no es** `is_absolute()` en Windows: le falta la
+    /// letra de unidad. La versión anterior la saltaba como «ya relativa» y
+    /// dejaba una entrada externa que abortaba `uninstall-agent`.
+    #[test]
+    fn migration_normalizes_a_unix_style_path_on_any_platform() {
+        let project = temp_dir("migrate-unix-style");
+        let mut manifest = Manifest {
+            entries: vec![InstalledEntry {
+                agent: "claude-code".to_string(),
+                path: PathBuf::from("/otro/proyecto/CLAUDE.md"),
+                action: FileAction::Created,
+                reversal: ReversalStrategy::ManagedPart,
+                content_hash: None,
+            }],
+        };
+
+        assert_eq!(migrate_legacy_absolute_entries(&mut manifest, &project), 1);
+        assert_eq!(manifest.entries[0].path, PathBuf::from("CLAUDE.md"));
+        assert_eq!(
+            manifest.entries[0].action,
+            FileAction::Created,
+            "migrar preserva el hecho histórico"
+        );
+
+        // Segunda pasada: ya está normalizada, no vuelve a contarse.
+        assert_eq!(
+            migrate_legacy_absolute_entries(&mut manifest, &project),
+            0,
+            "una entrada ya normalizada no se re-migra"
+        );
         std::fs::remove_dir_all(project).ok();
     }
 
@@ -2633,16 +2885,36 @@ mod tests {
         )
         .unwrap();
 
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        let report = install(&repo, &local, &fake_binary(), false).unwrap();
 
-        let raw = manifest_bytes(&local);
+        // Sin esto el test pasaba por la razón equivocada: si `install`
+        // retornaba temprano por no detectar agentes, el manifest quedaba
+        // intacto y las dos afirmaciones de abajo se cumplían sin haber
+        // ejercitado nada. Primero hay que demostrar que la instalación
+        // ocurrió de verdad.
         assert!(
-            raw.contains("/Users/alguien/Documents/notas.md"),
-            "una ruta arbitraria no se normaliza: se conserva intacta"
+            !report.detected.is_empty(),
+            "el fixture debe detectar agentes; si no, nada de lo que sigue prueba algo"
+        );
+        let manifest: Manifest = serde_json::from_str(&manifest_bytes(&local)).unwrap();
+        assert!(
+            manifest
+                .entries
+                .iter()
+                .any(|e| e.path == Path::new("CLAUDE.md")),
+            "install debe haber registrado sus propios destinos administrados"
+        );
+
+        assert!(
+            manifest
+                .entries
+                .iter()
+                .any(|e| e.path == Path::new("/Users/alguien/Documents/notas.md")),
+            "y aun así una ruta arbitraria no se normaliza: se conserva intacta"
         );
         assert!(
             uninstall(&repo, &local).is_err(),
-            "y la guarda debe seguir rechazándola"
+            "la guarda debe seguir rechazándola"
         );
         std::fs::remove_dir_all(repo).ok();
     }
