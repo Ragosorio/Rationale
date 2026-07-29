@@ -30,3 +30,9 @@ fixtures/vertical-slice/repo/
 # Editor
 .vscode/
 .idea/
+
+# Config local de Cursor: `install-agent` la escribe con el comando lógico
+# `rationale`, que aquí resolvería al binario INSTALADO en vez del que se
+# construye desde el árbol. Mismo criterio que `.mcp.json`, que se conserva
+# con `cargo run` a propósito.
+.cursor/

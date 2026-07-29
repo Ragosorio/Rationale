@@ -176,7 +176,12 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "install-agent" => validate_flags(
             command,
             args,
-            &["--dry-run", "--global-only", "--no-mascot"],
+            &[
+                "--dry-run",
+                "--global-only",
+                "--no-mascot",
+                "--refresh-skills",
+            ],
             &["--project-root"],
         ),
         "uninstall-agent" => validate_flags(command, args, &["--no-mascot"], &["--project-root"]),
@@ -315,7 +320,7 @@ fn cmd_init(args: &[String]) {
     }
     let rationale_local = find_rationale_local(&cwd);
     let binary_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("rationale"));
-    match agents::install(&cwd, &rationale_local, &binary_path, false) {
+    match agents::install(&cwd, &rationale_local, &binary_path, false, false) {
         Ok(report) if report.detected.is_empty() => {
             if mascot::stderr_enabled(args) {
                 eprintln!(
@@ -841,6 +846,10 @@ fn cmd_review_record(args: &[String]) {
 /// con herramientas disponibles no las llama (v0.5 §4.12).
 fn cmd_install_agent(args: &[String]) {
     let dry_run = args.iter().any(|a| a == "--dry-run");
+    // Resuelve el caso "procedencia desconocida": un skill que existe en disco
+    // sin registro en el manifest local. No toca los que sí tienen un hash
+    // registrado que no coincide — esos están probadamente editados.
+    let refresh_skills = args.iter().any(|a| a == "--refresh-skills");
     let binary_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("rationale"));
 
     if args.iter().any(|a| a == "--global-only") {
@@ -867,7 +876,13 @@ fn cmd_install_agent(args: &[String]) {
     mascot::print_stdout(args, mascot::Mood::Searching);
     println!("Buscando agentes de código en este proyecto...");
 
-    match agents::install(&project_root, &rationale_local, &binary_path, dry_run) {
+    match agents::install(
+        &project_root,
+        &rationale_local,
+        &binary_path,
+        refresh_skills,
+        dry_run,
+    ) {
         Ok(report) => {
             if report.dry_run {
                 println!("(dry-run — no se escribió nada)");

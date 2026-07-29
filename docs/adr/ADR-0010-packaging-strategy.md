@@ -47,6 +47,15 @@ por crates.io.
 - Mientras Rationale sea pre-1.0 se distinguen los canales `stable` y
   `preview`: la landing no puede usar `releases/latest` si la versión visible
   es una prerelease; debe fijar el tag preview explícito.
+- **Qué tags se marcan prerelease en GitHub.** Solo `-alpha.`, `-rc.` y
+  `-dogfood.`. `beta` y las versiones finales se publican como Release
+  completa. La razón es operativa, no cosmética: GitHub solo marca «latest» una
+  Release que no sea prerelease, y `releases/latest` es exactamente lo que
+  resuelve el canal `stable` de `rationale-installer.sh/.ps1`. Marcar por
+  «cualquier tag con guión» dejó las siete alphas como prerelease y, con ellas,
+  `stable` sirviendo `v0.0.0-dogfood.7` — un build de dogfood anterior a
+  `install-agent` — a cualquiera que instalara por ese canal. Una versión que
+  el proyecto recomienda usar debe poder ser «latest».
 - Una plataforma que no pase la matriz no se declara soportada en las notas.
 - Los binarios de release son una superficie de supply-chain y necesitan
   checksums y attestation antes de publicar.

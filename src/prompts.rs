@@ -11,6 +11,11 @@ pub struct Action {
     pub argument_hint: &'static str,
     pub arguments: &'static [&'static str],
     pub user_only: bool,
+    /// Valor de `allowed-tools` en el frontmatter del SKILL.md, si la acción
+    /// inyecta un comando Bash específico. `None` para acciones que no
+    /// ejecutan shell — declarar un permiso sin uso solo confundiría al
+    /// usuario que revisa qué autoriza cada skill.
+    pub allowed_tools: Option<&'static str>,
     pub body: &'static str,
 }
 
@@ -21,6 +26,7 @@ pub const ACTIONS: &[Action] = &[
         argument_hint: "[target] [intent]",
         arguments: &["target", "intent"],
         user_only: false,
+        allowed_tools: None,
         body: r#"Haz el preflight de Rationale para `$target` con esta intención real:
 
 `$intent`
@@ -37,6 +43,7 @@ pub const ACTIONS: &[Action] = &[
         argument_hint: "[target]",
         arguments: &["target"],
         user_only: false,
+        allowed_tools: None,
         body: r#"Aplica la valla de Chesterton a `$target`.
 
 1. Llama `explain_target(target: "$target")`.
@@ -50,6 +57,7 @@ pub const ACTIONS: &[Action] = &[
         argument_hint: "[statement]",
         arguments: &["statement"],
         user_only: false,
+        allowed_tools: None,
         body: r#"Cierra el cambio actual con Rationale. Statement opcional del humano:
 
 `$statement`
@@ -66,8 +74,10 @@ con las herramientas Git disponibles antes de continuar.
 
 1. Usa el `base_revision` real reportado por el preflight; si no existe, determina y declara la revisión base correcta en vez de inventarla.
 2. Revisa el diff y las pruebas ejecutadas. Separa hechos observados de intención o inferencia.
-3. Llama `finalize_change(...)` con target, base_revision, intent, statement, severity y metadatos de Subject/Record reales. Usa el statement de arriba solo si no está vacío y refleja la decisión.
-4. Reporta si se escribió una propuesta pendiente o si el cambio fue mecánico. Nunca llames aprobada a una propuesta: solo `rationale review` humano puede aprobarla."#,
+3. Cuenta cuántas decisiones independientes contiene el cambio. **Una decisión por Record.** Divide cuando las partes podrían aprobarse, rechazarse, revocarse o reemplazarse por separado; cuando responden preguntas distintas; cuando tienen autoridad o vida distinta; o cuando un lector futuro solo necesitaría una de ellas. No fragmentes una sola decisión en trozos que por separado no dicen nada.
+4. Llama `finalize_change(...)` con target, base_revision, intent, statement, severity y metadatos de Subject/Record reales. Usa el statement de arriba solo si no está vacío y refleja la decisión.
+5. Si hay más de una decisión en el árbol de trabajo, haz una llamada por decisión y declara `governs_paths` en cada una con las rutas que esa decisión gobierna. Sin eso, cada Record ata todos los archivos del diff y el canon ya no puede decir qué decisión gobierna qué código.
+6. Reporta si se escribió una propuesta pendiente o si el cambio fue mecánico. Nunca llames aprobada a una propuesta: solo `rationale review` humano puede aprobarla."#,
     },
     Action {
         name: "review",
@@ -75,6 +85,7 @@ con las herramientas Git disponibles antes de continuar.
         argument_hint: "",
         arguments: &[],
         user_only: true,
+        allowed_tools: None,
         body: r#"Prepara la revisión humana de Rationale.
 
 1. Lista los archivos YAML pendientes bajo `.rationale/proposals/` sin alterar su estado.
@@ -88,11 +99,28 @@ con las herramientas Git disponibles antes de continuar.
         argument_hint: "",
         arguments: &[],
         user_only: false,
+        // `doctor --check` existe para CI: sale 1 cuando hay hallazgos, y ese
+        // contrato está testeado. Pero un skill de diagnóstico necesita lo
+        // contrario — mostrar los hallazgos ES su propósito, y Claude Code
+        // trata cualquier código distinto de cero como "Shell command failed"
+        // y descarta el output.
+        //
+        // `doctor` SIN `--check` ya tiene exactamente la semántica correcta:
+        // imprime el reporte y sale 0 con hallazgos, y sigue saliendo 1 ante
+        // un fallo operativo real (`fail()`). No hace falta normalizar nada.
+        //
+        // Un intento anterior envolvió `--check` en un compuesto de shell con
+        // `$?`/`$$` para traducir el código. Claude Code lo rechazó con
+        // "Contains simple_expansion": su verificador de permisos no puede
+        // comprobar estáticamente un comando con expansión de variables
+        // contra un patrón permitido, y hace bien. La inyección debe ser un
+        // comando simple.
+        allowed_tools: Some("Bash(rationale doctor:*)"),
         body: r#"Diagnostica la salud de Rationale.
 
 Resultado local de `doctor` inyectado por el skill:
 
-!`rationale doctor --check`
+!`rationale doctor`
 
 Si la línea anterior todavía aparece como un literal `!`comando`` (por
 ejemplo, mediante un prompt MCP), ejecuta el chequeo equivalente antes de
@@ -108,6 +136,7 @@ responder.
         argument_hint: "",
         arguments: &[],
         user_only: false,
+        allowed_tools: None,
         body: include_str!("../docs/prompt-master.md"),
     },
 ];

@@ -3,13 +3,14 @@ description: "Comprueba conexión MCP, proveedor y salud del canon."
 argument-hint: ""
 arguments: []
 disable-model-invocation: false
+allowed-tools: Bash(rationale doctor:*)
 ---
 
 Diagnostica la salud de Rationale.
 
 Resultado local de `doctor` inyectado por el skill:
 
-!`rationale doctor --check`
+!`rationale doctor`
 
 Si la línea anterior todavía aparece como un literal `!`comando`` (por
 ejemplo, mediante un prompt MCP), ejecuta el chequeo equivalente antes de

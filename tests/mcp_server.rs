@@ -1365,3 +1365,168 @@ fn finalize_change_still_resolves_subjects_when_one_file_is_corrupt() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Sin `governs_paths`, `finalize_change` ata un binding a TODO archivo del
+/// diff. Eso empuja al agente a lo contrario de lo que el canon necesita: un
+/// Record único gigante en vez de varios pequeños, cada uno gobernando lo
+/// suyo. Con `governs_paths`, un mismo árbol de trabajo puede producir varias
+/// propuestas acotadas.
+///
+/// Este test cubre los tres comportamientos en un solo árbol: el default
+/// histórico, el acotado, y el rechazo de una ruta no verificable.
+#[test]
+fn governs_paths_scopes_bindings_without_changing_the_default() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+
+    // Dos decisiones independientes en el mismo árbol, más un archivo de
+    // scratch que no pertenece a ninguna — el caso real que motivó esto.
+    std::fs::create_dir_all(dir.join("src/auth")).unwrap();
+    std::fs::write(
+        dir.join("src/auth/authorization.ts"),
+        "export function resolveEntityRole() { /* ... */ }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src/billing.ts"),
+        "export function chargeOnce() { /* ... */ }\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("scratch-notes.txt"), "notas sueltas\n").unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "two decisions plus scratch"]);
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    // Cada caso necesita un Subject LÉXICAMENTE distinto, no solo un id
+    // distinto: con títulos parecidos el Subject Resolver los marca
+    // `MergeCandidate` y exige `novelty_reason`, bloqueando la propuesta
+    // (comportamiento correcto de v0.5 §294). Este test es sobre bindings,
+    // así que los Subjects se eligen para no activar esa ruta.
+    let finalize = |client: &mut TestClient,
+                    id: i64,
+                    record: &str,
+                    subject_id: &str,
+                    subject_title: &str,
+                    extra: Value|
+     -> Value {
+        let mut args = json!({
+            "target": "src/auth/authorization.ts",
+            "base_revision": base_revision,
+            "intent": "Staff users must never receive global super_admin access.",
+            "statement": "Staff users must never receive global super_admin.",
+            "record_id": record,
+            "subject_id": subject_id,
+            "subject_title": subject_title,
+            "severity": "high",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            args[k] = v.clone();
+        }
+        let resp = client.call(id, "finalize_change", args);
+        resp["result"].clone()
+    };
+
+    // 1. Sin el parámetro: el comportamiento histórico, todos los archivos.
+    let result = finalize(
+        &mut client,
+        1,
+        "constraint.govpaths-default",
+        "authorization.staff-global-admin",
+        "Staff global admin prohibition",
+        json!({}),
+    );
+    assert_eq!(result["isError"], false);
+    let outcome: Value =
+        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+    let default_proposal =
+        std::fs::read_to_string(outcome["proposal_path"].as_str().unwrap()).unwrap();
+    for path in [
+        "src/auth/authorization.ts",
+        "src/billing.ts",
+        "scratch-notes.txt",
+    ] {
+        assert!(
+            default_proposal.contains(path),
+            "sin governs_paths debe atarse todo el diff; falta {path}:\n{default_proposal}"
+        );
+    }
+
+    // 2. Con el parámetro: solo lo declarado. El scratch y la otra decisión
+    //    quedan fuera, aunque sigan estando en el diff.
+    let result = finalize(
+        &mut client,
+        2,
+        "constraint.govpaths-scoped",
+        "billing.charge-idempotency",
+        "Payment charge idempotency",
+        json!({"governs_paths": ["src/auth/authorization.ts"]}),
+    );
+    assert_eq!(result["isError"], false);
+    let outcome: Value =
+        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+    let scoped_proposal = std::fs::read_to_string(
+        outcome["proposal_path"]
+            .as_str()
+            .unwrap_or_else(|| panic!("no se escribió propuesta acotada: {outcome}")),
+    )
+    .unwrap();
+    assert!(
+        scoped_proposal.contains("src/auth/authorization.ts"),
+        "la ruta declarada debe estar atada:\n{scoped_proposal}"
+    );
+    for path in ["src/billing.ts", "scratch-notes.txt"] {
+        assert!(
+            !scoped_proposal.contains(path),
+            "{path} no fue declarado y no debe aparecer atado:\n{scoped_proposal}"
+        );
+    }
+
+    // 3. Una ruta que no está en el diff no es verificable: se rechaza en vez
+    //    de fabricarle un binding.
+    let result = finalize(
+        &mut client,
+        3,
+        "constraint.govpaths-missing",
+        "retention.audit-log-window",
+        "Audit log retention window",
+        json!({"governs_paths": ["src/never-touched.ts"]}),
+    );
+    assert_eq!(
+        result["isError"], true,
+        "una ruta ausente del diff debe fallar explícitamente: {result}"
+    );
+    let message = result["content"][0]["text"].as_str().unwrap();
+    assert!(
+        message.contains("src/never-touched.ts"),
+        "el error debe nombrar la ruta ofensora: {message}"
+    );
+
+    // 4. Vacío no es lo mismo que ausente: un Record que no gobierna nada
+    //    casi seguro es un error del caller.
+    let result = finalize(
+        &mut client,
+        4,
+        "constraint.govpaths-empty",
+        "notifications.push-delivery",
+        "Push notification delivery",
+        json!({"governs_paths": []}),
+    );
+    assert_eq!(
+        result["isError"], true,
+        "governs_paths vacío debe rechazarse en vez de atar todo: {result}"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}

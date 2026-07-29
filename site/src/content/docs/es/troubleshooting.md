@@ -36,3 +36,24 @@ valla de Chesterton cuyo motivo vive en un Record aprobado.
 
 No borres una a mano. Revisa las propuestas pendientes, compara evidencia y
 bindings y rechaza o corrige el duplicado mediante la revisión interactiva.
+
+## Un cliente GUI reporta el servidor MCP como no disponible
+
+Cursor o una app de escritorio abierta desde el Dock reporta `rationale` como
+no disponible, mientras Codex y Claude Code en terminal funcionan.
+
+La configuración MCP declara a propósito el comando lógico `rationale` en vez
+de una ruta absoluta personal, para que el archivo pueda versionarse y
+compartirse. Ese comando solo resuelve si el cliente ve el directorio donde
+está el binario. En macOS, una aplicación abierta desde el Dock hereda el
+entorno de `launchd`, no el de tu shell, así que `~/.local/bin` —donde el
+instalador coloca el binario— le resulta invisible.
+
+`install-agent` avisa de esto e imprime el remedio. Puedes abrir el cliente
+desde un terminal, o exponer el binario donde las apps GUI lo vean:
+
+```bash
+sudo ln -sf ~/.local/bin/rationale /usr/local/bin/rationale
+```
+
+No hace falta cambiar nada en la configuración del proyecto.

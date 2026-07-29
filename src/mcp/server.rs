@@ -239,6 +239,11 @@ fn tool_definitions() -> Value {
                         }
                     },
                     "risks": {"type": "array", "items": {"type": "string"}},
+                    "governs_paths": {
+                        "description": "Rutas repo-relativas que ESTA decisión gobierna. Omítelo si el árbol de trabajo contiene un solo cambio. Declárralo cuando el árbol contenga varias decisiones independientes: permite escribir un Record pequeño por decisión en vez de uno gigante que ate todo el diff. Solo se aceptan rutas presentes en el diff desde base_revision.",
+                        "type": "array",
+                        "items": {"type": "string"}
+                    },
                     "project_root": {"type": "string"},
                     "repo_path": {"type": "string"}
                 },
@@ -510,6 +515,33 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
                 .collect()
         })
         .unwrap_or_default();
+    // Ausente conserva el comportamiento histórico (un binding por archivo
+    // del diff). Presente pero vacío no: eso sería un Record que no gobierna
+    // nada, y el caller casi seguro quiso decir otra cosa.
+    let governs_paths = match args.get("governs_paths") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => {
+            let array = value
+                .as_array()
+                .ok_or_else(|| "governs_paths debe ser un array de rutas".to_string())?;
+            let paths: Vec<String> = array
+                .iter()
+                .map(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| "cada ruta de governs_paths debe ser texto".to_string())
+                })
+                .collect::<Result<_, _>>()?;
+            if paths.is_empty() {
+                return Err(
+                    "governs_paths no puede venir vacío: omítelo para atar todo el diff, o \
+                     declara las rutas que esta decisión gobierna"
+                        .to_string(),
+                );
+            }
+            Some(paths)
+        }
+    };
     let (project_root, repo_path) = resolve_roots(args)?;
 
     let outcome = pipeline::finalize(
@@ -528,6 +560,7 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
             subject_type,
             novelty_reason,
             risks,
+            governs_paths,
         },
         provider,
     )?;

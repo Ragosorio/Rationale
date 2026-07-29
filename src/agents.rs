@@ -37,7 +37,36 @@ struct AgentTarget {
     mcp_config_file: Option<&'static str>,
     /// Directorio de skills por proyecto, si el agente los consume.
     skills_dir: Option<&'static str>,
+    /// Cabecera que el archivo de instrucciones necesita para que el agente
+    /// lo reconozca, escrita **solo al crearlo**.
+    ///
+    /// `CLAUDE.md` y `AGENTS.md` son markdown que el cliente lee entero, así
+    /// que no necesitan ninguna: `None`. Una regla de Cursor
+    /// (`.cursor/rules/*.mdc`) sí — sin su frontmatter YAML, Cursor no la
+    /// aplica, y el bloque quedaba escrito en un archivo que el agente
+    /// ignoraba. Va solo al crear porque un archivo que ya existe tiene su
+    /// propia cabecera: insertar una segunda a mitad del archivo lo
+    /// corrompería.
+    file_preamble: Option<&'static str>,
+    /// Directorio cuya presencia prueba que el proyecto ya usa este agente,
+    /// cuando no hay un archivo concreto que lo delate.
+    ///
+    /// `claude-code` ya se detecta por `skills_dir` (`.claude/skills`).
+    /// Cursor no tenía equivalente: se detectaba solo por `.cursor/mcp.json`
+    /// o por su propia regla, así que un proyecto abierto en el IDE de Cursor
+    /// —que crea `.cursor/` pero no `mcp.json`— nunca se detectaba si el
+    /// usuario no tenía el CLI `cursor-agent` en el `PATH`.
+    detect_dir: Option<&'static str>,
 }
+
+/// Frontmatter de una regla de Cursor. `alwaysApply: true` la incluye en todo
+/// el proyecto, que es lo que un protocolo de invocación necesita; con
+/// `alwaysApply` activo, `globs` no acota nada y se deja vacío.
+const CURSOR_RULE_PREAMBLE: &str = "---\n\
+description: Protocolo de invocación de Rationale — preserva el porqué del código.\n\
+globs:\n\
+alwaysApply: true\n\
+---\n\n";
 
 const TARGETS: &[AgentTarget] = &[
     AgentTarget {
@@ -46,6 +75,8 @@ const TARGETS: &[AgentTarget] = &[
         instructions_file: "CLAUDE.md",
         mcp_config_file: Some(".mcp.json"),
         skills_dir: Some(".claude/skills"),
+        file_preamble: None,
+        detect_dir: None,
     },
     AgentTarget {
         name: "codex",
@@ -53,6 +84,8 @@ const TARGETS: &[AgentTarget] = &[
         instructions_file: "AGENTS.md",
         mcp_config_file: None,
         skills_dir: None,
+        file_preamble: None,
+        detect_dir: None,
     },
     AgentTarget {
         name: "cursor",
@@ -60,6 +93,8 @@ const TARGETS: &[AgentTarget] = &[
         instructions_file: ".cursor/rules/rationale.mdc",
         mcp_config_file: Some(".cursor/mcp.json"),
         skills_dir: None,
+        file_preamble: Some(CURSOR_RULE_PREAMBLE),
+        detect_dir: Some(".cursor"),
     },
 ];
 
@@ -138,6 +173,7 @@ pub fn install(
     project_root: &Path,
     rationale_local: &Path,
     binary_path: &Path,
+    refresh_skills: bool,
     dry_run: bool,
 ) -> Result<InstallReport, String> {
     let mut manifest = load_manifest(rationale_local);
@@ -157,6 +193,9 @@ pub fn install(
             .push(".rationale-local/ excluido localmente en .git/info/exclude".to_string());
     }
     if let Some(warning) = tracked_local_data_warning(project_root) {
+        report.actions.push(warning);
+    }
+    if let Some(warning) = gui_path_resolution_warning() {
         report.actions.push(warning);
     }
 
@@ -202,7 +241,8 @@ pub fn install(
         }
 
         let instructions_path = project_root.join(target.instructions_file);
-        let (action, changed) = upsert_instructions_block(&instructions_path, dry_run)?;
+        let (action, changed) =
+            upsert_instructions_block(&instructions_path, target.file_preamble, dry_run)?;
         if changed {
             report.actions.push(format!(
                 "{}: {} bloque de instrucciones en {}",
@@ -280,18 +320,39 @@ pub fn install(
                 let relative = format!("{skills_dir}/rationale-{}/SKILL.md", action.name);
                 let path = project_root.join(&relative);
                 let content = skill_content(action);
-                let previous_hash = manifest
-                    .entries
-                    .iter()
-                    .find(|entry| entry.path == path)
-                    .and_then(|entry| entry.content_hash.as_deref());
-                let outcome = upsert_owned_file(&path, content.as_bytes(), previous_hash, dry_run)?;
+                // El manifest guarda rutas RELATIVAS al proyecto desde la
+                // migración de rutas portables; `path` es absoluta. Comparar
+                // las dos con `==` no casaba nunca, así que `previous_hash`
+                // salía siempre `None` y todo skill se conservaba como si el
+                // usuario lo hubiera editado — incluso con el hash correcto
+                // registrado. Esto hacía indistribuible cualquier corrección
+                // de skill. `existing_entry_index` ya canoniza los dos lados.
+                let previous_hash = existing_entry_index(&manifest, project_root, &path)
+                    .and_then(|index| manifest.entries[index].content_hash.as_deref());
+                let outcome = upsert_owned_file(
+                    &path,
+                    content.as_bytes(),
+                    previous_hash,
+                    refresh_skills,
+                    dry_run,
+                )?;
 
                 if outcome.preserved {
-                    report.actions.push(format!(
-                        "{}: conservado {} porque contiene cambios del usuario",
-                        target.name, relative
-                    ));
+                    report.actions.push(match outcome.preserve_reason {
+                        Some(PreserveReason::UserEdited) => format!(
+                            "{}: conservado {} porque contiene cambios del usuario",
+                            target.name, relative
+                        ),
+                        // Sin entrada en el manifest no hay prueba de nada. Se
+                        // conserva por prudencia, pero se dice la verdad y se
+                        // nombra la salida.
+                        _ => format!(
+                            "{}: conservado {} — procedencia desconocida (sin registro en el \
+                             manifest local). Si Rationale lo escribió, \
+                             `install-agent --refresh-skills` lo regenera",
+                            target.name, relative
+                        ),
+                    });
                 } else if outcome.changed {
                     report.actions.push(format!(
                         "{}: {} skill {}",
@@ -357,7 +418,10 @@ pub fn uninstall(project_root: &Path, rationale_local: &Path) -> Result<Vec<Stri
                 if is_json {
                     remove_mcp_json_entry(&path)?;
                 } else {
-                    remove_instructions_block(&path)?;
+                    remove_instructions_block(
+                        &path,
+                        preamble_for_instructions_path(project_root, &path),
+                    )?;
                 }
                 actions.push(format!("{}: revertido {}", entry.agent, path.display()));
             }
@@ -510,6 +574,10 @@ fn project_already_uses(project_root: &Path, target: &AgentTarget) -> bool {
             .skills_dir
             .map(|dir| project_root.join(dir).exists())
             .unwrap_or(false)
+        || target
+            .detect_dir
+            .map(|dir| project_root.join(dir).is_dir())
+            .unwrap_or(false)
 }
 
 fn find_on_path(name: &str) -> Option<PathBuf> {
@@ -561,12 +629,20 @@ fn skill_content(action: &crate::prompts::Action) -> String {
     let argument_hint =
         serde_json::to_string(action.argument_hint).expect("serialize skill argument hint");
     let arguments = serde_json::to_string(action.arguments).expect("serialize skill arguments");
+    // Solo las acciones que inyectan un comando Bash concreto declaran
+    // `allowed-tools` — sin esto, Claude Code pide aprobación interactiva
+    // la primera vez que el skill corre, incluso en una instalación limpia.
+    let allowed_tools_line = match action.allowed_tools {
+        Some(pattern) => format!("allowed-tools: {pattern}\n"),
+        None => String::new(),
+    };
     format!(
         "---\n\
 description: {description}\n\
 argument-hint: {argument_hint}\n\
 arguments: {arguments}\n\
 disable-model-invocation: {}\n\
+{allowed_tools_line}\
 ---\n\n\
 {}\n",
         action.user_only,
@@ -580,12 +656,15 @@ struct OwnedWriteOutcome {
     changed: bool,
     owned: bool,
     preserved: bool,
+    /// Presente solo cuando `preserved` es `true`.
+    preserve_reason: Option<PreserveReason>,
 }
 
 fn upsert_owned_file(
     path: &Path,
     desired: &[u8],
     previous_hash: Option<&str>,
+    adopt_unknown: bool,
     dry_run: bool,
 ) -> Result<OwnedWriteOutcome, String> {
     let observed = match std::fs::read(path) {
@@ -610,6 +689,7 @@ fn upsert_owned_file(
             observed.as_deref(),
             desired,
             previous_hash,
+            adopt_unknown,
         ));
     }
 
@@ -632,7 +712,13 @@ fn upsert_owned_file(
         },
         None => None,
     };
-    let outcome = classify_owned_write(action.clone(), current.as_deref(), desired, previous_hash);
+    let outcome = classify_owned_write(
+        action.clone(),
+        current.as_deref(),
+        desired,
+        previous_hash,
+        adopt_unknown,
+    );
 
     if outcome.preserved || !outcome.changed {
         if let Some(claimed_path) = claimed {
@@ -663,18 +749,58 @@ fn upsert_owned_file(
     Ok(outcome)
 }
 
+/// Por qué un archivo owned no se reemplazó. Las dos razones se veían iguales
+/// desde fuera y no lo son:
+///
+/// - `UserEdited`: su hash no coincide con el que el manifest registró. Eso
+///   **prueba** que alguien lo cambió después de que Rationale lo escribiera.
+/// - `ProvenanceUnknown`: no hay entrada en el manifest, así que Rationale no
+///   sabe si lo escribió él o el usuario. Decir "contiene cambios del usuario"
+///   aquí es afirmar algo que no se comprobó.
+///
+/// La distinción no es cosmética. `.rationale-local/` es local-only y nunca se
+/// versiona (ADR-0014), mientras los skills sí se comitean: cualquiera que
+/// clone el proyecto cae en `ProvenanceUnknown` para los seis, y con el
+/// mensaje anterior se le decía que él los había editado mientras se le
+/// negaban las correcciones en silencio.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PreserveReason {
+    UserEdited,
+    ProvenanceUnknown,
+}
+
 fn classify_owned_write(
     action: FileAction,
     existing: Option<&[u8]>,
     desired: &[u8],
     previous_hash: Option<&str>,
+    adopt_unknown: bool,
 ) -> OwnedWriteOutcome {
     let existing_matches_desired = existing == Some(desired);
+    let mut preserve_reason = None;
     let safe_to_replace = existing_matches_desired
         || match (existing, previous_hash) {
             (None, _) => true,
-            (Some(bytes), Some(expected)) => content_hash(bytes) == expected,
-            (Some(_), None) => false,
+            (Some(bytes), Some(expected)) => {
+                if content_hash(bytes) == expected {
+                    true
+                } else {
+                    preserve_reason = Some(PreserveReason::UserEdited);
+                    false
+                }
+            }
+            // Sin manifest no hay prueba en ninguna dirección. Por defecto se
+            // conserva —nunca destruir trabajo del usuario ante la duda— pero
+            // `--refresh-skills` permite al humano resolver la duda de forma
+            // explícita, sin tocar el caso `UserEdited`, que sí está probado.
+            (Some(_), None) => {
+                if adopt_unknown {
+                    true
+                } else {
+                    preserve_reason = Some(PreserveReason::ProvenanceUnknown);
+                    false
+                }
+            }
         };
 
     OwnedWriteOutcome {
@@ -682,6 +808,7 @@ fn classify_owned_write(
         changed: safe_to_replace && !existing_matches_desired,
         owned: safe_to_replace,
         preserved: !safe_to_replace,
+        preserve_reason,
     }
 }
 
@@ -877,14 +1004,26 @@ fn content_hash(content: &[u8]) -> String {
     format!("{:x}", Sha256::digest(content))
 }
 
-fn upsert_instructions_block(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
+fn upsert_instructions_block(
+    path: &Path,
+    preamble: Option<&str>,
+    dry_run: bool,
+) -> Result<(FileAction, bool), String> {
     let existing = std::fs::read_to_string(path).ok();
     let block = instructions_block();
 
     match existing {
         None => {
+            // El preámbulo solo participa aquí: es la cabecera que el archivo
+            // necesita para existir como tal (el frontmatter de una regla de
+            // Cursor). En las ramas de abajo el archivo ya existe y tiene la
+            // suya, si su formato la exige.
+            let contents = match preamble {
+                Some(preamble) => format!("{preamble}{block}"),
+                None => block.clone(),
+            };
             if !dry_run {
-                crate::storage::atomic_write_bytes(path, block.as_bytes())
+                crate::storage::atomic_write_bytes(path, contents.as_bytes())
                     .map_err(|e| format!("no se pudo escribir {}: {e}", path.display()))?;
             }
             Ok((FileAction::Created, true))
@@ -943,17 +1082,32 @@ fn extract_block(content: &str) -> Result<Option<String>, String> {
 
 fn replace_block(content: &str, new_block: &str) -> Result<String, String> {
     match locate_block(content)? {
-        Some((start, end)) => Ok(format!(
-            "{}{}{}",
-            &content[..start],
-            new_block,
-            &content[end..]
-        )),
+        Some((start, end)) => {
+            // `new_block` ya termina en `\n`. Si lo único que seguía al bloque
+            // era el salto final del archivo, concatenarlo dejaba `\n\n` al
+            // final: `git diff --check` lo reporta como "new blank line at
+            // EOF" y en este repo eso es una puerta de CI. Se conserva
+            // cualquier contenido real posterior; solo se descarta el relleno
+            // en blanco del final.
+            let tail = &content[end..];
+            let tail = if tail.trim().is_empty() { "" } else { tail };
+            Ok(format!("{}{}{}", &content[..start], new_block, tail))
+        }
         None => Ok(format!("{}\n\n{}", content.trim_end(), new_block)),
     }
 }
 
-fn remove_instructions_block(path: &Path) -> Result<(), String> {
+/// Cabecera que Rationale escribiría en este archivo de instrucciones, si
+/// alguna. Se busca por destino administrado, no por extensión: la lista de
+/// `TARGETS` es la única fuente.
+fn preamble_for_instructions_path(project_root: &Path, path: &Path) -> Option<&'static str> {
+    TARGETS
+        .iter()
+        .find(|target| project_root.join(target.instructions_file) == path)
+        .and_then(|target| target.file_preamble)
+}
+
+fn remove_instructions_block(path: &Path, preamble: Option<&str>) -> Result<(), String> {
     let Some(content) = std::fs::read_to_string(path).ok() else {
         return Ok(());
     };
@@ -965,7 +1119,16 @@ fn remove_instructions_block(path: &Path) -> Result<(), String> {
         remaining.pop();
     }
     let trimmed = remaining.trim();
-    if trimmed.is_empty() {
+    // La cabecera también la escribió Rationale: si es todo lo que queda, el
+    // archivo no tiene nada del usuario y dejarlo ahí sería filtrar 100 bytes
+    // de Rationale en un proyecto que pidió desinstalar. Si en cambio el
+    // usuario añadió contenido propio, el archivo se conserva **con** su
+    // cabecera: en un `.mdc` quitarla invalidaría la regla que el usuario
+    // quiere mantener.
+    let only_our_preamble = preamble
+        .map(|preamble| !trimmed.is_empty() && trimmed == preamble.trim())
+        .unwrap_or(false);
+    if trimmed.is_empty() || only_our_preamble {
         std::fs::remove_file(path)
             .map_err(|e| format!("no se pudo borrar {}: {e}", path.display()))?;
     } else {
@@ -986,6 +1149,56 @@ fn remove_instructions_block(path: &Path) -> Result<(), String> {
 /// ruta absoluta falla para *todo* integrante que no sea quien instaló, y estos
 /// archivos son configuración compartida y versionada.
 const MCP_COMMAND: &str = "rationale";
+
+/// Directorios que un cliente lanzado desde la GUI puede resolver.
+///
+/// En macOS una app abierta desde el Dock hereda el `PATH` de `launchd`, no el
+/// del shell: `~/.local/bin` —donde el instalador pone el binario— queda
+/// invisible. El comando lógico de la configuración MCP entonces no resuelve y
+/// el cliente reporta el servidor como no disponible, sin explicación.
+#[cfg(unix)]
+const GUI_VISIBLE_BIN_DIRS: &[&str] = &["/usr/local/bin", "/usr/bin", "/bin", "/opt/homebrew/bin"];
+
+/// Aviso cuando el comando lógico de la config MCP no sería resoluble por un
+/// cliente lanzado desde la GUI.
+///
+/// No cambia lo que se escribe: ADR-0015 decide el comando lógico
+/// deliberadamente, para no dejar la ruta personal de alguien en una
+/// configuración compartida y versionada. Lo que faltaba era decirle al
+/// usuario por qué su cliente gráfico no lo encuentra.
+///
+/// Solo Unix. El diagnóstico describe un mecanismo concreto —el `PATH` de
+/// `launchd` en macOS, y los lanzadores de escritorio en Linux— que no existe
+/// en Windows: allí una aplicación gráfica hereda el `PATH` del usuario desde
+/// el registro, el mismo que ve un terminal. Emitirlo ahí sería afirmar un
+/// problema que no se comprobó. `windows-latest` lo encontró de inmediato: una
+/// ruta estilo Unix no es `is_absolute()` en Windows, el mismo patrón que ya
+/// había roto la migración de manifests.
+#[cfg(not(unix))]
+fn gui_path_resolution_warning() -> Option<String> {
+    None
+}
+
+#[cfg(unix)]
+fn gui_path_resolution_warning() -> Option<String> {
+    let resolved = find_on_path(MCP_COMMAND)?;
+    let dir = resolved.parent()?;
+    if GUI_VISIBLE_BIN_DIRS
+        .iter()
+        .any(|known| dir == Path::new(known))
+    {
+        return None;
+    }
+    Some(format!(
+        "aviso: `{MCP_COMMAND}` resuelve a {} desde este terminal, pero un cliente lanzado \
+         desde la GUI (Cursor o la app de escritorio) hereda un PATH distinto y puede no \
+         encontrarlo — reportaría el servidor MCP como no disponible. Remedios: abrir el \
+         cliente desde un terminal, o exponer el binario en un directorio visible para apps \
+         GUI, por ejemplo:\n    sudo ln -sf {} /usr/local/bin/{MCP_COMMAND}",
+        resolved.display(),
+        resolved.display()
+    ))
+}
 
 fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
     let existing = std::fs::read_to_string(path).ok();
@@ -1479,11 +1692,11 @@ mod tests {
     fn instructions_block_is_idempotent() {
         let project = temp_dir("idempotent");
         let claude_md = project.join("CLAUDE.md");
-        let (action1, changed1) = upsert_instructions_block(&claude_md, false).unwrap();
+        let (action1, changed1) = upsert_instructions_block(&claude_md, None, false).unwrap();
         assert_eq!(action1, FileAction::Created);
         assert!(changed1);
 
-        let (action2, changed2) = upsert_instructions_block(&claude_md, false).unwrap();
+        let (action2, changed2) = upsert_instructions_block(&claude_md, None, false).unwrap();
         assert_eq!(action2, FileAction::Modified);
         assert!(
             !changed2,
@@ -1503,12 +1716,12 @@ mod tests {
         )
         .unwrap();
 
-        upsert_instructions_block(&claude_md, false).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
         let content = std::fs::read_to_string(&claude_md).unwrap();
         assert!(content.contains("Mis instrucciones"));
         assert!(content.contains(MARKER_BEGIN));
 
-        remove_instructions_block(&claude_md).unwrap();
+        remove_instructions_block(&claude_md, None).unwrap();
         let after = std::fs::read_to_string(&claude_md).unwrap();
         assert!(after.contains("Mis instrucciones"));
         assert!(!after.contains(MARKER_BEGIN));
@@ -1528,8 +1741,8 @@ mod tests {
     fn remove_instructions_block_deletes_file_it_created_entirely() {
         let project = temp_dir("delete-created");
         let claude_md = project.join("CLAUDE.md");
-        upsert_instructions_block(&claude_md, false).unwrap();
-        remove_instructions_block(&claude_md).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
+        remove_instructions_block(&claude_md, None).unwrap();
         assert!(!claude_md.exists());
         std::fs::remove_dir_all(project).ok();
     }
@@ -1550,7 +1763,7 @@ mod tests {
         );
         std::fs::write(&claude_md, &corrupted).unwrap();
 
-        let result = upsert_instructions_block(&claude_md, false);
+        let result = upsert_instructions_block(&claude_md, None, false);
         assert!(
             result.is_err(),
             "debe rechazar marcadores invertidos, no panicar ni escribir"
@@ -1561,7 +1774,7 @@ mod tests {
             "el archivo no debe tocarse cuando los marcadores están invertidos"
         );
 
-        let remove_result = remove_instructions_block(&claude_md);
+        let remove_result = remove_instructions_block(&claude_md, None);
         assert!(remove_result.is_err());
         assert_eq!(std::fs::read_to_string(&claude_md).unwrap(), corrupted);
 
@@ -1583,7 +1796,7 @@ mod tests {
         let rationale_local = project.join(".rationale-local");
 
         let claude_md = project.join("CLAUDE.md");
-        let (action, _) = upsert_instructions_block(&claude_md, false).unwrap();
+        let (action, _) = upsert_instructions_block(&claude_md, None, false).unwrap();
         assert_eq!(action, FileAction::Created);
         let existing = std::fs::read_to_string(&claude_md).unwrap();
         std::fs::write(
@@ -1728,7 +1941,7 @@ mod tests {
     fn dry_run_touches_nothing() {
         let project = temp_dir("dry-run");
         let claude_md = project.join("CLAUDE.md");
-        let (_, changed) = upsert_instructions_block(&claude_md, true).unwrap();
+        let (_, changed) = upsert_instructions_block(&claude_md, None, true).unwrap();
         assert!(changed, "dry-run debe reportar lo que haría");
         assert!(!claude_md.exists(), "dry-run no debe escribir nada");
         std::fs::remove_dir_all(project).ok();
@@ -1744,6 +1957,382 @@ mod tests {
             .all(|target| target.skills_dir.is_none()));
     }
 
+    /// Solo Cursor exige una cabecera en su archivo de instrucciones.
+    /// `CLAUDE.md` y `AGENTS.md` son markdown que el cliente lee entero:
+    /// darles frontmatter sería ruido visible para el usuario.
+    #[test]
+    fn only_cursor_declares_a_file_preamble() {
+        for target in TARGETS {
+            match target.name {
+                "cursor" => assert_eq!(
+                    target.file_preamble,
+                    Some(CURSOR_RULE_PREAMBLE),
+                    "la regla de Cursor necesita su frontmatter o Cursor la ignora"
+                ),
+                other => assert!(
+                    target.file_preamble.is_none(),
+                    "{other} no necesita cabecera y no debe recibir una"
+                ),
+            }
+        }
+    }
+
+    /// El defecto: `install-agent` escribía en `.cursor/rules/rationale.mdc`
+    /// el mismo bloque markdown que en `CLAUDE.md`, sin el frontmatter YAML
+    /// que Cursor exige para aplicar una regla — el bloque acababa en un
+    /// archivo que el agente ignoraba.
+    #[test]
+    fn cursor_rule_is_created_with_valid_frontmatter_and_converges() {
+        let project = temp_dir("cursor-mdc");
+        let cursor_target = TARGETS
+            .iter()
+            .find(|t| t.name == "cursor")
+            .expect("el target cursor debe existir");
+        let rule = project.join(cursor_target.instructions_file);
+
+        let (action, changed) =
+            upsert_instructions_block(&rule, cursor_target.file_preamble, false).unwrap();
+        assert_eq!(action, FileAction::Created);
+        assert!(changed);
+
+        let written = std::fs::read_to_string(&rule).unwrap();
+        assert!(
+            written.starts_with("---\n"),
+            "una regla .mdc debe empezar por su frontmatter:\n{written}"
+        );
+        for key in ["description:", "globs:", "alwaysApply: true"] {
+            assert!(
+                written.contains(key),
+                "falta {key} en el frontmatter:\n{written}"
+            );
+        }
+        // El frontmatter va ANTES del bloque: si el orden se invirtiera,
+        // Cursor no vería el frontmatter en la primera línea.
+        assert!(
+            written.find("---\n").unwrap() < written.find(MARKER_BEGIN).unwrap(),
+            "el frontmatter debe preceder al bloque administrado"
+        );
+        assert!(written.contains(MARKER_END));
+
+        // Segunda pasada: converge byte a byte y no duplica el frontmatter.
+        let (action2, changed2) =
+            upsert_instructions_block(&rule, cursor_target.file_preamble, false).unwrap();
+        assert_eq!(action2, FileAction::Modified);
+        assert!(!changed2, "la segunda pasada no debe cambiar nada");
+        let second = std::fs::read_to_string(&rule).unwrap();
+        assert_eq!(written, second, "el archivo debe ser byte-idéntico");
+        assert_eq!(
+            second.matches("alwaysApply").count(),
+            1,
+            "el frontmatter no debe duplicarse:\n{second}"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// El síntoma que esto evita: Cursor abierto desde el Dock reportando
+    /// "MCP rationale no disponible" sin ninguna explicación, mientras Codex y
+    /// Claude Code en terminal funcionan. La causa es el `PATH` de `launchd`,
+    /// que no incluye `~/.local/bin`.
+    #[cfg(unix)]
+    #[test]
+    fn gui_path_warning_fires_only_for_dirs_a_gui_client_cannot_see() {
+        // No se puede mover el binario real, así que se comprueba la regla que
+        // decide: qué directorios cuentan como visibles para una app GUI.
+        for visible in GUI_VISIBLE_BIN_DIRS {
+            assert!(
+                Path::new(visible).is_absolute(),
+                "{visible} debe ser absoluto para comparar contra el padre resuelto"
+            );
+        }
+        assert!(
+            GUI_VISIBLE_BIN_DIRS.contains(&"/usr/local/bin"),
+            "/usr/local/bin es el destino que el propio aviso recomienda"
+        );
+        assert!(
+            !GUI_VISIBLE_BIN_DIRS
+                .iter()
+                .any(|d| d.contains(".local/bin")),
+            "~/.local/bin es justo el caso que debe disparar el aviso"
+        );
+
+        // Y el aviso, cuando aplica, debe nombrar el remedio concreto.
+        if let Some(warning) = gui_path_resolution_warning() {
+            assert!(
+                warning.contains("/usr/local/bin"),
+                "el aviso debe dar el remedio, no solo el diagnóstico: {warning}"
+            );
+            assert!(
+                warning.contains(MCP_COMMAND),
+                "y nombrar el comando afectado: {warning}"
+            );
+        }
+    }
+
+    /// `git diff --check` es una puerta de CI en este repo y el propio
+    /// escritor de bloques la rompía: `instructions_block()` ya termina en
+    /// `\n`, así que al reemplazar un bloque que ocupaba el archivo entero se
+    /// le sumaba el salto final y quedaba una línea en blanco al final.
+    #[test]
+    fn replacing_a_block_leaves_exactly_one_trailing_newline() {
+        let project = temp_dir("trailing-newline");
+        let claude_md = project.join("CLAUDE.md");
+
+        upsert_instructions_block(&claude_md, None, false).unwrap();
+        // Simular un bloque de una versión anterior para forzar el reemplazo.
+        let stale = std::fs::read_to_string(&claude_md)
+            .unwrap()
+            .replace("protocolo de invocación", "protocolo viejo");
+        std::fs::write(&claude_md, stale).unwrap();
+
+        upsert_instructions_block(&claude_md, None, false).unwrap();
+
+        let written = std::fs::read_to_string(&claude_md).unwrap();
+        assert!(
+            written.ends_with("-->\n"),
+            "debe terminar justo tras el marcador final:\n{:?}",
+            &written[written.len().saturating_sub(30)..]
+        );
+        assert!(
+            !written.ends_with("\n\n"),
+            "ninguna línea en blanco al final: git diff --check la rechaza"
+        );
+
+        // Y el contenido del usuario que siga al bloque se conserva.
+        std::fs::write(
+            &claude_md,
+            format!("{}\n## Sección del usuario\n", written.trim_end()),
+        )
+        .unwrap();
+        let stale2 = std::fs::read_to_string(&claude_md)
+            .unwrap()
+            .replace("protocolo de invocación", "otra vez viejo");
+        std::fs::write(&claude_md, stale2).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
+        let with_user = std::fs::read_to_string(&claude_md).unwrap();
+        assert!(
+            with_user.contains("## Sección del usuario"),
+            "el contenido posterior al bloque no se descarta:\n{with_user}"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// El defecto que hacía indistribuible cualquier corrección de skill: el
+    /// manifest guarda rutas relativas desde la migración de rutas portables,
+    /// pero la búsqueda del hash previo comparaba contra la ruta absoluta con
+    /// `==`. No casaba nunca, así que `previous_hash` salía siempre `None` y
+    /// todo skill se conservaba como "editado por el usuario" — incluso con el
+    /// hash correcto registrado en el manifest.
+    #[test]
+    fn a_skill_whose_recorded_hash_matches_is_updated_not_preserved() {
+        let repo = git_repo("skill-hash-lookup");
+        let local = repo.join(".rationale-local");
+
+        // Primera instalación: escribe los skills y registra sus hashes.
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
+        let skill = repo.join(".claude/skills/rationale-health/SKILL.md");
+
+        // Simular una generación anterior: contenido distinto del que el
+        // binario actual escribiría, pero con su hash registrado en el
+        // manifest — exactamente lo que deja una versión previa.
+        let older = "---\ndescription: \"vieja\"\n---\n\nCuerpo de una versión anterior.\n";
+        std::fs::write(&skill, older).unwrap();
+        let mut manifest = load_manifest(&local);
+        let index = existing_entry_index(&manifest, &repo, &skill)
+            .expect("la primera instalación debe haber registrado el skill");
+        manifest.entries[index].content_hash = Some(content_hash(older.as_bytes()));
+        save_manifest(&local, &manifest).unwrap();
+
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
+
+        let updated = std::fs::read_to_string(&skill).unwrap();
+        assert_eq!(
+            updated,
+            skill_content(crate::prompts::action("health").unwrap()),
+            "un skill cuyo hash registrado coincide debe actualizarse:\n{:?}",
+            report.actions
+        );
+        assert!(
+            !report
+                .actions
+                .iter()
+                .any(|a| a.contains("rationale-health") && a.contains("conservado")),
+            "no debe reportarse como conservado: {:?}",
+            report.actions
+        );
+
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// Sin entrada en el manifest, Rationale no sabe quién escribió el archivo.
+    /// Se conserva por prudencia, pero el mensaje no puede afirmar que el
+    /// usuario lo editó — y `--refresh-skills` debe resolver la duda.
+    #[test]
+    fn unknown_provenance_is_reported_honestly_and_refreshable() {
+        let repo = git_repo("skill-unknown-provenance");
+        let local = repo.join(".rationale-local");
+
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
+        let skill = repo.join(".claude/skills/rationale-health/SKILL.md");
+        std::fs::write(&skill, "contenido de otra generación\n").unwrap();
+
+        // El manifest local no se versiona (ADR-0014): quien clone el proyecto
+        // tiene los skills pero no el manifest. Se simula borrándolo.
+        std::fs::remove_file(manifest_path(&local)).unwrap();
+
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
+        let message = report
+            .actions
+            .iter()
+            .find(|a| a.contains("rationale-health"))
+            .expect("debe reportarse algo sobre el skill");
+        assert!(
+            message.contains("procedencia desconocida"),
+            "el mensaje debe decir la verdad, no inventar una edición: {message}"
+        );
+        assert!(
+            !message.contains("cambios del usuario"),
+            "no puede afirmar una edición que no comprobó: {message}"
+        );
+        assert!(
+            message.contains("--refresh-skills"),
+            "debe nombrar la salida: {message}"
+        );
+
+        // Con el flag explícito, se regenera.
+        std::fs::remove_file(manifest_path(&local)).ok();
+        install(&repo, &local, &fake_binary(), true, false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&skill).unwrap(),
+            skill_content(crate::prompts::action("health").unwrap()),
+            "--refresh-skills debe regenerar el skill de procedencia desconocida"
+        );
+
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// Pero `--refresh-skills` NO debe pisar una edición probada: si el
+    /// manifest registra un hash y el archivo no coincide, alguien lo cambió.
+    #[test]
+    fn refresh_skills_never_overwrites_a_proven_user_edit() {
+        let repo = git_repo("skill-refresh-respects-edits");
+        let local = repo.join(".rationale-local");
+
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
+        let skill = repo.join(".claude/skills/rationale-health/SKILL.md");
+        let mine = "---\ndescription: \"mío\"\n---\n\nEsto lo escribí yo.\n";
+        std::fs::write(&skill, mine).unwrap();
+
+        let report = install(&repo, &local, &fake_binary(), true, false).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&skill).unwrap(),
+            mine,
+            "una edición probada sobrevive incluso a --refresh-skills"
+        );
+        assert!(
+            report
+                .actions
+                .iter()
+                .any(|a| a.contains("rationale-health") && a.contains("cambios del usuario")),
+            "y se reporta como edición del usuario: {:?}",
+            report.actions
+        );
+
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// La cabecera que Rationale escribe también es contenido de Rationale:
+    /// si es todo lo que queda tras extirpar el bloque, el archivo se borra.
+    /// Sin esto, `uninstall-agent` dejaba un `.mdc` huérfano con el
+    /// frontmatter de Rationale dentro — un defecto que introdujo el propio
+    /// preámbulo y que solo apareció al probar el ciclo completo.
+    #[test]
+    fn uninstall_removes_a_rule_file_that_holds_only_our_preamble() {
+        let project = temp_dir("cursor-mdc-uninstall");
+        let rule = project.join(".cursor/rules/rationale.mdc");
+
+        upsert_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE), false).unwrap();
+        assert!(rule.exists());
+
+        remove_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE)).unwrap();
+        assert!(
+            !rule.exists(),
+            "no debe quedar un archivo con solo el frontmatter de Rationale"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// Pero si el usuario añadió contenido propio, el archivo se conserva
+    /// **con** su cabecera: en un `.mdc`, quitarla invalidaría la regla que
+    /// el usuario quiere mantener.
+    #[test]
+    fn uninstall_preserves_a_rule_file_that_has_user_content() {
+        let project = temp_dir("cursor-mdc-uninstall-user");
+        let rule = project.join(".cursor/rules/rationale.mdc");
+
+        upsert_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE), false).unwrap();
+        let with_user = format!(
+            "{}\n\n## Regla propia del usuario\n",
+            std::fs::read_to_string(&rule).unwrap().trim_end()
+        );
+        std::fs::write(&rule, with_user).unwrap();
+
+        remove_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE)).unwrap();
+
+        let left = std::fs::read_to_string(&rule)
+            .expect("el archivo debe sobrevivir porque tiene contenido del usuario");
+        assert!(left.contains("## Regla propia del usuario"));
+        assert!(
+            left.starts_with("---\n") && left.contains("alwaysApply: true"),
+            "la regla debe seguir siendo válida para Cursor:\n{left}"
+        );
+        assert!(
+            !left.contains(MARKER_BEGIN) && !left.contains(MARKER_END),
+            "el bloque administrado sí debe desaparecer:\n{left}"
+        );
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// Un `.mdc` que ya existe tiene su propio frontmatter. Insertar otro a
+    /// mitad del archivo lo corrompería, así que el preámbulo solo participa
+    /// al crear.
+    #[test]
+    fn an_existing_rule_file_never_receives_a_second_preamble() {
+        let project = temp_dir("cursor-mdc-existing");
+        let rule = project.join(".cursor/rules/rationale.mdc");
+        std::fs::create_dir_all(rule.parent().unwrap()).unwrap();
+        let user_content =
+            "---\ndescription: regla del usuario\nalwaysApply: false\n---\n\nTexto propio.\n";
+        std::fs::write(&rule, user_content).unwrap();
+
+        let (action, changed) =
+            upsert_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE), false).unwrap();
+        assert_eq!(action, FileAction::Modified);
+        assert!(changed);
+
+        let written = std::fs::read_to_string(&rule).unwrap();
+        assert!(
+            written.starts_with("---\ndescription: regla del usuario"),
+            "el frontmatter del usuario debe conservarse intacto y primero:\n{written}"
+        );
+        assert!(
+            written.contains("Texto propio."),
+            "el contenido del usuario se conserva"
+        );
+        assert_eq!(
+            written.matches("alwaysApply").count(),
+            1,
+            "no se añade un segundo frontmatter:\n{written}"
+        );
+        assert!(written.contains(MARKER_BEGIN) && written.contains(MARKER_END));
+
+        std::fs::remove_dir_all(project).ok();
+    }
+
     #[test]
     fn generated_skill_frontmatter_and_body_come_from_the_action() {
         let action = crate::prompts::action("preflight").unwrap();
@@ -1754,9 +2343,34 @@ mod tests {
         assert!(content.contains("disable-model-invocation: false"));
         assert!(content.contains(action.description));
         assert!(content.contains(action.body.trim()));
+        assert!(
+            !content.contains("allowed-tools:"),
+            "preflight no ejecuta ningún comando Bash — no debe declarar un permiso sin uso"
+        );
 
         let review = skill_content(crate::prompts::action("review").unwrap());
         assert!(review.contains("disable-model-invocation: true"));
+    }
+
+    /// Sin esto, Claude Code pedía aprobación interactiva la primera vez que
+    /// `/rationale-health` corría en una instalación limpia — el skill
+    /// promete ejecutar `rationale doctor --check` pero no declaraba el
+    /// permiso Bash exacto que esa inyección necesita.
+    #[test]
+    fn health_skill_declares_the_exact_bash_permission_it_needs() {
+        let health = skill_content(crate::prompts::action("health").unwrap());
+        assert!(
+            health.contains("allowed-tools: Bash(rationale doctor:*)"),
+            "el skill de health debe declarar el permiso exacto de su propia inyección:\n{health}"
+        );
+
+        for other in ["preflight", "explain", "capture", "review", "protocol"] {
+            let content = skill_content(crate::prompts::action(other).unwrap());
+            assert!(
+                !content.contains("allowed-tools:"),
+                "{other} no inyecta un comando Bash propio — no debe declarar allowed-tools"
+            );
+        }
     }
 
     #[test]
@@ -2098,7 +2712,7 @@ mod tests {
     fn seeded_fixture_detects_every_agent_without_any_binary_on_path() {
         let repo = git_repo("seed-detection");
         let local = repo.join(".rationale-local");
-        let report = install(&repo, &local, &fake_binary(), false).unwrap();
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
 
         for target in TARGETS {
             assert!(
@@ -2152,7 +2766,7 @@ mod tests {
 
         let report = {
             let _path = PathOverride::without_any_agent_binary();
-            install(&repo, &local, &fake_binary(), false).expect(
+            install(&repo, &local, &fake_binary(), false, false).expect(
                 "la ausencia del binario de codex no puede abortar la instalación de los demás agentes",
             )
         };
@@ -2189,7 +2803,7 @@ mod tests {
         let repo = git_repo("exclude-regression");
         let local = repo.join(".rationale-local");
 
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
 
         let status = git(&repo, &["status", "--porcelain", "--untracked-files=all"]);
         let listing = String::from_utf8(status.stdout).unwrap();
@@ -2282,7 +2896,7 @@ mod tests {
         // Monorepo y BoostAPI.
         git(&repo, &["add", "-f", ".rationale-local"]);
 
-        let report = install(&repo, &local, &fake_binary(), false).unwrap();
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
         let warning = report
             .actions
             .iter()
@@ -2313,7 +2927,7 @@ mod tests {
             !ensure_local_data_excluded(&project, false).unwrap(),
             "sin gitdir no hay nada que excluir"
         );
-        install(&project, &local, &fake_binary(), false)
+        install(&project, &local, &fake_binary(), false, false)
             .expect("la ausencia de repo Git no puede bloquear la instalación");
         std::fs::remove_dir_all(project).ok();
     }
@@ -2322,7 +2936,7 @@ mod tests {
     fn manifest_stores_project_relative_paths() {
         let repo = git_repo("manifest-relative");
         let local = repo.join(".rationale-local");
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
 
         let raw = std::fs::read_to_string(manifest_path(&local)).unwrap();
         assert!(
@@ -2346,7 +2960,7 @@ mod tests {
         let project = temp_dir("legacy-manifest");
         let local = project.join(".rationale-local");
         let claude_md = project.join("CLAUDE.md");
-        upsert_instructions_block(&claude_md, false).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
 
         // Manifest en el formato anterior a ADR-0014: ruta absoluta.
         let legacy = Manifest {
@@ -2377,7 +2991,7 @@ mod tests {
         seed_agent_detection(&project);
         let local = project.join(".rationale-local");
         let claude_md = project.join("CLAUDE.md");
-        upsert_instructions_block(&claude_md, false).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
 
         // Manifest de alpha.7 escrito cuando el proyecto vivía en otra ruta.
         save_manifest(
@@ -2400,7 +3014,7 @@ mod tests {
             "sin migración, una entrada externa cancela la desinstalación entera"
         );
 
-        install(&project, &local, &fake_binary(), false).unwrap();
+        install(&project, &local, &fake_binary(), false, false).unwrap();
 
         let raw = std::fs::read_to_string(manifest_path(&local)).unwrap();
         assert!(
@@ -2494,7 +3108,7 @@ mod tests {
 
         let claude_md = project.join("CLAUDE.md");
         std::fs::write(&claude_md, "# Encabezado propio\n\n").unwrap();
-        upsert_instructions_block(&claude_md, false).unwrap();
+        upsert_instructions_block(&claude_md, None, false).unwrap();
         let with_block = std::fs::read_to_string(&claude_md).unwrap();
         std::fs::write(&claude_md, format!("{with_block}\n## Cola propia\n")).unwrap();
 
@@ -2705,9 +3319,9 @@ mod tests {
         let repo = git_repo("converge-fresh");
         let local = repo.join(".rationale-local");
 
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
         let first = manifest_bytes(&local);
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
 
         assert_eq!(
             first,
@@ -2740,14 +3354,14 @@ mod tests {
         )
         .unwrap();
 
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
         let migrated = manifest_bytes(&local);
         assert!(
             !migrated.contains(repo.to_str().unwrap()),
             "la primera pasada migra las rutas absolutas"
         );
 
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
         assert_eq!(
             migrated,
             manifest_bytes(&local),
@@ -2764,7 +3378,7 @@ mod tests {
         let local = repo.join(".rationale-local");
 
         // Primera instalación: CLAUDE.md no existe, se crea.
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
         let entry_action = |local: &Path, path: &str| {
             let m: Manifest = serde_json::from_str(&manifest_bytes(local)).unwrap();
             m.entries
@@ -2782,8 +3396,8 @@ mod tests {
 
         // Segunda y tercera: los archivos ya existen, pero el hecho histórico
         // no cambia.
-        install(&repo, &local, &fake_binary(), false).unwrap();
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
         assert_eq!(
             entry_action(&local, "CLAUDE.md"),
             FileAction::Created,
@@ -2805,7 +3419,7 @@ mod tests {
         let claude_md = repo.join("CLAUDE.md");
         std::fs::write(&claude_md, "# Ya existía cuando Rationale llegó\n").unwrap();
 
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
         let action_of = |local: &Path| {
             let m: Manifest = serde_json::from_str(&manifest_bytes(local)).unwrap();
             m.entries
@@ -2820,7 +3434,7 @@ mod tests {
         // Borrar el archivo y reinstalar: ahora Rationale lo *crea*, pero la
         // entrada histórica dice que originalmente lo adquirió modificando.
         std::fs::remove_file(&claude_md).unwrap();
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
         assert_eq!(
             action_of(&local),
             FileAction::Modified,
@@ -2853,8 +3467,8 @@ mod tests {
         )
         .unwrap();
 
-        install(&repo, &local, &fake_binary(), false).unwrap();
-        install(&repo, &local, &fake_binary(), false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
         uninstall(&repo, &local).unwrap();
 
         let after = std::fs::read_to_string(&claude_md)
@@ -2885,7 +3499,7 @@ mod tests {
         )
         .unwrap();
 
-        let report = install(&repo, &local, &fake_binary(), false).unwrap();
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
 
         // Sin esto el test pasaba por la razón equivocada: si `install`
         // retornaba temprano por no detectar agentes, el manifest quedaba

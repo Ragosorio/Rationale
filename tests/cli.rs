@@ -428,3 +428,136 @@ fn unknown_agent_options_fail_before_touching_project_files() {
     assert!(!project.join(".rationale-local").exists());
     std::fs::remove_dir_all(project).ok();
 }
+
+/// El skill de salud debe mostrar los hallazgos —es su propósito— sin que el
+/// cliente lo marque como fallo, y aun así propagar un fallo operativo real.
+///
+/// Dos defectos reales cerrados aquí. Primero, la inyección usaba
+/// `doctor --check`, que sale 1 con hallazgos (contrato de CI, correcto para
+/// CI): Claude Code trata cualquier código distinto de cero como "Shell
+/// command failed" y descarta el output. Segundo, el intento de traducir ese
+/// código con un compuesto de shell (`$?`, `$$`) fue rechazado por Claude Code
+/// con "Contains simple_expansion" — su verificador de permisos no puede
+/// comprobar estáticamente un comando con expansión de variables, y hace bien.
+///
+/// La respuesta correcta era no inventar nada: `doctor` sin `--check` ya
+/// imprime los hallazgos saliendo 0 y sigue saliendo 1 ante un fallo real.
+/// Este test ejercita el snippet LITERAL que genera `skill_content()` —no una
+/// copia a mano— y además exige que siga siendo un comando simple.
+#[cfg(unix)]
+#[test]
+fn health_skill_injection_shows_findings_without_failing_but_keeps_real_errors() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = unique_temp_project("health-skill-injection");
+    let init = run(&project, &["init", "--skip-agent-config", "--no-mascot"]);
+    assert!(init.status.success(), "init debe tener éxito: {init:?}");
+
+    let fake_bin = project.join("fake-bin");
+    std::fs::create_dir_all(&fake_bin).unwrap();
+    let fake_claude = fake_bin.join("claude");
+    std::fs::write(&fake_claude, "").unwrap();
+    let mut perms = std::fs::metadata(&fake_claude).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&fake_claude, perms).unwrap();
+
+    let install = run_with_path(&project, &["install-agent", "--no-mascot"], &fake_bin);
+    assert!(
+        install.status.success(),
+        "install-agent debe tener éxito: {install:?}"
+    );
+
+    let skill_md =
+        std::fs::read_to_string(project.join(".claude/skills/rationale-health/SKILL.md")).unwrap();
+    assert!(
+        skill_md.contains("allowed-tools: Bash(rationale doctor:*)"),
+        "el skill generado debe declarar el permiso exacto:\n{skill_md}"
+    );
+
+    let injected_start = skill_md
+        .find("!`")
+        .expect("skill debe inyectar un comando bash")
+        + 2;
+    let rest = &skill_md[injected_start..];
+    let injected_end = rest
+        .find('`')
+        .expect("la inyección debe cerrar con backtick");
+    let injected = &rest[..injected_end];
+    assert_eq!(
+        injected, "rationale doctor",
+        "la inyección debe ser el comando simple que allowed-tools autoriza"
+    );
+    // La regresión concreta: Claude Code rechaza con "Contains
+    // simple_expansion" cualquier inyección con expansión de variables,
+    // porque no puede comprobarla estáticamente contra el patrón permitido.
+    for forbidden in ["$", "&&", ";", "|"] {
+        assert!(
+            !injected.contains(forbidden),
+            "la inyección no puede contener {forbidden:?} — el verificador de \
+             permisos del cliente la rechazaría: {injected}"
+        );
+    }
+
+    // El "rationale" resuelto por PATH dentro de la inyección debe ser el
+    // binario real compilado en este test run, no una copia distinta.
+    let sh_bin = project.join("sh-bin");
+    std::fs::create_dir_all(&sh_bin).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_rationale"), sh_bin.join("rationale")).unwrap();
+
+    // El shim va primero para que "rationale" resuelva a nuestro binario de
+    // test, conservando el PATH del sistema para `sh`.
+    let injected_path = format!("{}:/bin:/usr/bin", sh_bin.display());
+    let run_injected = |cwd: &std::path::Path| -> std::process::Output {
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(injected)
+            .current_dir(cwd)
+            .env("PATH", &injected_path)
+            .output()
+            .unwrap()
+    };
+
+    // Escenario 1: sin hallazgos.
+    let clean = run_injected(&project);
+    assert!(
+        clean.status.success(),
+        "sin hallazgos, la inyección debe salir 0: {clean:?}"
+    );
+    assert!(String::from_utf8_lossy(&clean.stdout).contains("Sin hallazgos"));
+
+    // Escenario 2: con hallazgos — mostrarlos ES el propósito del skill,
+    //               así que no puede reportarse como fallo.
+    std::fs::write(
+        project.join(".rationale/records/constraint.dirty.yaml"),
+        "id: constraint.dirty\nkind: constraint\nseverity: normal\nstatement: \"x\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\n",
+    )
+    .unwrap();
+    let with_findings = run_injected(&project);
+    assert!(
+        with_findings.status.success(),
+        "un hallazgo normal no debe marcarse como fallo: {with_findings:?}"
+    );
+    assert!(
+        String::from_utf8_lossy(&with_findings.stdout).contains("hallazgo(s)"),
+        "el reporte de hallazgos debe seguir visible: {with_findings:?}"
+    );
+    assert!(
+        String::from_utf8_lossy(&with_findings.stderr).is_empty(),
+        "no debe quedar contenido residual en stderr: {with_findings:?}"
+    );
+
+    // Escenario 3: fallo operativo real — ningún .rationale/ en el cwd.
+    let broken = unique_temp_project("health-skill-injection-broken");
+    let real_failure = run_injected(&broken);
+    assert!(
+        !real_failure.status.success(),
+        "un fallo operativo real debe seguir propagándose: {real_failure:?}"
+    );
+    assert!(
+        String::from_utf8_lossy(&real_failure.stderr).contains("error:"),
+        "el mensaje de error real debe seguir visible: {real_failure:?}"
+    );
+
+    std::fs::remove_dir_all(project).ok();
+    std::fs::remove_dir_all(broken).ok();
+}

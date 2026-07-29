@@ -488,6 +488,19 @@ pub struct FinalizeRequest {
     /// candidato fuerte se bloquea (ver `FinalizeOutcome::blocked_reason`).
     pub novelty_reason: Option<subjects::NoveltyReason>,
     pub risks: Vec<String>,
+    /// Rutas que esta decisión gobierna, declaradas por quien hizo el cambio.
+    ///
+    /// `None` conserva el comportamiento histórico: un binding por **cada**
+    /// archivo del diff. Eso es correcto cuando el árbol de trabajo contiene
+    /// un solo cambio, pero cuando contiene varias decisiones independientes
+    /// empuja a lo contrario de lo que el canon necesita — un Record único
+    /// atando todo, en vez de varios Records pequeños, cada uno gobernando lo
+    /// suyo. Declarando las rutas, un mismo árbol puede producir varias
+    /// propuestas acotadas.
+    ///
+    /// No relaja la verificabilidad: una ruta declarada que no está en el
+    /// diff se rechaza en vez de inventarle un binding.
+    pub governs_paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -838,13 +851,43 @@ pub fn finalize(
         _ => req.subject_id.clone(),
     };
 
-    // Siempre un binding de archivo por cada archivo cambiado — verificable
+    // Un binding de archivo por cada archivo cambiado — verificable
     // sin el proveedor, por diseño. `provisional` refleja la procedencia
     // real (Fase 1.3): un archivo `Committed` es verificable por
     // cualquiera con el mismo repo; cualquier otra procedencia no lo es
     // todavía, y el Record lo declara en vez de fingir la misma certeza.
-    let mut binding_declarations: Vec<BindingDeclaration> = mechanical
-        .changed_files
+    //
+    // Si el caller declaró `governs_paths`, el conjunto se acota a esas rutas.
+    // La intersección con el diff no es una cortesía: un binding a un archivo
+    // que nadie tocó no sería verificable, y ese es justo el tipo de
+    // afirmación que Rationale no debe fabricar. Declarar una ruta ausente es
+    // un error del caller, no algo que se ignore en silencio.
+    let bound_files: Vec<&capture::ChangedFile> = match &req.governs_paths {
+        None => mechanical.changed_files.iter().collect(),
+        Some(declared) => {
+            let missing: Vec<&str> = declared
+                .iter()
+                .map(String::as_str)
+                .filter(|path| !mechanical.changed_files.iter().any(|f| f.path == *path))
+                .collect();
+            if !missing.is_empty() {
+                return Err(format!(
+                    "governs_paths declara ruta(s) que no aparecen en el diff desde {}: {}. \
+                     Un binding a un archivo que no cambió no es verificable — declara solo \
+                     rutas del cambio, o revisa `base_revision`.",
+                    req.base_revision,
+                    missing.join(", ")
+                ));
+            }
+            mechanical
+                .changed_files
+                .iter()
+                .filter(|f| declared.iter().any(|p| p == &f.path))
+                .collect()
+        }
+    };
+
+    let mut binding_declarations: Vec<BindingDeclaration> = bound_files
         .iter()
         .enumerate()
         .map(|(i, f)| BindingDeclaration {
