@@ -3,6 +3,9 @@ set -euo pipefail
 
 PREFIX="${RATIONALE_INSTALL_DIR:-$HOME/.local/bin}"
 if [[ -f "$PREFIX/rationale" ]]; then
+  "$PREFIX/rationale" uninstall-agent --global-only || {
+    echo "aviso: no se pudieron revertir todos los registros globales de agentes" >&2
+  }
   rm -f "$PREFIX/rationale"
   echo "eliminado: $PREFIX/rationale"
 else
@@ -10,9 +13,6 @@ else
 fi
 rm -f "$PREFIX/rationale-update"
 
-if [[ "${RATIONALE_REMOVE_AGENT_CONFIG:-0}" == "1" ]] && command -v codex >/dev/null 2>&1; then
-  codex mcp remove rationale >/dev/null 2>&1 || true
-fi
 echo "No se modificó ningún directorio .rationale/."
 echo "Si 'rationale init' avisó a algún agente en un proyecto, corre"
 echo "'rationale uninstall-agent' dentro de ese proyecto para revertirlo."

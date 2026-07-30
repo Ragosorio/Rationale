@@ -18,9 +18,10 @@ use super::{CodeIntelligenceProvider, Coverage, ProviderResult, ProviderStatus, 
 use crate::mcp::framing;
 use serde_json::{json, Value};
 use std::io::BufReader;
+use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const INITIALIZE_DEADLINE: Duration = Duration::from_secs(15); // ver 11-performance-observations.md: ~6.8s medido, margen generoso
 const CALL_DEADLINE: Duration = Duration::from_secs(5); // muy por encima de los ~15-30ms medidos en sesión cálida
@@ -64,9 +65,9 @@ impl CodebaseMemoryClient {
         let stdout = child.stdout.take().expect("stdout piped");
 
         // Hilo lector: única fuente de mensajes entrantes durante toda la
-        // vida de la sesión. Como esta vertical slice hace llamadas
-        // estrictamente secuenciales (nunca concurrentes), cualquier
-        // mensaje que llegue es la respuesta a la última petición enviada.
+        // vida de la sesión. Las llamadas son secuenciales, pero MCP también
+        // permite notificaciones y mensajes de progreso entre petición y
+        // respuesta: el caller correlaciona cada respuesta por `id`.
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
@@ -107,7 +108,12 @@ impl CodebaseMemoryClient {
                 "clientInfo": {"name": "rationale", "version": env!("CARGO_PKG_VERSION")}
             }
         }))?;
-        self.recv_with_deadline(self.init_deadline);
+        if self.recv_response_for(id, self.init_deadline).is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Codebase Memory no respondió initialize con el id esperado",
+            ));
+        }
         self.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}))?;
         Ok(())
     }
@@ -122,18 +128,33 @@ impl CodebaseMemoryClient {
         framing::write_content_length(&mut self.stdin, &value)
     }
 
-    /// Espera una respuesta con deadline. Si expira, mata el proceso
-    /// (fail open — nunca deja la sesión en un estado ambiguo) y devuelve
-    /// `None`. La llamada siguiente detectará el proceso muerto al escribir.
-    fn recv_with_deadline(&mut self, deadline: Duration) -> Option<Value> {
-        match self.rx.recv_timeout(deadline) {
-            Ok(v) => Some(v),
-            Err(RecvTimeoutError::Timeout) => {
+    /// Espera la respuesta de una petición concreta. Notificaciones y
+    /// respuestas atrasadas con otro `id` no pueden hacerse pasar por ella.
+    /// Si el deadline total expira, mata el proceso (fail open) para no dejar
+    /// una sesión cuya correlación ya no es confiable.
+    fn recv_response_for(&mut self, expected_id: u64, deadline: Duration) -> Option<Value> {
+        let started = Instant::now();
+        loop {
+            let Some(remaining) = deadline.checked_sub(started.elapsed()) else {
                 let _ = self.child.kill();
                 let _ = self.child.wait();
-                None
+                return None;
+            };
+            match self.rx.recv_timeout(remaining) {
+                Ok(value) => {
+                    if value.get("id").and_then(Value::as_u64) == Some(expected_id) {
+                        return Some(value);
+                    }
+                    // Mensaje sin id = notificación. Un id distinto puede ser
+                    // una respuesta tardía. Ninguno satisface esta llamada.
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    return None;
+                }
+                Err(RecvTimeoutError::Disconnected) => return None,
             }
-            Err(RecvTimeoutError::Disconnected) => None,
         }
     }
 
@@ -150,7 +171,7 @@ impl CodebaseMemoryClient {
         {
             return None;
         }
-        self.recv_with_deadline(self.call_deadline)
+        self.recv_response_for(id, self.call_deadline)
     }
 
     /// Extrae el contenido de texto de una respuesta `tools/call` y lo
@@ -167,12 +188,105 @@ impl CodebaseMemoryClient {
         serde_json::from_str(text).ok()
     }
 
-    fn project_name_for(repo_path: &str) -> String {
-        // Misma convención observada empíricamente en list_projects
-        // (docs/research/codebase-memory/07-storage-and-cache.md): la ruta
-        // absoluta con separadores reemplazados por guiones.
-        repo_path.trim_start_matches('/').replace('/', "-")
+    /// Resuelve la identidad derivada del proveedor únicamente mediante su
+    /// contrato público. Rationale no replica el algoritmo de nombres de
+    /// Codebase Memory: ese algoritmo ya cambió (p. ej. colapsa guiones) y
+    /// dos implementaciones inevitablemente divergen.
+    fn project_for_repo(&mut self, repo_path: &str) -> Result<Option<String>, ()> {
+        if let Some(project) = Self::load_project_mapping(repo_path) {
+            return Ok(Some(project));
+        }
+        let response = self.call_tool("list_projects", json!({})).ok_or(())?;
+        let Some(payload) = Self::extract_tool_json(&response) else {
+            return Ok(None);
+        };
+        let project = Self::project_from_list(&payload, repo_path);
+        if let Some(project) = &project {
+            let _ = Self::save_project_mapping(repo_path, project);
+        }
+        Ok(project)
     }
+
+    fn project_from_list(payload: &Value, repo_path: &str) -> Option<String> {
+        let requested = canonical_or_original(Path::new(repo_path));
+        payload
+            .get("projects")?
+            .as_array()?
+            .iter()
+            .find(|project| {
+                project
+                    .get("root_path")
+                    .and_then(Value::as_str)
+                    .map(|root| canonical_or_original(Path::new(root)) == requested)
+                    .unwrap_or(false)
+            })
+            .and_then(|project| project.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    }
+
+    fn project_from_index(payload: &Value) -> Option<String> {
+        payload.get("project")?.as_str().map(str::to_owned)
+    }
+
+    fn index_project(&mut self, repo_path: &str) -> Result<Option<String>, ()> {
+        let response = self
+            .call_tool(
+                "index_repository",
+                json!({"repo_path": repo_path, "mode": "fast"}),
+            )
+            .ok_or(())?;
+        let project = Self::extract_tool_json(&response)
+            .as_ref()
+            .and_then(Self::project_from_index);
+        if let Some(project) = &project {
+            let _ = Self::save_project_mapping(repo_path, project);
+        }
+        Ok(project)
+    }
+
+    fn mapping_path(repo_path: &str) -> std::path::PathBuf {
+        Path::new(repo_path)
+            .join(".rationale-local")
+            .join("codebase-memory-project.json")
+    }
+
+    fn load_project_mapping(repo_path: &str) -> Option<String> {
+        let content = std::fs::read_to_string(Self::mapping_path(repo_path)).ok()?;
+        let value: Value = serde_json::from_str(&content).ok()?;
+        let stored_root = value.get("root_path")?.as_str()?;
+        if canonical_or_original(Path::new(stored_root))
+            != canonical_or_original(Path::new(repo_path))
+        {
+            return None;
+        }
+        value.get("project")?.as_str().map(str::to_owned)
+    }
+
+    fn save_project_mapping(repo_path: &str, project: &str) -> Result<(), String> {
+        if !Path::new(repo_path).join(".rationale").is_dir() {
+            return Err("el repositorio no está inicializado con Rationale".to_string());
+        }
+        let path = Self::mapping_path(repo_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("no se pudo crear {}: {error}", parent.display()))?;
+        }
+        let payload = json!({
+            "provider": "codebase-memory-mcp",
+            "project": project,
+            "root_path": canonical_or_original(Path::new(repo_path)),
+        });
+        let mut bytes = serde_json::to_vec_pretty(&payload)
+            .map_err(|error| format!("no se pudo serializar el vínculo: {error}"))?;
+        bytes.push(b'\n');
+        crate::storage::atomic_write_bytes(&path, &bytes)
+            .map_err(|error| format!("no se pudo guardar {}: {error}", path.display()))
+    }
+}
+
+fn canonical_or_original(path: &Path) -> std::path::PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 impl Drop for CodebaseMemoryClient {
@@ -184,7 +298,44 @@ impl Drop for CodebaseMemoryClient {
 
 impl CodeIntelligenceProvider for CodebaseMemoryClient {
     fn health(&mut self, repo_path: &str) -> ProviderResult<()> {
-        let project = Self::project_name_for(repo_path);
+        let project = match self.project_for_repo(repo_path) {
+            Err(()) => {
+                return ProviderResult {
+                    data: None,
+                    provider_name: self.binary.clone(),
+                    status: ProviderStatus::Unavailable,
+                    coverage: Coverage::Unknown,
+                    warnings: vec!["provider no respondió dentro del deadline".to_string()],
+                };
+            }
+            Ok(Some(project)) => project,
+            Ok(None) => match self.index_project(repo_path) {
+                Err(()) => {
+                    return ProviderResult {
+                        data: None,
+                        provider_name: self.binary.clone(),
+                        status: ProviderStatus::Unavailable,
+                        coverage: Coverage::Unknown,
+                        warnings: vec![
+                            "provider no respondió durante la vinculación inicial".to_string()
+                        ],
+                    };
+                }
+                Ok(Some(project)) => project,
+                Ok(None) => {
+                    return ProviderResult {
+                        data: None,
+                        provider_name: self.binary.clone(),
+                        status: ProviderStatus::Degraded,
+                        coverage: Coverage::Unknown,
+                        warnings: vec![
+                            "Codebase Memory no devolvió una identidad tras la vinculación inicial"
+                                .to_string(),
+                        ],
+                    };
+                }
+            },
+        };
         match self.call_tool("index_status", json!({"project": project})) {
             None => ProviderResult {
                 data: None,
@@ -217,22 +368,60 @@ impl CodeIntelligenceProvider for CodebaseMemoryClient {
     fn resolve_target(
         &mut self,
         repo_path: &str,
+        file_path: &str,
         symbol_name: &str,
     ) -> ProviderResult<ResolvedTarget> {
-        let project = Self::project_name_for(repo_path);
-
-        // Asegurar indexación antes de buscar (mode="fast": suficiente para
-        // resolver un símbolo, sin pagar similarity/semantic innecesarios
-        // en esta vertical slice — Rationale_v0.5.md §20.5.1 "evitar... lo
-        // que no sea estrictamente necesario para la operación").
-        let _ = self.call_tool(
-            "index_repository",
-            json!({"repo_path": repo_path, "mode": "fast"}),
-        );
+        // Consultar primero. La implementación anterior reindexaba en cada
+        // prepare/finalize aunque el proyecto ya estuviera listo, reemplazando
+        // innecesariamente la generación derivada del proveedor. Solo se
+        // indexa cuando list_projects confirma que aún no existe.
+        let project = match self.project_for_repo(repo_path) {
+            Err(()) => {
+                return ProviderResult {
+                    data: None,
+                    provider_name: self.binary.clone(),
+                    status: ProviderStatus::Unavailable,
+                    coverage: Coverage::Unknown,
+                    warnings: vec!["provider no respondió dentro del deadline".to_string()],
+                };
+            }
+            Ok(Some(project)) => project,
+            Ok(None) => match self.index_project(repo_path) {
+                Err(()) => {
+                    return ProviderResult {
+                        data: None,
+                        provider_name: self.binary.clone(),
+                        status: ProviderStatus::Unavailable,
+                        coverage: Coverage::Unknown,
+                        warnings: vec![
+                            "provider no respondió durante la indexación inicial".to_string()
+                        ],
+                    }
+                }
+                Ok(Some(project)) => project,
+                Ok(None) => {
+                    return ProviderResult {
+                        data: None,
+                        provider_name: self.binary.clone(),
+                        status: ProviderStatus::Degraded,
+                        coverage: Coverage::Unknown,
+                        warnings: vec![
+                            "Codebase Memory no devolvió una identidad de proyecto tras indexar"
+                                .to_string(),
+                        ],
+                    }
+                }
+            },
+        };
 
         let search = self.call_tool(
             "search_graph",
-            json!({"project": project, "name_pattern": symbol_name, "limit": 5}),
+            json!({
+                "project": project,
+                "name_pattern": symbol_name,
+                "file_pattern": file_path,
+                "limit": 20
+            }),
         );
 
         match search {
@@ -250,7 +439,17 @@ impl CodeIntelligenceProvider for CodebaseMemoryClient {
                     .and_then(|v| v.get("results"))
                     .and_then(|r| r.as_array());
 
-                match results.and_then(|r| r.first()) {
+                let selected = results.and_then(|results| {
+                    results
+                        .iter()
+                        .find(|node| {
+                            node.get("name").and_then(Value::as_str) == Some(symbol_name)
+                                && node.get("file_path").and_then(Value::as_str) == Some(file_path)
+                        })
+                        .or_else(|| results.first())
+                });
+
+                match selected {
                     Some(node) => {
                         let qualified_name = node
                             .get("qualified_name")
@@ -305,6 +504,14 @@ mod tests {
             .to_string()
     }
 
+    #[cfg(not(windows))]
+    fn mock_interleaved_server_path() -> String {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/mock-mcp/interleaved_server.sh")
+            .to_string_lossy()
+            .to_string()
+    }
+
     /// D5 — "provider unavailable": un binario inexistente debe fallar al
     /// spawnearse, nunca colgar ni entrar en un estado ambiguo.
     #[test]
@@ -318,6 +525,72 @@ mod tests {
             result.is_err(),
             "spawnear un binario inexistente debe fallar"
         );
+    }
+
+    #[test]
+    fn project_identity_comes_from_public_root_path_not_reimplemented_name() {
+        let payload = json!({
+            "projects": [{
+                "name": "private-tmp-owner-project",
+                "root_path": "/private/tmp/-owner/project"
+            }]
+        });
+
+        assert_eq!(
+            CodebaseMemoryClient::project_from_list(&payload, "/private/tmp/-owner/project"),
+            Some("private-tmp-owner-project".to_string())
+        );
+    }
+
+    #[test]
+    fn initial_index_identity_comes_from_the_public_response() {
+        let payload = json!({
+            "project": "provider-owned-project-name",
+            "status": "indexed"
+        });
+        assert_eq!(
+            CodebaseMemoryClient::project_from_index(&payload),
+            Some("provider-owned-project-name".to_string())
+        );
+    }
+
+    #[test]
+    fn provider_project_mapping_roundtrips_and_is_root_scoped() {
+        let repo = std::env::temp_dir().join(format!(
+            "rationale-provider-map-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(repo.join(".rationale")).unwrap();
+        let root = repo.to_string_lossy();
+        CodebaseMemoryClient::save_project_mapping(&root, "provider-project").unwrap();
+        assert_eq!(
+            CodebaseMemoryClient::load_project_mapping(&root),
+            Some("provider-project".to_string())
+        );
+        assert_eq!(
+            CodebaseMemoryClient::load_project_mapping(&repo.join("different").to_string_lossy()),
+            None
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn notifications_cannot_be_mistaken_for_tool_responses() {
+        let mut client = CodebaseMemoryClient::spawn_with(
+            &mock_interleaved_server_path(),
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .expect("el mock intercalado debe inicializar");
+        let result = client.health("/tmp/repo");
+        assert!(matches!(result.status, ProviderStatus::Successful));
+        assert!(matches!(result.coverage, Coverage::Complete));
     }
 
     /// D5 — "provider timeout": un proveedor que responde initialize pero

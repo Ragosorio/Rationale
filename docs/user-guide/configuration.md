@@ -26,8 +26,6 @@ derivada SQLite/FTS vive en `~/.cache/rationale/` y se puede regenerar.
   una Release anterior a `install-agent` y al helper de actualización.
 - `RATIONALE_INSTALL_DIR`: cambia el directorio del binario.
 - `RATIONALE_SKIP_AGENT_CONFIG=1`: evita registrar el agente automáticamente.
-- `RATIONALE_REMOVE_AGENT_CONFIG=1`: permite quitar la entrada global de Codex
-  durante la desinstalación.
 
 ## Privacidad
 
@@ -40,6 +38,7 @@ datos personales según la política del equipo.
 
 ```bash
 rationale uninstall-agent
+rationale uninstall-agent --global-only
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-uninstall.sh | sh
 ```

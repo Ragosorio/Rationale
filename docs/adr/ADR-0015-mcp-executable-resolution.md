@@ -272,3 +272,16 @@ Reabrir si: (a) la validación #2 muestra que Cursor no resuelve comandos por
 `PATH`; (b) se añade a `TARGETS` un cliente lanzado como app gráfica que
 consuma un archivo versionado; o (c) aparece un informe real de «command not
 found» al arrancar el servidor MCP en una instalación estándar.
+
+## Validation update — 2026-07-29
+
+**La validación #2 falló y activó el Revisit trigger.** Cursor cargó
+`.cursor/mcp.json` con `"command": "rationale"`, pero mostró el servidor como
+desconectado y no expuso sus herramientas. El CLI local sí respondía. En el
+entorno de una aplicación gráfica, `~/.local/bin` no estaba disponible por el
+`PATH` observado.
+
+Por tanto, la Decision #2 de este ADR no sostuvo el dogfood. ADR-0016 propone
+reemplazar la configuración MCP por proyecto con registro global por usuario y
+ruta absoluta. Como ambos ADRs siguen `proposed`, este documento no se marca
+`superseded` hasta que exista revisión independiente y aprobación humana.

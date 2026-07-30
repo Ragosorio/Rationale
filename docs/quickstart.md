@@ -79,7 +79,8 @@ Debe imprimir JSON con `project_id`, `git_revision` y `provider_status`. Si algo
 ## Quitarlo
 
 ```bash
-rationale uninstall-agent          # revierte solo lo que install-agent escribió en este proyecto
+rationale uninstall-agent          # revierte instrucciones/skills de este proyecto
+rationale uninstall-agent --global-only  # revierte registros MCP del usuario
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-uninstall.sh | sh
 ```
 

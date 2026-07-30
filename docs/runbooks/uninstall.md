@@ -1,22 +1,29 @@
 # Uninstall
 
-La desinstalación de la alfa elimina el binario y, opcionalmente, la entrada
-MCP del agente. Por defecto conserva todo el canon `.rationale/`.
+La desinstalación elimina primero los registros MCP globales que todavía
+apuntan a ese binario y después elimina el ejecutable. Conserva todo el canon
+`.rationale/`.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-uninstall.sh | sh
 ```
 
-`RATIONALE_REMOVE_AGENT_CONFIG=1` permite quitar la entrada global de Codex.
 Los datos canónicos no se eliminan nunca de forma automática.
 
 Esto solo desinstala el binario. Si `rationale init`/`install-agent` avisó a
-algún agente **dentro de un proyecto** (bloque en `CLAUDE.md`/`AGENTS.md`,
-`.mcp.json`/`.cursor/mcp.json`), revertir eso es por proyecto:
+algún agente **dentro de un proyecto** (bloque en `CLAUDE.md`/`AGENTS.md` o
+`.cursor/rules/rationale.mdc`), revertir eso es por proyecto:
 
 ```bash
 cd /ruta/al/proyecto
 rationale uninstall-agent
+```
+
+Para revertir solo Claude Code, Codex y Cursor a nivel del usuario, sin quitar
+los bloques de ningún proyecto:
+
+```bash
+rationale uninstall-agent --global-only
 ```
 
 Borra solo lo que `install-agent` escribió (según `.rationale-local/installed-agent-files.json`), dejando cualquier contenido previo del usuario en esos archivos intacto.

@@ -32,9 +32,10 @@ struct AgentTarget {
     detect_binary: &'static str,
     /// Archivo de instrucciones del agente, relativo a la raíz del proyecto.
     instructions_file: &'static str,
-    /// Archivo de configuración MCP por proyecto, si el agente soporta uno.
-    /// `None` significa que el registro es global vía CLI (Codex).
-    mcp_config_file: Option<&'static str>,
+    /// Configuración MCP por proyecto escrita por versiones anteriores.
+    /// beta.3 la migra al registro global con ruta absoluta y extirpa solo
+    /// la entrada heredada de Rationale.
+    legacy_mcp_config_file: Option<&'static str>,
     /// Directorio de skills por proyecto, si el agente los consume.
     skills_dir: Option<&'static str>,
     /// Cabecera que el archivo de instrucciones necesita para que el agente
@@ -73,7 +74,7 @@ const TARGETS: &[AgentTarget] = &[
         name: "claude-code",
         detect_binary: "claude",
         instructions_file: "CLAUDE.md",
-        mcp_config_file: Some(".mcp.json"),
+        legacy_mcp_config_file: Some(".mcp.json"),
         skills_dir: Some(".claude/skills"),
         file_preamble: None,
         detect_dir: None,
@@ -82,7 +83,7 @@ const TARGETS: &[AgentTarget] = &[
         name: "codex",
         detect_binary: "codex",
         instructions_file: "AGENTS.md",
-        mcp_config_file: None,
+        legacy_mcp_config_file: None,
         skills_dir: None,
         file_preamble: None,
         detect_dir: None,
@@ -91,7 +92,7 @@ const TARGETS: &[AgentTarget] = &[
         name: "cursor",
         detect_binary: "cursor-agent",
         instructions_file: ".cursor/rules/rationale.mdc",
-        mcp_config_file: Some(".cursor/mcp.json"),
+        legacy_mcp_config_file: Some(".cursor/mcp.json"),
         skills_dir: None,
         file_preamble: Some(CURSOR_RULE_PREAMBLE),
         detect_dir: Some(".cursor"),
@@ -106,7 +107,7 @@ const TARGETS: &[AgentTarget] = &[
 pub fn managed_paths() -> Vec<&'static str> {
     let mut paths: Vec<_> = TARGETS
         .iter()
-        .flat_map(|t| std::iter::once(t.instructions_file).chain(t.mcp_config_file))
+        .flat_map(|t| std::iter::once(t.instructions_file).chain(t.legacy_mcp_config_file))
         .collect();
     paths.extend(TARGETS.iter().filter_map(|target| target.skills_dir));
     paths
@@ -172,7 +173,7 @@ pub struct InstallReport {
 pub fn install(
     project_root: &Path,
     rationale_local: &Path,
-    binary_path: &Path,
+    _binary_path: &Path,
     refresh_skills: bool,
     dry_run: bool,
 ) -> Result<InstallReport, String> {
@@ -195,10 +196,6 @@ pub fn install(
     if let Some(warning) = tracked_local_data_warning(project_root) {
         report.actions.push(warning);
     }
-    if let Some(warning) = gui_path_resolution_warning() {
-        report.actions.push(warning);
-    }
-
     // `install-agent` es la vía oficial de actualización, así que también
     // repara el estado administrativo que una versión anterior dejó — no solo
     // los bloques. Sin esto, un proyecto de alpha.7 que se haya movido queda
@@ -268,49 +265,24 @@ pub fn install(
             ));
         }
 
-        match target.mcp_config_file {
-            Some(config_rel) => {
-                let config_path = project_root.join(config_rel);
-                let (action, changed) = upsert_mcp_json(&config_path, dry_run)?;
-                if changed {
-                    report.actions.push(format!(
-                        "{}: servidor MCP registrado en {}",
-                        target.name, config_rel
-                    ));
-                    record_entry(
-                        &mut manifest,
-                        project_root,
-                        target.name,
-                        &config_path,
-                        action,
-                    );
-                } else {
-                    report.actions.push(format!(
-                        "{}: servidor MCP ya registrado en {}",
-                        target.name, config_rel
-                    ));
-                }
-            }
-            None if find_on_path(target.detect_binary).is_none() => {
-                // Detectado por configuración del proyecto (p. ej. `AGENTS.md`
-                // heredado), no por PATH: no hay binario que invocar. Fallar
-                // aquí abortaría la instalación completa de los demás agentes
-                // por un target que ni siquiera está instalado en esta máquina.
-                report.actions.push(format!(
-                    "{}: no se encontró el binario en PATH, se omite el registro global de MCP",
-                    target.name
-                ));
-            }
-            None => {
-                let registered = register_codex_mcp(binary_path, dry_run)?;
-                report.actions.push(format!(
-                    "{}: {}",
-                    target.name,
-                    if registered {
-                        "servidor MCP registrado globalmente (codex mcp add)"
-                    } else {
-                        "servidor MCP ya registrado globalmente"
+        if let Some(config_rel) = target.legacy_mcp_config_file {
+            let config_path = project_root.join(config_rel);
+            if is_known_project_mcp_entry(&config_path) {
+                if !dry_run {
+                    remove_mcp_json_entry(&config_path)?;
+                    if let Some(index) = existing_entry_index(&manifest, project_root, &config_path)
+                    {
+                        manifest.entries.remove(index);
                     }
+                }
+                report.actions.push(format!(
+                    "{}: entrada MCP heredada retirada de {}; el registro global conserva el servidor",
+                    target.name, config_rel
+                ));
+            } else {
+                report.actions.push(format!(
+                    "{}: sin entrada MCP heredada administrada en {}",
+                    target.name, config_rel
                 ));
             }
         }
@@ -465,7 +437,7 @@ fn expected_managed_entry(
             return Some((target.name, ReversalStrategy::ManagedPart));
         }
         if target
-            .mcp_config_file
+            .legacy_mcp_config_file
             .is_some_and(|path| candidate == project_root.join(path))
         {
             return Some((target.name, ReversalStrategy::ManagedPart));
@@ -567,7 +539,7 @@ fn validate_no_symlink_components(project_root: &Path, candidate: &Path) -> Resu
 fn project_already_uses(project_root: &Path, target: &AgentTarget) -> bool {
     project_root.join(target.instructions_file).exists()
         || target
-            .mcp_config_file
+            .legacy_mcp_config_file
             .map(|c| project_root.join(c).exists())
             .unwrap_or(false)
         || target
@@ -1138,69 +1110,16 @@ fn remove_instructions_block(path: &Path, preamble: Option<&str>) -> Result<(), 
     Ok(())
 }
 
-/// Comando lógico, nunca una ruta absoluta (ADR-0015 §Decision 1).
-///
-/// La ruta absoluta se justificaba con que un cliente MCP podría no heredar el
-/// `PATH`. Este mismo repositorio arranca su servidor con un `"command":
-/// "cargo"` pelado, y `cargo` vive en `~/.cargo/bin`, que no está en el `PATH`
-/// por defecto de macOS: la ruta absoluta no es necesaria cuando el cliente se
-/// lanza desde un shell. Sigue sin verificarse el lanzamiento desde GUI, y ese
-/// riesgo residual está declarado en el ADR. Lo que decide es la asimetría: la
-/// ruta absoluta falla para *todo* integrante que no sea quien instaló, y estos
-/// archivos son configuración compartida y versionada.
+/// Comando lógico usado solo para reconocer configuraciones compartidas
+/// escritas antes de beta.3. El registro activo es global y lleva la ruta
+/// absoluta del binario instalado para funcionar desde aplicaciones GUI.
 const MCP_COMMAND: &str = "rationale";
 
-/// Directorios que un cliente lanzado desde la GUI puede resolver.
-///
-/// En macOS una app abierta desde el Dock hereda el `PATH` de `launchd`, no el
-/// del shell: `~/.local/bin` —donde el instalador pone el binario— queda
-/// invisible. El comando lógico de la configuración MCP entonces no resuelve y
-/// el cliente reporta el servidor como no disponible, sin explicación.
-#[cfg(unix)]
-const GUI_VISIBLE_BIN_DIRS: &[&str] = &["/usr/local/bin", "/usr/bin", "/bin", "/opt/homebrew/bin"];
-
-/// Aviso cuando el comando lógico de la config MCP no sería resoluble por un
-/// cliente lanzado desde la GUI.
-///
-/// No cambia lo que se escribe: ADR-0015 decide el comando lógico
-/// deliberadamente, para no dejar la ruta personal de alguien en una
-/// configuración compartida y versionada. Lo que faltaba era decirle al
-/// usuario por qué su cliente gráfico no lo encuentra.
-///
-/// Solo Unix. El diagnóstico describe un mecanismo concreto —el `PATH` de
-/// `launchd` en macOS, y los lanzadores de escritorio en Linux— que no existe
-/// en Windows: allí una aplicación gráfica hereda el `PATH` del usuario desde
-/// el registro, el mismo que ve un terminal. Emitirlo ahí sería afirmar un
-/// problema que no se comprobó. `windows-latest` lo encontró de inmediato: una
-/// ruta estilo Unix no es `is_absolute()` en Windows, el mismo patrón que ya
-/// había roto la migración de manifests.
-#[cfg(not(unix))]
-fn gui_path_resolution_warning() -> Option<String> {
-    None
-}
-
-#[cfg(unix)]
-fn gui_path_resolution_warning() -> Option<String> {
-    let resolved = find_on_path(MCP_COMMAND)?;
-    let dir = resolved.parent()?;
-    if GUI_VISIBLE_BIN_DIRS
-        .iter()
-        .any(|known| dir == Path::new(known))
-    {
-        return None;
-    }
-    Some(format!(
-        "aviso: `{MCP_COMMAND}` resuelve a {} desde este terminal, pero un cliente lanzado \
-         desde la GUI (Cursor o la app de escritorio) hereda un PATH distinto y puede no \
-         encontrarlo — reportaría el servidor MCP como no disponible. Remedios: abrir el \
-         cliente desde un terminal, o exponer el binario en un directorio visible para apps \
-         GUI, por ejemplo:\n    sudo ln -sf {} /usr/local/bin/{MCP_COMMAND}",
-        resolved.display(),
-        resolved.display()
-    ))
-}
-
-fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
+fn upsert_mcp_json_with_command(
+    path: &Path,
+    command: &Path,
+    dry_run: bool,
+) -> Result<(FileAction, bool), String> {
     let existing = std::fs::read_to_string(path).ok();
     let mut root: serde_json::Value = match &existing {
         Some(content) => serde_json::from_str(content)
@@ -1215,7 +1134,7 @@ fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), Str
         .or_insert_with(|| serde_json::json!({}));
 
     let desired = serde_json::json!({
-        "command": MCP_COMMAND,
+        "command": command.to_string_lossy(),
         "args": ["serve"]
     });
     // No basta con que la clave "rationale" exista: una entrada escrita por una
@@ -1248,6 +1167,39 @@ fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), Str
     Ok((action, true))
 }
 
+#[cfg(test)]
+fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
+    upsert_mcp_json_with_command(path, Path::new(MCP_COMMAND), dry_run)
+}
+
+fn is_known_project_mcp_entry(path: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    let Some(entry) = root
+        .get("mcpServers")
+        .and_then(|servers| servers.get("rationale"))
+    else {
+        return false;
+    };
+    let command = entry.get("command").and_then(|value| value.as_str());
+    let args = entry.get("args").and_then(|value| value.as_array());
+    let serves = args.is_some_and(|args| {
+        args.len() == 1 && args.first().and_then(|value| value.as_str()) == Some("serve")
+    });
+    serves
+        && command.is_some_and(|command| {
+            command == MCP_COMMAND
+                || Path::new(command)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    == Some(MCP_COMMAND)
+        })
+}
+
 fn remove_mcp_json_entry(path: &Path) -> Result<(), String> {
     let Some(content) = std::fs::read_to_string(path).ok() else {
         return Ok(());
@@ -1274,44 +1226,104 @@ fn remove_mcp_json_entry(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Solo la parte que no requiere un proyecto: registro global de Codex.
-/// La usa `scripts/rationale-installer.sh` justo tras instalar el binario,
-/// cuando todavía no existe ningún `.rationale/` — así el script deja de
-/// duplicar en bash la misma lógica idempotente que ya vive aquí.
+/// Parte que no requiere un proyecto: registro global y convergente de los
+/// clientes soportados (Claude Code, Codex y Cursor).
 pub fn install_global_only(binary_path: &Path, dry_run: bool) -> Result<Vec<String>, String> {
+    let home = user_home().ok_or_else(|| {
+        "no se pudo determinar el directorio del usuario para registrar agentes".to_string()
+    })?;
+    install_global_at(binary_path, &home, dry_run)
+}
+
+fn install_global_at(
+    binary_path: &Path,
+    home: &Path,
+    dry_run: bool,
+) -> Result<Vec<String>, String> {
     let mut actions = Vec::new();
+
+    let json_clients = [
+        (
+            "claude-code",
+            home.join(".claude.json"),
+            find_on_path("claude").is_some()
+                || home.join(".claude").is_dir()
+                || home.join(".claude.json").exists(),
+        ),
+        (
+            "cursor",
+            home.join(".cursor/mcp.json"),
+            home.join(".cursor").is_dir(),
+        ),
+    ];
+    for (name, config, detected) in json_clients {
+        if !detected {
+            actions.push(format!("{name}: no detectado, se omite el registro global"));
+            continue;
+        }
+        let (_, changed) = upsert_mcp_json_with_command(&config, binary_path, dry_run)?;
+        actions.push(format!(
+            "{name}: {} en {}",
+            if changed {
+                "servidor MCP registrado globalmente"
+            } else {
+                "servidor MCP global ya estaba al día"
+            },
+            config.display()
+        ));
+    }
+
     if find_on_path("codex").is_none() {
         actions.push("codex: no detectado en PATH, se omite el registro global".to_string());
-        return Ok(actions);
+    } else {
+        let registered = register_codex_mcp(binary_path, dry_run)?;
+        actions.push(format!(
+            "codex: {}",
+            if registered {
+                "servidor MCP registrado o migrado globalmente (codex mcp)"
+            } else {
+                "servidor MCP global ya estaba al día"
+            }
+        ));
     }
-    let registered = register_codex_mcp(binary_path, dry_run)?;
-    actions.push(format!(
-        "codex: {}",
-        if registered {
-            "servidor MCP registrado globalmente (codex mcp add)"
-        } else {
-            "servidor MCP ya registrado globalmente"
-        }
-    ));
+
     Ok(actions)
+}
+
+fn user_home() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let value = std::env::var_os("USERPROFILE");
+    #[cfg(not(windows))]
+    let value = std::env::var_os("HOME");
+    value.map(PathBuf::from)
 }
 
 /// Registro global de Codex — mismo patrón idempotente que
 /// `scripts/rationale-installer.sh`.
 fn register_codex_mcp(binary_path: &Path, dry_run: bool) -> Result<bool, String> {
-    let list = std::process::Command::new("codex")
-        .args(["mcp", "list"])
+    let existing = std::process::Command::new("codex")
+        .args(["mcp", "get", "rationale"])
         .output()
         .map_err(|e| format!("no se pudo ejecutar codex: {e}"))?;
-    let already = String::from_utf8_lossy(&list.stdout)
-        .lines()
-        .any(|line| line.split_whitespace().any(|tok| tok == "rationale"));
-    if already {
+    if existing.status.success()
+        && codex_registration_matches(&String::from_utf8_lossy(&existing.stdout), binary_path)
+    {
         return Ok(false);
     }
     if dry_run {
         return Ok(true);
     }
+
+    if existing.status.success() {
+        let status = std::process::Command::new("codex")
+            .args(["mcp", "remove", "rationale"])
+            .status()
+            .map_err(|e| format!("no se pudo ejecutar codex mcp remove: {e}"))?;
+        if !status.success() {
+            return Err("codex mcp remove rationale falló durante la migración".to_string());
+        }
+    }
+
     let status = std::process::Command::new("codex")
         .args(["mcp", "add", "rationale", "--"])
         .arg(binary_path)
@@ -1322,6 +1334,86 @@ fn register_codex_mcp(binary_path: &Path, dry_run: bool) -> Result<bool, String>
         return Err("codex mcp add rationale falló".to_string());
     }
     Ok(true)
+}
+
+fn codex_registration_matches(output: &str, binary_path: &Path) -> bool {
+    let command = output
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("command: "))
+        .map(Path::new);
+    let args = output
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("args: "));
+    command == Some(binary_path) && args == Some("serve")
+}
+
+/// Revierte únicamente registros globales que todavía apuntan al binario que
+/// se está desinstalando. Una entrada con el mismo nombre pero otro comando
+/// pertenece al usuario o a otra instalación y se conserva.
+pub fn uninstall_global_only(binary_path: &Path) -> Result<Vec<String>, String> {
+    let home = user_home().ok_or_else(|| {
+        "no se pudo determinar el directorio del usuario para revertir agentes".to_string()
+    })?;
+    let mut actions = Vec::new();
+    for (name, config) in [
+        ("claude-code", home.join(".claude.json")),
+        ("cursor", home.join(".cursor/mcp.json")),
+    ] {
+        if mcp_entry_matches_command(&config, binary_path) {
+            remove_mcp_json_entry(&config)?;
+            actions.push(format!(
+                "{name}: registro MCP global retirado de {}",
+                config.display()
+            ));
+        }
+    }
+
+    if find_on_path("codex").is_some() {
+        let existing = Command::new("codex")
+            .args(["mcp", "get", "rationale"])
+            .output()
+            .map_err(|error| format!("no se pudo ejecutar codex: {error}"))?;
+        if existing.status.success()
+            && codex_registration_matches(&String::from_utf8_lossy(&existing.stdout), binary_path)
+        {
+            let status = Command::new("codex")
+                .args(["mcp", "remove", "rationale"])
+                .status()
+                .map_err(|error| format!("no se pudo ejecutar codex mcp remove: {error}"))?;
+            if !status.success() {
+                return Err("codex mcp remove rationale falló".to_string());
+            }
+            actions.push("codex: registro MCP global retirado".to_string());
+        }
+    }
+
+    if actions.is_empty() {
+        actions.push("ningún registro global de esta instalación necesitaba reversión".to_string());
+    }
+    Ok(actions)
+}
+
+fn mcp_entry_matches_command(path: &Path, binary_path: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    let Some(entry) = root
+        .get("mcpServers")
+        .and_then(|servers| servers.get("rationale"))
+    else {
+        return false;
+    };
+    entry.get("command").and_then(|value| value.as_str())
+        == Some(binary_path.to_string_lossy().as_ref())
+        && entry
+            .get("args")
+            .and_then(|value| value.as_array())
+            .is_some_and(|args| {
+                args.len() == 1 && args.first().and_then(|value| value.as_str()) == Some("serve")
+            })
 }
 
 /// Ruta local-only que Rationale nunca debe dejar versionada en el proyecto
@@ -1518,7 +1610,7 @@ fn managed_destinations() -> Vec<String> {
     let mut destinations = Vec::new();
     for target in TARGETS {
         destinations.push(target.instructions_file.to_string());
-        if let Some(config) = target.mcp_config_file {
+        if let Some(config) = target.legacy_mcp_config_file {
             destinations.push(config.to_string());
         }
         if let Some(skills_dir) = target.skills_dir {
@@ -1878,6 +1970,66 @@ mod tests {
         std::fs::remove_dir_all(project).ok();
     }
 
+    #[test]
+    fn global_mcp_json_uses_absolute_binary_and_converges() {
+        let project = temp_dir("global-mcp");
+        let config = project.join(".cursor/mcp.json");
+        let binary = project.join("bin/rationale");
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{"other-tool":{"command":"other","args":[]}}}"#,
+        )
+        .unwrap();
+
+        let (_, changed) = upsert_mcp_json_with_command(&config, &binary, false).unwrap();
+        assert!(changed);
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(
+            value["mcpServers"]["rationale"]["command"],
+            binary.to_string_lossy().as_ref()
+        );
+        assert!(value["mcpServers"]["other-tool"].is_object());
+
+        let (_, changed_again) = upsert_mcp_json_with_command(&config, &binary, false).unwrap();
+        assert!(!changed_again);
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn codex_registration_compares_command_and_args_not_only_name() {
+        let desired = Path::new("/Users/test/.local/bin/rationale");
+        let current = "rationale\n  enabled: true\n  transport: stdio\n  command: /Users/test/.local/bin/rationale\n  args: serve\n";
+        let stale = "rationale\n  enabled: true\n  transport: stdio\n  command: /old/build/target/release/rationale\n  args: serve\n";
+        assert!(codex_registration_matches(current, desired));
+        assert!(!codex_registration_matches(stale, desired));
+    }
+
+    #[test]
+    fn project_migration_recognizes_only_the_known_rationale_shape() {
+        let project = temp_dir("known-project-mcp");
+        let config = project.join(".cursor/mcp.json");
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{"rationale":{"command":"rationale","args":["serve"]}}}"#,
+        )
+        .unwrap();
+        assert!(is_known_project_mcp_entry(&config));
+
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{"rationale":{"command":"custom-wrapper","args":["serve"]}}}"#,
+        )
+        .unwrap();
+        assert!(
+            !is_known_project_mcp_entry(&config),
+            "una entrada ajena con el mismo nombre no puede eliminarse"
+        );
+        std::fs::remove_dir_all(project).ok();
+    }
+
     /// Defecto real: `upsert_mcp_json` cortaba en cuanto la clave "rationale"
     /// existía, sin comparar su valor — así que un `.mcp.json` escrito por una
     /// versión anterior se quedaba con la ruta absoluta del binario de quien
@@ -1915,7 +2067,7 @@ mod tests {
     #[test]
     fn no_target_writes_an_absolute_command_into_shared_mcp_config() {
         for target in TARGETS {
-            let Some(config_rel) = target.mcp_config_file else {
+            let Some(config_rel) = target.legacy_mcp_config_file else {
                 continue;
             };
             let project = temp_dir(&format!("mcp-portable-{}", target.name));
@@ -2028,45 +2180,6 @@ mod tests {
         );
 
         std::fs::remove_dir_all(project).ok();
-    }
-
-    /// El síntoma que esto evita: Cursor abierto desde el Dock reportando
-    /// "MCP rationale no disponible" sin ninguna explicación, mientras Codex y
-    /// Claude Code en terminal funcionan. La causa es el `PATH` de `launchd`,
-    /// que no incluye `~/.local/bin`.
-    #[cfg(unix)]
-    #[test]
-    fn gui_path_warning_fires_only_for_dirs_a_gui_client_cannot_see() {
-        // No se puede mover el binario real, así que se comprueba la regla que
-        // decide: qué directorios cuentan como visibles para una app GUI.
-        for visible in GUI_VISIBLE_BIN_DIRS {
-            assert!(
-                Path::new(visible).is_absolute(),
-                "{visible} debe ser absoluto para comparar contra el padre resuelto"
-            );
-        }
-        assert!(
-            GUI_VISIBLE_BIN_DIRS.contains(&"/usr/local/bin"),
-            "/usr/local/bin es el destino que el propio aviso recomienda"
-        );
-        assert!(
-            !GUI_VISIBLE_BIN_DIRS
-                .iter()
-                .any(|d| d.contains(".local/bin")),
-            "~/.local/bin es justo el caso que debe disparar el aviso"
-        );
-
-        // Y el aviso, cuando aplica, debe nombrar el remedio concreto.
-        if let Some(warning) = gui_path_resolution_warning() {
-            assert!(
-                warning.contains("/usr/local/bin"),
-                "el aviso debe dar el remedio, no solo el diagnóstico: {warning}"
-            );
-            assert!(
-                warning.contains(MCP_COMMAND),
-                "y nombrar el comando afectado: {warning}"
-            );
-        }
     }
 
     /// `git diff --check` es una puerta de CI en este repo y el propio
@@ -2758,17 +2871,17 @@ mod tests {
         }
     }
 
-    /// El defecto que sembrar la detección expuso: `codex` detectado por un
-    /// `AGENTS.md` heredado, sin el binario en `PATH`, abortaba la
-    /// instalación completa — incluidos los demás agentes — en vez de
-    /// omitirse con un aviso.
+    /// La instalación de instrucciones por proyecto no depende del CLI del
+    /// agente. El registro global se ejecuta por separado, así que un
+    /// `AGENTS.md` heredado sin `codex` en PATH no puede abortar los archivos
+    /// de Claude Code o Cursor.
     ///
     /// La simulación usa un `PATH` Unix deliberadamente mínimo. En Windows
     /// esas rutas eliminan también `git` y, al ser `PATH` global al proceso,
     /// pueden romper en paralelo tests ajenos antes de que el guard lo restaure.
     #[cfg(unix)]
     #[test]
-    fn codex_detected_without_a_binary_is_skipped_without_aborting_other_agents() {
+    fn codex_instructions_do_not_require_the_codex_binary() {
         let repo = git_repo("codex-no-binary");
         let local = repo.join(".rationale-local");
 
@@ -2790,14 +2903,9 @@ mod tests {
             "los demás agentes deben seguir instalándose: {:?}",
             report.detected
         );
-        assert!(
-            report
-                .actions
-                .iter()
-                .any(|a| a.contains("codex") && a.contains("no se encontró el binario en PATH")),
-            "el reporte debe avisar que se omitió el registro global de codex: {:?}",
-            report.actions
-        );
+        assert!(report.actions.iter().any(|action| {
+            action.contains("codex") && action.contains("bloque de instrucciones")
+        }));
         assert!(
             manifest_path(&local).exists(),
             "el manifest debe escribirse aunque codex se haya omitido"

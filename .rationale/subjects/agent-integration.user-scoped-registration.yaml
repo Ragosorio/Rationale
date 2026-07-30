@@ -1,0 +1,27 @@
+id: agent-integration.user-scoped-registration
+type: unclassified
+title: User-scoped convergent agent registration
+scope: project
+aliases: []
+applies_to:
+- docs/adr/ADR-0015-mcp-executable-resolution.md
+- docs/adr/ADR-0016-user-scoped-agent-registration.md
+- docs/adr/index.md
+- docs/quickstart.md
+- docs/runbooks/install.md
+- docs/runbooks/uninstall.md
+- docs/user-guide/agents-and-mcp.md
+- docs/user-guide/configuration.md
+- scripts/rationale-uninstall.sh
+- src/agents.rs
+- src/main.rs
+- tests/cli.rs
+- src/agents.rs
+schema_version: rationale/0.1
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: mcp-client
+  proposed_at: epoch:1785372400
+  note: Propuesto por finalize_change. Sin autoridad hasta rationale review (evaluation.no-self-certification, Proceso §21).

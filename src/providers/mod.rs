@@ -55,6 +55,7 @@ pub trait CodeIntelligenceProvider {
     fn resolve_target(
         &mut self,
         repo_path: &str,
+        file_path: &str,
         symbol_name: &str,
     ) -> ProviderResult<ResolvedTarget>;
 }

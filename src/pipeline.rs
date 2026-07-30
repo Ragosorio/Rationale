@@ -126,7 +126,13 @@ pub fn prepare(
     let (provider_status, provider_coverage, resolved_target, provider_warnings) = match provider {
         ProviderHandle::Live(client) => {
             let sym = symbol.clone().unwrap_or_default();
-            let result = client.resolve_target(req.repo_path.to_str().unwrap_or(""), &sym);
+            let file = target
+                .as_ref()
+                .ok()
+                .and_then(|target| target.path.strip_prefix(&req.repo_path).ok())
+                .and_then(|path| path.to_str())
+                .unwrap_or("");
+            let result = client.resolve_target(req.repo_path.to_str().unwrap_or(""), file, &sym);
             (
                 result.status,
                 result.coverage,
@@ -672,7 +678,13 @@ pub fn finalize(
     let resolved_symbol: Option<crate::providers::ResolvedTarget> =
         match (&declared_symbol, &mut *provider) {
             (Some(sym), ProviderHandle::Live(client)) => {
-                let result = client.resolve_target(req.repo_path.to_str().unwrap_or(""), sym);
+                let file = declared_target
+                    .as_ref()
+                    .ok()
+                    .and_then(|target| target.path.strip_prefix(&req.repo_path).ok())
+                    .and_then(|path| path.to_str())
+                    .unwrap_or("");
+                let result = client.resolve_target(req.repo_path.to_str().unwrap_or(""), file, sym);
                 if result.data.is_none() {
                     diagnostics.push(format!(
                         "el proveedor no confirmó el símbolo '{sym}' — solo se enlaza el archivo"

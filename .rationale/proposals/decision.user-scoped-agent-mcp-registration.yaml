@@ -1,0 +1,100 @@
+id: decision.user-scoped-agent-mcp-registration
+kind: constraint
+severity: high
+statement: Installed MCP servers for Claude Code, Codex, and Cursor must be registered per user with the absolute installed binary path; project files retain only instructions and skills, and migration removes only recognized Rationale-owned legacy entries.
+rationale: Migrate beta.2 agent integrations to convergent user-scoped MCP registration for Claude Code, Codex, and Cursor.
+epistemic_status: stated
+approvals: []
+binding_declarations:
+- id: binding.decision.user-scoped-agent-mcp-registration.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/adr/ADR-0015-mcp-executable-resolution.md
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/adr/ADR-0016-user-scoped-agent-registration.md
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/adr/index.md
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.3
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/quickstart.md
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.4
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/runbooks/install.md
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.5
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/runbooks/uninstall.md
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.6
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/user-guide/agents-and-mcp.md
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.7
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/user-guide/configuration.md
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.8
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: scripts/rationale-uninstall.ps1
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.9
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: scripts/rationale-uninstall.sh
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.10
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/agents.rs
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.11
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/main.rs
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.12
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: tests/cli.rs
+  provisional: true
+- id: binding.decision.user-scoped-agent-mcp-registration.symbol
+  type: symbol
+  provider: codebase-memory
+  structural_id: Users-roor.osorio-Desktop-Rationale.src.agents.install_global_only
+  path_hint: src/agents.rs
+  provisional: true
+evidence: []
+risks: []
+bound_revision: caa5ae162d5cf4f8155a6abd311ac992a016d64f
+subject:
+  id: agent-integration.user-scoped-registration
+schema_version: rationale/0.1
+project_id: rationale
+status: pending
