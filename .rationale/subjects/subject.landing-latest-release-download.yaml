@@ -1,0 +1,17 @@
+id: subject.landing-latest-release-download
+type: product
+title: Landing downloads follow the GitHub latest release
+scope: project
+aliases: []
+applies_to:
+- scripts/check-docs.sh
+- site/src/components/LandingPage.astro
+- site/src/lib/landing.ts
+schema_version: rationale/0.1
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: mcp-client
+  proposed_at: epoch:1785375849
+  note: Propuesto por finalize_change. Sin autoridad hasta rationale review (evaluation.no-self-certification, Proceso §21).
