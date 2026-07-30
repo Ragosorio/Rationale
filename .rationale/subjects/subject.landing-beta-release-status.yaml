@@ -1,0 +1,16 @@
+id: subject.landing-beta-release-status
+type: product
+title: Landing release status reflects the public beta channel
+scope: project
+aliases: []
+applies_to:
+- site/src/lib/landing.ts
+- site/src/lib/landing.ts
+schema_version: rationale/0.1
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: mcp-client
+  proposed_at: epoch:1785376218
+  note: Propuesto por finalize_change. Sin autoridad hasta rationale review (evaluation.no-self-certification, Proceso §21).
