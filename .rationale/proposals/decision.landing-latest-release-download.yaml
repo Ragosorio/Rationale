@@ -1,0 +1,40 @@
+id: decision.landing-latest-release-download
+kind: decision
+severity: medium
+statement: The landing page must download Rationale through GitHub's releases/latest alias so the displayed install command remains valid as new latest releases are published.
+rationale: Use the GitHub latest release alias for the landing-page installer and keep the public release-status copy version-agnostic, while allowing the documentation guard to validate that stable alias.
+epistemic_status: stated
+approvals: []
+binding_declarations:
+- id: binding.decision.landing-latest-release-download.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: scripts/check-docs.sh
+  provisional: true
+- id: binding.decision.landing-latest-release-download.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/components/LandingPage.astro
+  provisional: true
+- id: binding.decision.landing-latest-release-download.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/lib/landing.ts
+  provisional: true
+evidence: []
+risks:
+- id: risk.decision.landing-latest-release-download.0
+  statement: The latest release must continue to publish rationale-installer.sh and rationale-installer.ps1 assets.
+  epistemic_status: stated
+- id: risk.decision.landing-latest-release-download.1
+  statement: GitHub does not allow a prerelease to be marked latest; the release workflow must keep the latest channel on a complete release.
+  epistemic_status: stated
+bound_revision: 1682e3ba355eb12a55c338243511cf485efae749
+subject:
+  id: subject.landing-latest-release-download
+schema_version: rationale/0.1
+project_id: rationale
+status: pending

@@ -11,7 +11,6 @@ const t = landingCopy[lang];
 const isSpanish = lang === "es";
 
 const repo = "https://github.com/Ragosorio/Rationale";
-const previewVersion = "v0.1.0-beta.2";
 const docs = {
   root: isSpanish ? "/es/docs/" : "/docs/",
   quickstart: isSpanish ? "/es/docs/quickstart" : "/docs/quickstart",
@@ -28,7 +27,7 @@ const pageTitle = isSpanish
 const pageDescription = isSpanish
   ? "Rationale mantiene disponibles para los agentes las reglas de negocio y decisiones que importan antes de cambiar código."
   : "Rationale keeps business rules and decisions available to coding agents before they change important code.";
-const installCommand = `curl --proto '=https' --tlsv1.2 -LsSf ${repo}/releases/download/${previewVersion}/rationale-installer.sh | sh`;
+const installCommand = `curl --proto '=https' --tlsv1.2 -LsSf ${repo}/releases/latest/download/rationale-installer.sh | sh`;
 const codebaseMemoryUrl = "https://github.com/DeusData/codebase-memory-mcp";
 const codebaseMemoryCommand = "curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash";
 const githubStarsFallback = 0;
