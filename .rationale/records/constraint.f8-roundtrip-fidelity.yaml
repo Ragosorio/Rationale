@@ -4,24 +4,32 @@ severity: high
 statement: Every canonical Record field that Rationale does not explicitly modify must survive read-modify-write review operations unchanged.
 rationale: The canonical Record uses flattened fields and atomic writes so review operations cannot silently erase fields they do not understand.
 epistemic_status: stated
-approvals: []
+approvals:
+- actor: user:ragosorio <ragosorio777@gmail.com>
+  authority: architecture-owner
+  status: approved
+  approved_at: epoch:1785376307
 binding_declarations:
-  - id: binding.storage.write-record
-    type: symbol
-    provider: rationale-self
-    structural_id: rust:src/storage.rs::write_record
-    path_hint: src/storage.rs
-    scope: project
+- id: binding.storage.write-record
+  type: symbol
+  provider: rationale-self
+  structural_id: rust:src/storage.rs::write_record
+  path_hint: src/storage.rs
+  provisional: false
+  scope: project
 evidence:
-  - type: test
-    path: src/storage.rs
-    revision: fabeb92
-    verified: true
-    visibility: repository
-  - type: work-item
-    path: docs/work-items/adversarial-review-fase-f.md
-    verified: true
-    visibility: repository
+- type: test
+  path: src/storage.rs
+  revision: fabeb92
+  verified: true
+  content_hash: null
+  visibility: repository
+- type: work-item
+  path: docs/work-items/adversarial-review-fase-f.md
+  revision: null
+  verified: true
+  content_hash: null
+  visibility: repository
 risks:
 - id: risk.constraint.f8-roundtrip-fidelity.0
   statement: Pending proposal requires human review before becoming normative.
@@ -31,4 +39,4 @@ subject:
   id: storage.canonical-vs-derived
 schema_version: rationale/0.1
 project_id: rationale
-status: pending
+status: approved

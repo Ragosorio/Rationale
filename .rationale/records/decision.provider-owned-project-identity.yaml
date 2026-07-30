@@ -4,7 +4,11 @@ severity: high
 statement: Rationale must obtain and persist Codebase Memory project handles only from the public MCP contract, scope them to canonical root_path, avoid reindexing an existing project, resolve symbols within the declared file, and correlate JSON-RPC responses by id.
 rationale: Make beta.3 survive Codebase Memory reindexing, multiple clones, provider-owned project naming, and interleaved MCP messages.
 epistemic_status: stated
-approvals: []
+approvals:
+- actor: user:ragosorio <ragosorio777@gmail.com>
+  authority: architecture-owner
+  status: approved
+  approved_at: epoch:1785376310
 binding_declarations:
 - id: binding.decision.provider-owned-project-identity.0
   type: file
@@ -49,4 +53,4 @@ subject:
   id: provider.codebase-memory-project-identity
 schema_version: rationale/0.1
 project_id: rationale
-status: pending
+status: approved

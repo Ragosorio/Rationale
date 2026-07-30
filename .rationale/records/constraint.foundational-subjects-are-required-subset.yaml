@@ -4,7 +4,11 @@ severity: medium
 statement: Las pruebas del canon deben exigir individualmente la presencia de todos los Subjects fundacionales, pero no fijar el número total de Subjects porque finalize_change puede materializar Subjects adicionales legítimos.
 rationale: Evitar que la suite rechace Subjects legítimos materializados por finalize_change; conservar como contrato la presencia de los nueve fundacionales.
 epistemic_status: stated
-approvals: []
+approvals:
+- actor: user:ragosorio <ragosorio777@gmail.com>
+  authority: architecture-owner
+  status: approved
+  approved_at: epoch:1785376308
 binding_declarations:
 - id: binding.constraint.foundational-subjects-are-required-subset.0
   type: file
@@ -28,4 +32,4 @@ subject:
   id: subject-registry-tests
 schema_version: rationale/0.1
 project_id: rationale
-status: pending
+status: approved

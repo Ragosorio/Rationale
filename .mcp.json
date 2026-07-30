@@ -1,8 +1,10 @@
 {
   "mcpServers": {
     "rationale": {
-      "command": "cargo",
-      "args": ["run", "--quiet", "--release", "--", "serve"]
+      "args": [
+        "serve"
+      ],
+      "command": "rationale"
     }
   }
 }

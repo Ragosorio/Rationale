@@ -4,24 +4,32 @@ severity: high
 statement: Promotion or rejection of a pending proposal must begin with an atomic exclusive claim; concurrent losers fail explicitly, and interrupted claims remain recoverable.
 rationale: The review path claims the exact pending file with an atomic rename, validates its bytes again, and leaves interrupted work in proposals/.in-review/.
 epistemic_status: stated
-approvals: []
+approvals:
+- actor: user:ragosorio <ragosorio777@gmail.com>
+  authority: architecture-owner
+  status: approved
+  approved_at: epoch:1785376301
 binding_declarations:
-  - id: binding.review.claim-proposal
-    type: symbol
-    provider: rationale-self
-    structural_id: rust:src/review.rs::claim_proposal
-    path_hint: src/review.rs
-    scope: project
+- id: binding.review.claim-proposal
+  type: symbol
+  provider: rationale-self
+  structural_id: rust:src/review.rs::claim_proposal
+  path_hint: src/review.rs
+  provisional: false
+  scope: project
 evidence:
-  - type: test
-    path: tests/review_concurrency.rs
-    revision: fabeb92
-    verified: true
-    visibility: repository
-  - type: work-item
-    path: docs/work-items/adversarial-review-fase-f.md
-    verified: true
-    visibility: repository
+- type: test
+  path: tests/review_concurrency.rs
+  revision: fabeb92
+  verified: true
+  content_hash: null
+  visibility: repository
+- type: work-item
+  path: docs/work-items/adversarial-review-fase-f.md
+  revision: null
+  verified: true
+  content_hash: null
+  visibility: repository
 risks:
 - id: risk.constraint.f8-atomic-proposal-claim.0
   statement: Pending proposal requires human review before becoming normative.
@@ -31,4 +39,4 @@ subject:
   id: review.proposal-lifecycle-integrity
 schema_version: rationale/0.1
 project_id: rationale
-status: pending
+status: approved

@@ -4,7 +4,11 @@ severity: low
 statement: The landing page release-status card should describe Rationale as public beta/latest and list only the remaining platform, provider, pilot, and human-review work.
 rationale: Update the landing release-status card from obsolete alpha wording to public beta/latest wording and remove the completed alpha-promotion item from visible open work.
 epistemic_status: stated
-approvals: []
+approvals:
+- actor: user:ragosorio <ragosorio777@gmail.com>
+  authority: architecture-owner
+  status: approved
+  approved_at: epoch:1785376308
 binding_declarations:
 - id: binding.decision.landing-beta-release-status.0
   type: file
@@ -31,4 +35,4 @@ subject:
   id: subject.landing-beta-release-status
 schema_version: rationale/0.1
 project_id: rationale
-status: pending
+status: approved
