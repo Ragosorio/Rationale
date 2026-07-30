@@ -14,8 +14,10 @@ rationale install-agent
 ```
 
 `install-agent` detecta Claude Code, Codex o Cursor, escribe bloques delimitados
-e idempotentes y registra el servidor MCP correspondiente. Reinicia la sesión
-del agente después de instalar una configuración nueva.
+e idempotentes en el proyecto y registra el servidor MCP una vez en la
+configuración global del usuario. El registro usa la ruta absoluta del binario
+instalado para no depender del `PATH` de una aplicación gráfica. Reinicia la
+sesión del agente después de instalar una configuración nueva.
 
 El texto que `install-agent` escribe por defecto es el [prompt maestro](../prompt-master.md);
 la [versión en español](../prompt-master.es.md) está disponible para equipos que
@@ -31,6 +33,7 @@ Para revertir exactamente esos cambios:
 
 ```bash
 rationale uninstall-agent
+rationale uninstall-agent --global-only
 ```
 
 ## Herramientas MCP
@@ -47,8 +50,9 @@ operaciones requieren la CLI interactiva y una persona.
 
 ## Configuración manual
 
-El repositorio incluye `.mcp.json` como configuración de desarrollo. Para una
-instalación global de Codex, registra el binario instalado con:
+El repositorio incluye `.mcp.json` como configuración de desarrollo. El
+instalador administra automáticamente `~/.claude.json`,
+`~/.cursor/mcp.json` y Codex. Para registrar Codex manualmente:
 
 ```bash
 codex mcp add rationale -- "$HOME/.local/bin/rationale" serve

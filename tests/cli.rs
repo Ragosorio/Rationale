@@ -14,8 +14,11 @@ fn unique_temp_project(label: &str) -> std::path::PathBuf {
 }
 
 fn run(project: &std::path::Path, args: &[&str]) -> std::process::Output {
+    let test_home = project.join(".test-home");
+    std::fs::create_dir_all(&test_home).unwrap();
     Command::new(env!("CARGO_BIN_EXE_rationale"))
         .current_dir(project)
+        .env("HOME", test_home)
         .args(args)
         .output()
         .unwrap()
@@ -26,11 +29,14 @@ fn run_with_path(
     args: &[&str],
     extra_path: &std::path::Path,
 ) -> std::process::Output {
+    let test_home = project.join(".test-home");
+    std::fs::create_dir_all(&test_home).unwrap();
     Command::new(env!("CARGO_BIN_EXE_rationale"))
         .current_dir(project)
         // El test debe detectar solo el `claude` falso. Heredar el PATH del
         // host podría ejecutar `codex mcp add` y mutar configuración global.
         .env("PATH", extra_path)
+        .env("HOME", test_home)
         .args(args)
         .output()
         .unwrap()
@@ -70,11 +76,9 @@ fn init_on_an_existing_project_configures_a_newly_available_claude_code() {
     let response: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
     assert_eq!(response["status"], "already-initialized");
 
-    let mcp: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(project.join(".mcp.json")).unwrap()).unwrap();
-    assert_eq!(
-        mcp["mcpServers"]["rationale"]["args"],
-        serde_json::json!(["serve"])
+    assert!(
+        !project.join(".mcp.json").exists(),
+        "beta.3 no escribe el servidor instalado dentro del repositorio"
     );
     assert!(std::fs::read_to_string(project.join("CLAUDE.md"))
         .unwrap()

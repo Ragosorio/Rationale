@@ -1,0 +1,52 @@
+id: decision.provider-owned-project-identity
+kind: constraint
+severity: high
+statement: Rationale must obtain and persist Codebase Memory project handles only from the public MCP contract, scope them to canonical root_path, avoid reindexing an existing project, resolve symbols within the declared file, and correlate JSON-RPC responses by id.
+rationale: Make beta.3 survive Codebase Memory reindexing, multiple clones, provider-owned project naming, and interleaved MCP messages.
+epistemic_status: stated
+approvals: []
+binding_declarations:
+- id: binding.decision.provider-owned-project-identity.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/work-items/beta3-migration-and-codebase-identity.md
+  provisional: true
+- id: binding.decision.provider-owned-project-identity.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/pipeline.rs
+  provisional: true
+- id: binding.decision.provider-owned-project-identity.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/providers/codebase_memory.rs
+  provisional: true
+- id: binding.decision.provider-owned-project-identity.3
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/providers/mod.rs
+  provisional: true
+- id: binding.decision.provider-owned-project-identity.4
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: tests/fixtures/mock-mcp/interleaved_server.sh
+  provisional: true
+- id: binding.decision.provider-owned-project-identity.symbol
+  type: symbol
+  provider: codebase-memory
+  structural_id: Users-roor.osorio-Desktop-Rationale.src.providers.codebase_memory.CodebaseMemoryClient
+  path_hint: src/providers/codebase_memory.rs
+  provisional: true
+evidence: []
+risks: []
+bound_revision: caa5ae162d5cf4f8155a6abd311ac992a016d64f
+subject:
+  id: provider.codebase-memory-project-identity
+schema_version: rationale/0.1
+project_id: rationale
+status: pending

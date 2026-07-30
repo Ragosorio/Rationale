@@ -1,0 +1,20 @@
+id: provider.codebase-memory-project-identity
+type: unclassified
+title: Provider-owned Codebase Memory project identity
+scope: project
+aliases: []
+applies_to:
+- docs/work-items/beta3-migration-and-codebase-identity.md
+- src/pipeline.rs
+- src/providers/codebase_memory.rs
+- src/providers/mod.rs
+- tests/fixtures/mock-mcp/interleaved_server.sh
+- src/providers/codebase_memory.rs
+schema_version: rationale/0.1
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: mcp-client
+  proposed_at: epoch:1785372400
+  note: Propuesto por finalize_change. Sin autoridad hasta rationale review (evaluation.no-self-certification, Proceso §21).

@@ -112,7 +112,7 @@ fn print_usage() {
         "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-mascot]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
     );
     println!(
-        "  rationale uninstall-agent [--project-root <path>] [--no-mascot]   # revierte exactamente lo que install-agent escribió"
+        "  rationale uninstall-agent [--project-root <path>] [--global-only] [--no-mascot]   # revierte exactamente lo que install-agent escribió"
     );
     println!("  rationale update   # descarga e instala la última Release disponible");
     println!(
@@ -144,7 +144,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-mascot]\n\nRegistra MCP e instrucciones de invocación de forma idempotente."
         ),
         "uninstall-agent" => println!(
-            "Uso: rationale uninstall-agent [--project-root <path>] [--no-mascot]\n\nRevierte exactamente lo que install-agent escribió."
+            "Uso: rationale uninstall-agent [--project-root <path>] [--global-only] [--no-mascot]\n\nRevierte exactamente lo que install-agent escribió."
         ),
         "update" => println!(
             "Uso: rationale update\n\nDescarga e instala la última Release mediante el helper instalado junto al binario."
@@ -184,7 +184,12 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
             ],
             &["--project-root"],
         ),
-        "uninstall-agent" => validate_flags(command, args, &["--no-mascot"], &["--project-root"]),
+        "uninstall-agent" => validate_flags(
+            command,
+            args,
+            &["--global-only", "--no-mascot"],
+            &["--project-root"],
+        ),
         "update" => validate_flags(command, args, &[], &[]),
         "doctor" => validate_flags(
             command,
@@ -876,6 +881,18 @@ fn cmd_install_agent(args: &[String]) {
     mascot::print_stdout(args, mascot::Mood::Searching);
     println!("Buscando agentes de código en este proyecto...");
 
+    match agents::install_global_only(&binary_path, dry_run) {
+        Ok(actions) => {
+            for line in actions {
+                println!("- {line}");
+            }
+        }
+        Err(error) => {
+            eprintln!("registro global de agentes falló: {error}");
+            std::process::exit(1);
+        }
+    }
+
     match agents::install(
         &project_root,
         &rationale_local,
@@ -908,6 +925,22 @@ fn cmd_install_agent(args: &[String]) {
 /// `rationale uninstall-agent` — revierte exactamente lo que `install-agent`
 /// escribió, dejando cualquier contenido previo del usuario intacto.
 fn cmd_uninstall_agent(args: &[String]) {
+    if args.iter().any(|arg| arg == "--global-only") {
+        let binary_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("rationale"));
+        match agents::uninstall_global_only(&binary_path) {
+            Ok(actions) => {
+                for line in actions {
+                    println!("- {line}");
+                }
+            }
+            Err(error) => {
+                eprintln!("uninstall-agent --global-only falló: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     let project_root = resolve_project_root(args).unwrap_or_else(fail);
     let rationale_local = find_rationale_local(&project_root);
 

@@ -2,7 +2,7 @@
 
 Ningún ADR puede justificarse solamente con "elegimos X porque es rápido" (`Rationale_Arquitectura_Conceptual_v0.1.md §22`). Debe contener evidencia reproducible.
 
-Los ADRs iniciales obligatorios (0001–0012, `Rationale_Arquitectura_Conceptual_v0.1.md §22`), el ADR-0013 añadido en Fase G y los ADR-0014 y ADR-0015 añadidos en el dogfood pre-beta se mantienen explícitos en este índice; las propuestas requieren evidencia antes de pasar de estado:
+Los ADRs iniciales obligatorios (0001–0012, `Rationale_Arquitectura_Conceptual_v0.1.md §22`), el ADR-0013 añadido en Fase G y los ADR-0014–0016 añadidos en el dogfood pre-beta se mantienen explícitos en este índice; las propuestas requieren evidencia antes de pasar de estado:
 
 | ADR | Título | Estado | Depende de |
 |---|---|---|---|
@@ -21,6 +21,7 @@ Los ADRs iniciales obligatorios (0001–0012, `Rationale_Arquitectura_Conceptual
 | [ADR-0013](ADR-0013-record-lifecycle-and-authority.md) | Record lifecycle and authority | **proposed** | Fase G — `review_record` interactivo |
 | [ADR-0014](ADR-0014-local-data-exclusion.md) | Local data exclusion in consumer projects | **proposed** | Migración `alpha.7` → `main` sobre copias de Monorepo y BoostAPI. Propone reemplazar la garantía de exclusión de ADR-0012 |
 | [ADR-0015](ADR-0015-mcp-executable-resolution.md) | Executable resolution in per-project MCP config | **proposed** | La premisa del `PATH` se refutó empíricamente contra Claude Code. Complementa ADR-0014 |
+| [ADR-0016](ADR-0016-user-scoped-agent-registration.md) | User-scoped MCP registration and convergent migration | **proposed** | La validación Cursor de ADR-0015 falló; propone reemplazarlo si recibe revisión y aprobación |
 
 **Una propuesta no supersede a otra propuesta.** Mientras dos ADRs estén en `proposed`, el que propone reemplazar al otro lo declara en su encabezado pero no adquiere autoridad sobre él; el campo `Superseded by` del ADR reemplazado solo se rellena cuando el reemplazo pasa revisión cruzada y aprobación humana. Es el caso hoy de ADR-0012 y ADR-0014.
 

@@ -66,7 +66,15 @@ rationale install-agent --dry-run           # imprime qué haría sin escribir n
 rationale install-agent --project-root <p>  # apunta a un proyecto distinto del cwd
 ```
 
-Detecta el agente por binario en `PATH` (`claude`, `codex`, `cursor-agent`) o por configuración ya presente en el proyecto, y escribe un bloque delimitado e idempotente en `CLAUDE.md`/`AGENTS.md`/`.cursor/rules/rationale.mdc` más el registro MCP correspondiente (`.mcp.json`, `.cursor/mcp.json`, o `codex mcp add` global). Nunca sobrescribe contenido previo del usuario. Revertir: `rationale uninstall-agent` — ver [`uninstall.md`](uninstall.md).
+Detecta el agente por binario en `PATH` (`claude`, `codex`, `cursor-agent`) o
+por configuración ya presente. Escribe un bloque delimitado e idempotente en
+`CLAUDE.md`/`AGENTS.md`/`.cursor/rules/rationale.mdc` y registra el MCP
+globalmente para Claude Code, Codex y Cursor con la ruta absoluta del binario
+instalado. Al migrar beta.2, extirpa únicamente entradas MCP por proyecto que
+conservan la forma conocida de Rationale; otros servidores se preservan.
+Revertir el proyecto: `rationale uninstall-agent`. Revertir el registro del
+usuario: `rationale uninstall-agent --global-only` — ver
+[`uninstall.md`](uninstall.md).
 
 **Requiere reiniciar la sesión del agente** para que cargue la configuración nueva.
 
