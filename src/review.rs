@@ -284,6 +284,16 @@ pub enum RecordMutation {
         new_severity: String,
         reason: String,
     },
+    /// Usada por `rationale doctor --repair` para corregir un `kind` que no
+    /// coincide con el prefijo de `id` — el defecto real que rompió CI: un
+    /// Record `id: decision.*` se escribió con `kind: constraint` porque
+    /// `finalize_change` defaulteaba siempre a `"constraint"` cuando el
+    /// caller no declaraba `kind` (ver `storage::infer_kind_from_id`). Nunca
+    /// automático, siempre con confirmación humana por Record.
+    CorrectKind {
+        new_kind: String,
+        reason: String,
+    },
     /// Fase C del plan beta — `doctor` detecta `RecordWithoutBindings` pero
     /// nunca lo repara solo ("inventar un binding sería peor que ninguno").
     /// Este es el camino de migración para el canon legado que quedó así:
@@ -543,6 +553,26 @@ pub fn mutate_record(
                     ("old_severity", old_severity),
                     ("new_severity", new_severity),
                 ],
+            );
+        }
+        RecordMutation::CorrectKind { new_kind, reason } => {
+            const VALID_KINDS: [&str; 4] = ["constraint", "decision", "risk", "exception"];
+            if !VALID_KINDS.contains(&new_kind.as_str()) {
+                return Err(storage::StorageError::Parse(format!(
+                    "kind '{new_kind}' inválido — valores válidos: {}",
+                    VALID_KINDS.join(", ")
+                )));
+            }
+            let old_kind = record.kind.clone();
+            record.kind = new_kind.clone();
+            add_lifecycle_event(
+                &mut record,
+                None,
+                "kind-corrected",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![("old_kind", old_kind), ("new_kind", new_kind)],
             );
         }
         RecordMutation::AddHumanConfirmedBinding {

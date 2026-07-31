@@ -24,6 +24,18 @@ pub enum Finding {
         path: PathBuf,
         current: String,
     },
+    /// El defecto real que rompió CI (`e2320f0`): `finalize_change`
+    /// defaulteaba `kind` a `"constraint"` siempre que el caller no lo
+    /// declaraba, así que un Record `id: decision.*` podía escribirse con
+    /// `kind: constraint` en silencio. `expected_kind` es lo que
+    /// `storage::infer_kind_from_id` deriva del prefijo del propio `id` —
+    /// nunca inventado, solo la convención que el mismo `id` ya declara.
+    KindMismatch {
+        record_id: String,
+        path: PathBuf,
+        current_kind: String,
+        expected_kind: String,
+    },
     /// Un Record sin ningún binding no puede gobernar ningún target —
     /// `linkage: unresolved` por diseño (Fase 1.4). Solo se reporta: un
     /// binding inventado sería peor que ninguno.
@@ -83,6 +95,7 @@ impl Finding {
         matches!(
             self,
             Finding::InvalidSeverity { .. }
+                | Finding::KindMismatch { .. }
                 | Finding::DanglingSubject { .. }
                 | Finding::OrphanedClaimedProposal { .. }
         )
@@ -96,6 +109,17 @@ impl Finding {
                 "'{record_id}' tiene severity '{current}', fuera del enum ({}) — nunca decide \
                  visibilidad, pero conviene corregirla para que el orden en retrieval sea real",
                 storage::Severity::ALL.join(", ")
+            ),
+            Finding::KindMismatch {
+                record_id,
+                current_kind,
+                expected_kind,
+                ..
+            } => format!(
+                "'{record_id}' tiene kind '{current_kind}', pero su propio id sugiere \
+                 '{expected_kind}' — un Record con el kind equivocado puede servirse como una \
+                 constraint gobernante cuando en realidad es otra cosa (el defecto real que \
+                 rompió CI)."
             ),
             Finding::RecordWithoutBindings { record_id, .. } => format!(
                 "'{record_id}' no tiene ningún binding_declaration — no puede gobernar ningún \
@@ -200,6 +224,17 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
             });
         }
 
+        if let Some(expected_kind) = storage::infer_kind_from_id(&record.id) {
+            if record.kind != expected_kind {
+                findings.push(Finding::KindMismatch {
+                    record_id: record.id.clone(),
+                    path: path.clone(),
+                    current_kind: record.kind.clone(),
+                    expected_kind: expected_kind.to_string(),
+                });
+            }
+        }
+
         if record.binding_declarations.is_empty() {
             findings.push(Finding::RecordWithoutBindings {
                 record_id: record.id.clone(),
@@ -296,6 +331,14 @@ pub fn repair(
             "InvalidSeverity para '{record_id}' (actual: '{current}') no se repara sin que el \
              humano elija el nuevo valor — usar repair_severity()"
         )),
+        Finding::KindMismatch {
+            record_id,
+            current_kind,
+            ..
+        } => Err(format!(
+            "KindMismatch para '{record_id}' (actual: '{current_kind}') no se repara sin \
+             confirmación humana — usar repair_kind()"
+        )),
         Finding::DanglingSubject {
             record_id,
             subject_id,
@@ -372,6 +415,34 @@ pub fn repair_severity(
         record_id,
         review::RecordMutation::CorrectSeverity {
             new_severity: new_severity.to_string(),
+            reason: reason.to_string(),
+        },
+        reviewer_actor,
+        reviewer_role,
+        reviewer_declared,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Repara `KindMismatch` con el `kind` que el humano confirmó — separado de
+/// `repair()` por la misma razón que `repair_severity`: aunque
+/// `storage::infer_kind_from_id` ya sugiere el valor correcto, escribirlo
+/// exige confirmación humana explícita por Record, nunca una corrección
+/// silenciosa en lote.
+pub fn repair_kind(
+    rationale_dir: &Path,
+    record_id: &str,
+    new_kind: &str,
+    reason: &str,
+    reviewer_actor: &str,
+    reviewer_role: storage::AuthorityRole,
+    reviewer_declared: bool,
+) -> Result<PathBuf, String> {
+    review::mutate_record(
+        rationale_dir,
+        record_id,
+        review::RecordMutation::CorrectKind {
+            new_kind: new_kind.to_string(),
             reason: reason.to_string(),
         },
         reviewer_actor,
@@ -461,6 +532,50 @@ mod tests {
         assert!(report.findings.iter().any(
             |f| matches!(f, Finding::InvalidSeverity { record_id, current, .. } if record_id == "constraint.legacy" && current == "normal")
         ));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// El defecto real que rompió CI: un Record `id: decision.*` escrito con
+    /// `kind: constraint` (porque `finalize_change` defaulteaba siempre a
+    /// `"constraint"` sin `kind` explícito) debe ser detectable por `doctor`.
+    #[test]
+    fn detects_kind_mismatch_with_id_prefix() {
+        let project = unique_dir("kind-mismatch");
+        let rationale_dir = project.join(".rationale");
+        write_record_yaml(
+            &rationale_dir.join("records"),
+            "decision.mislabeled",
+            "id: decision.mislabeled\nkind: constraint\nseverity: high\nstatement: \"x\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\n",
+        );
+
+        let report = check(&rationale_dir, &project);
+        assert!(report.findings.iter().any(|f| matches!(
+            f,
+            Finding::KindMismatch { record_id, current_kind, expected_kind, .. }
+                if record_id == "decision.mislabeled" && current_kind == "constraint" && expected_kind == "decision"
+        )));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// Un `kind` que ya coincide con el prefijo de su id nunca debe
+    /// reportarse — el hallazgo es exclusivamente sobre la discrepancia.
+    #[test]
+    fn kind_matching_id_prefix_is_not_flagged() {
+        let project = unique_dir("kind-match");
+        let rationale_dir = project.join(".rationale");
+        write_record_yaml(
+            &rationale_dir.join("records"),
+            "decision.correctly-labeled",
+            "id: decision.correctly-labeled\nkind: decision\nseverity: high\nstatement: \"x\"\napprovals:\n  - actor: \"user:x\"\n    authority: contributor\n    status: approved\n",
+        );
+
+        let report = check(&rationale_dir, &project);
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| matches!(f, Finding::KindMismatch { .. })));
 
         std::fs::remove_dir_all(&project).ok();
     }

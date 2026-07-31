@@ -480,12 +480,16 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
     }
     // `kind: "exception"` está en el enum del schema desde el principio
     // (junto a constraint/decision/risk), pero nada lo escribía: el
-    // productor hardcodeaba "constraint" siempre. `None` sigue
-    // defaulteando a "constraint" — el comportamiento de antes, no un
-    // valor nuevo inventado — pero un caller ya puede declarar que una
-    // afirmación es una excepción real.
-    let kind = args.get("kind").and_then(|v| v.as_str());
-    if let Some(kind) = kind {
+    // productor hardcodeaba "constraint" siempre. Eso producía Records
+    // `id: decision.*` escritos con `kind: constraint` en silencio cuando el
+    // caller no declaraba `kind` — el defecto real que rompió CI (ver
+    // `crate::storage::infer_kind_from_id`). Ahora, sin `kind` explícito, se
+    // deriva del prefijo del `record_id`; solo cae al default histórico
+    // "constraint" cuando el prefijo no es reconocido. Si el caller SÍ
+    // declara `kind` y contradice el prefijo, se rechaza en vez de
+    // escribir un Record internamente inconsistente.
+    let declared_kind = args.get("kind").and_then(|v| v.as_str());
+    if let Some(kind) = declared_kind {
         const VALID_KINDS: [&str; 4] = ["constraint", "decision", "risk", "exception"];
         if !VALID_KINDS.contains(&kind) {
             return Err(format!(
@@ -494,7 +498,19 @@ fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<V
             ));
         }
     }
-    let kind = kind.unwrap_or("constraint").to_string();
+    let inferred_kind = crate::storage::infer_kind_from_id(&record_id);
+    let kind = match (declared_kind, inferred_kind) {
+        (Some(declared), Some(inferred)) if declared != inferred => {
+            return Err(format!(
+                "kind '{declared}' no coincide con el prefijo de record_id '{record_id}' \
+                 (se esperaba '{inferred}') — declara el kind correcto o usa un record_id \
+                 con el prefijo que corresponde"
+            ));
+        }
+        (Some(declared), _) => declared.to_string(),
+        (None, Some(inferred)) => inferred.to_string(),
+        (None, None) => "constraint".to_string(),
+    };
     let subject_type = args
         .get("subject_type")
         .and_then(|v| v.as_str())
