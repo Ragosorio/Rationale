@@ -1,0 +1,16 @@
+id: review.canon-tests-position-independence
+type: testing
+title: Los tests sobre el canon vivo del repo no deben depender de la posición de un Record en el array
+scope: project
+aliases: []
+applies_to:
+- tests/mcp_server.rs
+- tests/mcp_server.rs
+schema_version: rationale/0.1
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: mcp-client
+  proposed_at: epoch:1785511289
+  note: Propuesto por finalize_change. Sin autoridad hasta rationale review (evaluation.no-self-certification, Proceso §21).

@@ -1,0 +1,20 @@
+id: storage.record-kind-integrity
+type: system-behavior
+title: El kind de un Record debe coincidir con el prefijo de su propio id
+scope: project
+aliases: []
+applies_to:
+- src/doctor.rs
+- src/main.rs
+- src/mcp/server.rs
+- src/review.rs
+- src/storage.rs
+- src/storage.rs
+schema_version: rationale/0.1
+review:
+  status: unreviewed
+  proposed_by:
+    type: agent
+    name: mcp-client
+  proposed_at: epoch:1785511199
+  note: Propuesto por finalize_change. Sin autoridad hasta rationale review (evaluation.no-self-certification, Proceso §21).

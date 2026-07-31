@@ -1,5 +1,5 @@
 id: decision.user-scoped-agent-mcp-registration
-kind: constraint
+kind: decision
 severity: high
 statement: Installed MCP servers for Claude Code, Codex, and Cursor must be registered per user with the absolute installed binary path; project files retain only instructions and skills, and migration removes only recognized Rationale-owned legacy entries.
 rationale: Migrate beta.2 agent integrations to convergent user-scoped MCP registration for Claude Code, Codex, and Cursor.
@@ -102,3 +102,12 @@ subject:
 schema_version: rationale/0.1
 project_id: rationale
 status: approved
+lifecycle:
+  events:
+  - type: kind-corrected
+    actor: user:ragosorio <ragosorio777@gmail.com>
+    authority: architecture-owner
+    reason: corregido por rationale doctor --repair
+    timestamp: epoch:1785510982
+    old_kind: constraint
+    new_kind: decision

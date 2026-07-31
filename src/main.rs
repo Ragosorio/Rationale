@@ -1088,6 +1088,30 @@ fn cmd_doctor(args: &[String]) {
                         reviewer_authority.declared,
                     )
                 }
+                doctor::Finding::KindMismatch {
+                    record_id,
+                    expected_kind,
+                    ..
+                } => {
+                    println!(
+                        "Nuevo kind para '{record_id}' (sugerido por el id: '{expected_kind}'; \
+                         Enter para aceptarlo, o escribe otro valor):"
+                    );
+                    let new_kind = match read_interactive_line() {
+                        Some(line) if line.is_empty() => expected_kind.clone(),
+                        Some(line) => line,
+                        None => break,
+                    };
+                    doctor::repair_kind(
+                        &config.rationale_dir,
+                        record_id,
+                        &new_kind,
+                        "corregido por rationale doctor --repair",
+                        &reviewer_actor,
+                        reviewer_authority.role,
+                        reviewer_authority.declared,
+                    )
+                }
                 _ => doctor::repair(&config.rationale_dir, finding, &reviewer_actor),
             };
 

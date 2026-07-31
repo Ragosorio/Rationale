@@ -1,5 +1,5 @@
 id: decision.provider-owned-project-identity
-kind: constraint
+kind: decision
 severity: high
 statement: Rationale must obtain and persist Codebase Memory project handles only from the public MCP contract, scope them to canonical root_path, avoid reindexing an existing project, resolve symbols within the declared file, and correlate JSON-RPC responses by id.
 rationale: Make beta.3 survive Codebase Memory reindexing, multiple clones, provider-owned project naming, and interleaved MCP messages.
@@ -54,3 +54,12 @@ subject:
 schema_version: rationale/0.1
 project_id: rationale
 status: approved
+lifecycle:
+  events:
+  - type: kind-corrected
+    actor: user:ragosorio <ragosorio777@gmail.com>
+    authority: architecture-owner
+    reason: corregido por rationale doctor --repair
+    timestamp: epoch:1785510982
+    old_kind: constraint
+    new_kind: decision

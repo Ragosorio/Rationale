@@ -1,0 +1,59 @@
+id: constraint.kind-inferred-from-record-id-prefix
+kind: constraint
+severity: high
+statement: Cuando finalize_change no recibe kind explícito, debe derivarse del prefijo del record_id (constraint./decision./risk./exception.) en vez de defaultear siempre a "constraint"; un kind declarado que contradice el prefijo se rechaza. doctor detecta la discrepancia como KindMismatch, reparable solo con confirmación humana explícita por Record.
+rationale: 'finalize_change defaulteaba kind a "constraint" siempre que el caller no lo declaraba, así que un record_id: decision.* podia escribirse con kind: constraint en silencio (el defecto real que rompió CI: una decisión aprobada se servía como la constraint crítica más relevante de un packet). Ahora kind se deriva del prefijo de record_id cuando no se declara explícito, y se rechaza si el kind declarado contradice el prefijo. Se añade doctor::Finding::KindMismatch reparable con confirmación humana (review::RecordMutation::CorrectKind), y se corrigieron los dos Records de este canon que tenían kind: constraint con id decision.*'
+epistemic_status: stated
+approvals:
+- actor: user:ragosorio <ragosorio777@gmail.com>
+  authority: architecture-owner
+  status: approved
+  approved_at: epoch:1785512885
+binding_declarations:
+- id: binding.constraint.kind-inferred-from-record-id-prefix.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/doctor.rs
+  provisional: true
+- id: binding.constraint.kind-inferred-from-record-id-prefix.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/main.rs
+  provisional: true
+- id: binding.constraint.kind-inferred-from-record-id-prefix.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/mcp/server.rs
+  provisional: true
+- id: binding.constraint.kind-inferred-from-record-id-prefix.3
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/review.rs
+  provisional: true
+- id: binding.constraint.kind-inferred-from-record-id-prefix.4
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/storage.rs
+  provisional: true
+- id: binding.constraint.kind-inferred-from-record-id-prefix.symbol
+  type: symbol
+  provider: codebase-memory
+  structural_id: Users-roor.osorio-Desktop-Rationale.src.storage.infer_kind_from_id
+  path_hint: src/storage.rs
+  provisional: true
+evidence: []
+risks:
+- id: risk.constraint.kind-inferred-from-record-id-prefix.0
+  statement: Un record_id sin prefijo reconocido (legado o convención distinta) sigue cayendo al default histórico 'constraint' — no es un caso cubierto, solo preservado por compatibilidad.
+  epistemic_status: stated
+bound_revision: e2320f05549aa6818c009a469a99a73935fdd6c1
+subject:
+  id: storage.record-kind-integrity
+schema_version: rationale/0.1
+project_id: rationale
+status: approved

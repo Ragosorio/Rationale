@@ -122,6 +122,33 @@ pub fn is_valid_authority(value: &str) -> bool {
     )
 }
 
+/// Deriva `kind` del prefijo de un `record_id` (`constraint.`, `decision.`,
+/// `risk.`, `exception.`). Fuente única para CLI, MCP y `doctor` — antes de
+/// esto, `finalize_change` defaulteaba SIEMPRE a `"constraint"` cuando el
+/// caller no declaraba `kind`, así que un `record_id: decision.*` sin `kind`
+/// explícito se escribía con `kind: constraint` en silencio (el defecto real
+/// que rompió CI: una decisión aprobada terminó sirviéndose como la
+/// constraint crítica más relevante de un packet).
+///
+/// El prefijo es una convención validada y una red de seguridad — nunca la
+/// semántica principal del Record. `kind` sigue siendo el campo con
+/// autoridad; esta función solo lo deriva cuando falta y lo valida cuando
+/// está presente. `None` cuando el prefijo no es reconocido (id legado o sin
+/// convención) — el caller decide qué hacer en ese caso, esta función nunca
+/// inventa un valor.
+pub fn infer_kind_from_id(record_id: &str) -> Option<&'static str> {
+    const PREFIXES: &[(&str, &str)] = &[
+        ("constraint.", "constraint"),
+        ("decision.", "decision"),
+        ("risk.", "risk"),
+        ("exception.", "exception"),
+    ];
+    PREFIXES
+        .iter()
+        .find(|(prefix, _)| record_id.starts_with(prefix))
+        .map(|(_, kind)| *kind)
+}
+
 // Campos como `id`, `kind`, `provider`, `path_hint` (BindingDeclaration),
 // `actor`/`authority` (Approval) y `Record.kind` reflejan el schema completo
 // de Rationale_v0.5.md §5.2-5.3 para que la deserialización sea fiel al
@@ -554,6 +581,32 @@ pub fn list_records(records_dir: &Path) -> Result<Vec<Record>, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn infer_kind_from_id_recognizes_all_four_prefixes() {
+        assert_eq!(
+            infer_kind_from_id("constraint.no-provider-internal-access"),
+            Some("constraint")
+        );
+        assert_eq!(
+            infer_kind_from_id("decision.user-scoped-agent-mcp-registration"),
+            Some("decision")
+        );
+        assert_eq!(infer_kind_from_id("risk.some-risk"), Some("risk"));
+        assert_eq!(
+            infer_kind_from_id("exception.temporary-double-check-waiver"),
+            Some("exception")
+        );
+    }
+
+    /// Regresión del defecto real: un id sin prefijo reconocido no debe
+    /// inventarse un kind — el caller decide, esta función nunca adivina.
+    #[test]
+    fn infer_kind_from_id_returns_none_for_unrecognized_prefixes() {
+        assert_eq!(infer_kind_from_id("../pwned-by-rationale-test"), None);
+        assert_eq!(infer_kind_from_id("legacy-record-without-prefix"), None);
+        assert_eq!(infer_kind_from_id(""), None);
+    }
 
     /// Vulnerabilidad real encontrada y corregida durante la verificación de
     /// fin de Fase F: un `record_id` con `../` escribía fuera de

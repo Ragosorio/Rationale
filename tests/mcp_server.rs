@@ -250,9 +250,17 @@ fn prepare_change_intent_aware_detects_conflict_without_blocking() {
         !conflicts.is_empty(),
         "la intención debe conflictuar con constraint.no-provider-internal-access"
     );
-    let authority = packet["packet"]["critical_constraints"][0]["authority"]
-        .as_str()
-        .unwrap();
+    // Buscar por id, no por posición [0]: `critical_constraints` refleja el
+    // canon VIVO de este mismo repo, así que cualquier Record nuevo con
+    // mayor severidad/prioridad de orden desplaza la posición de esta
+    // constraint sin que la intención del test (una constraint sin
+    // aprobación nunca se sirve como aprobada) deje de cumplirse.
+    let critical_constraints = packet["packet"]["critical_constraints"].as_array().unwrap();
+    let target_constraint = critical_constraints
+        .iter()
+        .find(|c| c["id"] == "constraint.no-provider-internal-access")
+        .expect("constraint.no-provider-internal-access debe estar en critical_constraints");
+    let authority = target_constraint["authority"].as_str().unwrap();
     assert_eq!(
         authority, "unreviewed",
         "una constraint sin aprobación nunca se sirve como aprobada"
@@ -746,6 +754,85 @@ fn finalize_change_honors_an_explicit_kind() {
         }),
     );
     assert_eq!(bad["result"]["isError"], true);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Regresión del defecto real que rompió CI (`e2320f0`): sin `kind`
+/// explícito, `finalize_change` defaulteaba SIEMPRE a `"constraint"` — así
+/// que un `record_id: decision.*` se escribía con `kind: constraint` en
+/// silencio, y esa decisión aprobada terminaba sirviéndose como la
+/// constraint crítica más relevante de un packet. Ahora, sin `kind`
+/// declarado, se deriva del prefijo del `record_id`. Cubre también el caso
+/// inverso: un `kind` declarado que contradice el prefijo se rechaza en vez
+/// de escribir un Record internamente inconsistente.
+#[test]
+fn finalize_change_infers_kind_from_record_id_prefix_when_kind_is_omitted() {
+    let dir = make_test_project();
+    let base_revision = {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+
+    let mut client = TestClient::spawn();
+    client.initialize();
+
+    let resp = client.call(
+        1,
+        "finalize_change",
+        json!({
+            "target": "f.txt",
+            "base_revision": base_revision,
+            "intent": "migrar el registro de agentes a un esquema convergente",
+            "statement": "el registro de agentes usa un esquema convergente por usuario",
+            "record_id": "decision.kind-inference-test",
+            "subject_id": "kind-inference-test",
+            "subject_title": "Kind inference test",
+            "severity": "medium",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(resp["result"]["isError"], false);
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    let outcome: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(outcome["proposal_written"], true);
+    let proposal_path = outcome["proposal_path"].as_str().unwrap();
+    let content = std::fs::read_to_string(proposal_path).unwrap();
+    assert!(
+        content.contains("kind: decision"),
+        "sin `kind` explícito, un record_id `decision.*` nunca debe escribirse como \
+         `kind: constraint` — contenido real: {content}"
+    );
+
+    // `kind` declarado que contradice el prefijo del id -> rechazado, nunca
+    // un Record internamente inconsistente.
+    std::fs::write(dir.join("g.txt"), "changed2\n").unwrap();
+    let base_revision2 = base_revision.clone();
+    let contradictory = client.call(
+        2,
+        "finalize_change",
+        json!({
+            "target": "g.txt",
+            "base_revision": base_revision2,
+            "intent": "x",
+            "statement": "y",
+            "record_id": "decision.kind-contradiction-test",
+            "subject_id": "kind-contradiction-test",
+            "subject_title": "test",
+            "severity": "medium",
+            "kind": "constraint",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(contradictory["result"]["isError"], true);
 
     std::fs::remove_dir_all(&dir).ok();
 }
