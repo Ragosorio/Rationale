@@ -4,7 +4,11 @@ severity: medium
 statement: Un test de canon que afirma sobre un Record específico debe buscarlo por id dentro del array, nunca asumir su posición — la posición depende del canon vivo del repo (severidad, prioridad de gobernanza, otros Records aprobados) y no es parte de lo que el test pretende verificar.
 rationale: este test afirmaba sobre critical_constraints[0] del canon vivo del propio repo, así que cualquier Record nuevo que este mismo repo aprobara (con severidad o prioridad de orden distinta) rompía el test sin que la intención real del test cambiara — la causa directa de que CI quedara roja en main. El test ahora busca por id == constraint.no-provider-internal-access dentro del array en vez de asumir su posición
 epistemic_status: stated
-approvals: []
+approvals:
+- actor: user:ragosorio <ragosorio777@gmail.com>
+  authority: architecture-owner
+  status: approved
+  approved_at: epoch:1785512899
 binding_declarations:
 - id: binding.constraint.canon-tests-must-not-depend-on-record-position.0
   type: file
@@ -25,4 +29,4 @@ subject:
   id: review.canon-tests-position-independence
 schema_version: rationale/0.1
 project_id: rationale
-status: pending
+status: approved
