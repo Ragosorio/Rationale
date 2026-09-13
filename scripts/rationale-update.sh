@@ -2,7 +2,11 @@
 set -euo pipefail
 
 REPOSITORY="${RATIONALE_REPOSITORY:-Ragosorio/Rationale}"
-DEFAULT_CHANNEL="preview"
+# Desde 1.0 el canal por defecto es `stable` (`releases/latest`): ADR-0010
+# distinguía `stable` y `preview` «mientras Rationale sea pre-1.0», y con una
+# versión estable publicada una prerelease posterior (`-rc.`) no debe llegar a
+# quien instala sin pedirla. `RATIONALE_CHANNEL=preview` sigue disponible.
+DEFAULT_CHANNEL="stable"
 CHANNEL="${RATIONALE_CHANNEL:-$DEFAULT_CHANNEL}"
 VERSION="${RATIONALE_VERSION:-}"
 tmp="$(mktemp "${TMPDIR:-/tmp}/rationale-update.XXXXXX")"

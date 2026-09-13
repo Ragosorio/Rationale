@@ -1,0 +1,53 @@
+id: decision.installers-default-to-stable-channel
+kind: decision
+severity: high
+statement: From 1.0 the shell and PowerShell installers and the update helpers default to the stable channel (GitHub releases/latest); preview stays available only through RATIONALE_CHANNEL.
+rationale: ADR-0010 distinguished stable and preview only while Rationale was pre-1.0, because stable then resolved to an outdated release. With a stable 1.0 published, defaulting to preview would hand any later -rc or -alpha pre-release to every new install and update that never asked for it.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a099a6d58c9df48c14
+  session_id: session_1a099a6abe515e042f9
+  asserted_at: 2026-09-13T07:24:23Z
+approvals: []
+binding_declarations:
+- id: binding.decision.installers-default-to-stable-channel.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: scripts/rationale-installer.sh
+  provisional: true
+- id: binding.decision.installers-default-to-stable-channel.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: scripts/rationale-update.sh
+  provisional: true
+- id: binding.decision.installers-default-to-stable-channel.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: scripts/rationale-installer.ps1
+  provisional: true
+- id: binding.decision.installers-default-to-stable-channel.3
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: scripts/rationale-update.ps1
+  provisional: true
+evidence: []
+risks: []
+bound_revision: 76f8317c26a60e355c86ab214a237120dcee3682
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T07:24:23Z
+    operation_id: op_1a099a6d58c9df48c14

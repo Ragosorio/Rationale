@@ -25,6 +25,27 @@ jobs:
       - run: npm run check
         working-directory: site
 
+  # El Control Room (`ui/`) se embebe en el binario de cada Release; su
+  # typecheck, sus tests y su build deben romper CI antes que la Release.
+  ui:
+    name: ui (typecheck + tests + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+        working-directory: ui
+      - run: npm run typecheck
+        working-directory: ui
+      - run: npm test
+        working-directory: ui
+      - run: npm run build
+        working-directory: ui
+
   quality:
     name: quality (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

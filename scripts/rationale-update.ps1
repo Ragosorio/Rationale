@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 $Repository = if ($env:RATIONALE_REPOSITORY) { $env:RATIONALE_REPOSITORY } else { "Ragosorio/Rationale" }
-$DefaultChannel = "preview"
+# Desde 1.0 el canal por defecto es `stable` (ver rationale-installer.sh).
+$DefaultChannel = "stable"
 $Channel = if ($env:RATIONALE_CHANNEL) { $env:RATIONALE_CHANNEL } else { $DefaultChannel }
 $Version = if ($env:RATIONALE_VERSION) { $env:RATIONALE_VERSION } else { "" }
 $Tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("rationale-update-" + [guid]::NewGuid() + ".ps1")

@@ -39,6 +39,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes gcc-aarch64-linux-gnu
+      # `build.rs` embebe `ui/dist` en el binario; sin este paso la Release
+      # publicaría la página de fallback de `rationale ui` en vez del Control
+      # Room. Se construye antes de compilar y se exige que exista.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build Control Room
+        run: |
+          npm --prefix ui ci
+          npm --prefix ui run build
+          test -f ui/dist/index.html
       - name: Package
         env:
           TARGET: ${{ matrix.target }}
@@ -58,6 +71,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build Control Room
+        shell: pwsh
+        run: |
+          npm --prefix ui ci
+          npm --prefix ui run build
+          if (!(Test-Path ui/dist/index.html)) { throw "ui/dist no se construyó: el binario serviría la página de fallback" }
       - name: Package
         shell: pwsh
         env:
@@ -85,9 +109,9 @@ jobs:
         run: |
           mkdir -p release
           # Los scripts se publican tal cual están en el tag. Aquí hubo dos
-          # `sed` que reescribían `DEFAULT_CHANNEL` de "stable" a "preview";
-          # ambos scripts ya declaran "preview" en el repo, así que eran
-          # no-ops silenciosos que sugerían una transformación inexistente.
+          # `sed` que reescribían `DEFAULT_CHANNEL`; eran no-ops silenciosos que
+          # sugerían una transformación inexistente. Desde 1.0 los scripts
+          # declaran "stable" en el repo (ADR-0010).
           git show "${GITHUB_REF_NAME}:scripts/rationale-installer.sh" > release/rationale-installer.sh
           git show "${GITHUB_REF_NAME}:scripts/rationale-update.sh" > release/rationale-update.sh
           git show "${GITHUB_REF_NAME}:scripts/rationale-uninstall.sh" > release/rationale-uninstall.sh

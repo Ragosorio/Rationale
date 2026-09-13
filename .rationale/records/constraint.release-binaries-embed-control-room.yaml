@@ -1,0 +1,48 @@
+id: constraint.release-binaries-embed-control-room
+kind: constraint
+severity: high
+statement: Every release target must build the Control Room (ui/dist) before compiling the binary, and the release workflow must fail when ui/dist is missing instead of packaging.
+rationale: build.rs embeds ui/dist into the binary and silently falls back to an instructions page when it is absent, so a release built without the frontend would still compile, pass tests and publish a rationale ui that shows no Control Room. Only an explicit build step with an existence check turns that silent degradation into a failed release.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a099a6d58c9df48c14
+  session_id: session_1a099a6abe515e042f9
+  asserted_at: 2026-09-13T07:24:23Z
+approvals: []
+binding_declarations:
+- id: binding.constraint.release-binaries-embed-control-room.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: .github/workflows/release.yml
+  provisional: true
+- id: binding.constraint.release-binaries-embed-control-room.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: build.rs
+  provisional: false
+evidence:
+- type: doc
+  path: docs/work-items/vnext-implementation-plan.md
+  revision: 76f8317c26a60e355c86ab214a237120dcee3682
+  verified: false
+  content_hash: null
+  visibility: repository
+  note: 'evidence 17: a target dir built before ui/ existed kept serving the fallback page'
+risks: []
+bound_revision: 76f8317c26a60e355c86ab214a237120dcee3682
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T07:24:23Z
+    operation_id: op_1a099a6d58c9df48c14
