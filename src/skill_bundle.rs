@@ -206,6 +206,20 @@ mod tests {
         }
     }
 
+    /// `include_str!` embebe los bytes del checkout. Un CR significa que Git
+    /// convirtió el archivo (Windows sin `eol=lf`): ese binario instalaría
+    /// otro contenido y otros hashes que el de las demás plataformas.
+    #[test]
+    fn bundled_files_use_lf_line_endings() {
+        for file in FILES {
+            assert!(
+                !file.content.contains('\r'),
+                "{} se embebió con CRLF: revisa `eol=lf` en .gitattributes",
+                file.path
+            );
+        }
+    }
+
     #[test]
     fn skill_md_asks_for_the_users_language() {
         assert!(skill_md().contains("Reply in the language the user writes in"));

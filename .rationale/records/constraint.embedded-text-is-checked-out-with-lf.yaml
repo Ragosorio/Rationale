@@ -1,0 +1,47 @@
+id: constraint.embedded-text-is-checked-out-with-lf
+kind: constraint
+severity: high
+statement: Text the binary embeds with include_str!, the rationale skill and docs/prompt-master.md, is checked out with LF on every platform through .gitattributes, and a test fails when an embedded file contains a carriage return.
+rationale: Git on Windows converts text to CRLF by default and include_str! embeds the checkout's bytes, so the Windows binary would install different skill content and hashes than macOS and Linux, and install-agent would treat skill files a teammate committed from another platform as edited. It first surfaced as a Windows-only CI failure of the SKILL.md frontmatter test.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09bddc07513dc7cbb
+  session_id: session_1a09bad98aa00726ad0
+  asserted_at: 2026-09-13T17:48:41Z
+approvals: []
+binding_declarations:
+- id: binding.constraint.embedded-text-is-checked-out-with-lf.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: .gitattributes
+  provisional: true
+- id: binding.constraint.embedded-text-is-checked-out-with-lf.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/skill_bundle.rs
+  provisional: true
+- id: binding.constraint.embedded-text-is-checked-out-with-lf.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/agents.rs
+  provisional: true
+evidence: []
+risks: []
+bound_revision: ff793a4b4b829d11adae87d53faba678a47746ee
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T17:48:41Z
+    operation_id: op_1a09bddc07513dc7cbb

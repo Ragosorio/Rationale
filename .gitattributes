@@ -1,0 +1,16 @@
+# El binario embebe estos textos con `include_str!`, así que sus bytes son los
+# del checkout. Sin `eol=lf`, Git en Windows los convierte a CRLF: el binario de
+# Windows instalaría otro contenido y otros hashes que el de macOS o Linux, y
+# `install-agent` vería como editados los archivos del mismo skill que otro
+# miembro del equipo commiteó desde otra plataforma.
+skills/** text eol=lf
+docs/prompt-master.md text eol=lf
+
+# Las copias instaladas del skill y de los atajos se commitean en el proyecto y
+# se comparan con el hash de lo embebido.
+.claude/skills/** text eol=lf
+.agents/skills/** text eol=lf
+
+# Un script de shell con CRLF falla en cualquier bash, incluidos los
+# instaladores que se publican en cada release y los mocks de los tests.
+*.sh text eol=lf

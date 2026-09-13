@@ -2178,6 +2178,16 @@ mod tests {
         std::fs::remove_dir_all(project).ok();
     }
 
+    /// Igual que el skill: el prompt maestro llega con `include_str!`, y un
+    /// checkout con CRLF escribiría otro bloque en Windows que en macOS o Linux.
+    #[test]
+    fn master_prompt_is_embedded_with_lf_line_endings() {
+        assert!(
+            !MASTER_PROMPT.contains('\r'),
+            "docs/prompt-master.md se embebió con CRLF: revisa `eol=lf` en .gitattributes"
+        );
+    }
+
     #[test]
     fn instructions_block_embeds_the_canonical_master_prompt() {
         let block = instructions_block();
