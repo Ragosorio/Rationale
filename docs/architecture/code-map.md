@@ -23,25 +23,33 @@ Mapa factual de `src/` tal como existe tras Fase F. No reinterpreta `Rationale_A
 | [`mcp/framing.rs`](../../src/mcp/framing.rs) | Codecs JSON-RPC separados: stdio newline para el servidor de Rationale y `Content-Length` para el cliente hacia Codebase Memory (ADR-0007). Límites explícitos tras la revisión adversarial. | No interpreta el contenido del mensaje — solo lo enmarca. |
 | [`mcp/server.rs`](../../src/mcp/server.rs) | Servidor MCP: cuatro tools y seis prompts (`prompts/list`/`prompts/get`). Sesión de `ProviderHandle` persistente para toda la vida del proceso. `catch_unwind` normaliza panics de herramienta a `isError` sin tumbar la sesión. | stdout es EXCLUSIVAMENTE del protocolo — ver `Arquitectura §11.1`. |
 | [`configuration.rs`](../../src/configuration.rs) | Localiza `.rationale/` subiendo directorios (como Git busca `.git/`) y carga `config.yaml`. | — |
-| [`evaluation.rs`](../../src/evaluation.rs) | Instrumentación local (`.rationale-local/runs/*.ndjson`) — nunca se envía a ningún servicio. | — |
+| [`evaluation.rs`](../../src/evaluation.rs) | Timestamps RFC3339 (`now_iso8601`, `now_rfc3339_millis`) y lectura tolerante de valores legados `epoch:`. | No escribe logs: la actividad vive en `activity.rs`. |
+| [`canon.rs`](../../src/canon.rs) | Canon autónomo (vNext): gate de candidatos, deduplicación, commit, supersesión explícita, conflictos con Records `pinned` y migración de propuestas pre-vNext. | Nunca otorga `pinned` por cuenta de un agente; nunca ordena SHAs de Git. |
+| [`context.rs`](../../src/context.rs) | Vecindario estructural acotado del target y relaciones explicadas con su estado derivado; selección por rol con techo y claves derivadas por el núcleo. | Nunca vuelca el grafo completo. |
+| [`relationships.rs`](../../src/relationships.rs) | Estado derivado de una `RelationshipBinding`: observed / indirect (camino compatible ≤3 saltos) / orphaned / unknown. | Nunca persiste el estado ni borra la explicación. |
+| [`operations.rs`](../../src/operations.rs) | Operación de `prepare_change`: `operation_id`, snapshot local del subgrafo considerado y seleccionado, cierre por `finalize_change`. | No es canon: estado derivado y regenerable. |
+| [`activity.rs`](../../src/activity.rs) | Actividad local por sesión (`.rationale-local/activity/<session>.ndjson`, ADR-0017): `Recorder`, `Scope`, lectura combinada y `Tail` para el stream en vivo. Los payloads solo se arman con `activity::payload`. | Nunca registra código, statements ni rationale; nunca hace fallar una herramienta. |
 
 ## Flujo: `rationale prepare` (CLI)
 
 ```text
 main.rs:cmd_prepare
-  → pipeline::prepare (PrepareRequest)
+  → pipeline::prepare (PrepareRequest, ProviderHandle, activity::Recorder)
       1. configuration::load
       2. storage::list_records
       3. project::resolve_target
       4. subjects::resolve_by_id_or_alias   (si el Record referencia un Subject)
-      5. ProviderHandle → resolve_target    (sesión CBM, spawneada por cmd_prepare)
-      6. revision::snapshot + check_consistency
-      7. cache::open / rebuild_fts / search_candidates / get_cached_assessment
-      8. assessment::compute
-      9. cache::cache_assessment
-      10. retrieval::compile_packet
-  ← PrepareOutcome { packet, assessment, diagnostics, latency_ms }
-main.rs: diagnostics → stderr, packet → stdout, evaluation::record_run
+      5. revision::snapshot + operations::Operation::new
+                                            → actividad: context.requested, provider.started
+      6. ProviderHandle → resolve_target    (sesión CBM, spawneada por cmd_prepare)
+      7. revision::check_consistency
+      8. cache::open / rebuild_fts / search_candidates / get_cached_assessment
+      9. assessment::compute + cache::cache_assessment
+      10. context::gather                   → actividad: target.resolved, relationship.*, provider.finished
+      11. retrieval::compile                (packet vNext; el presupuesto es un techo)
+      12. operations::save                  → actividad: packet.compiled
+  ← PrepareOutcome { packet, assessment, diagnostics, latency_ms, operation, activity }
+main.rs: diagnostics → stderr, packet → stdout, actividad: packet.delivered, session.ended
 ```
 
 ## Flujo: `rationale serve` (MCP)
@@ -50,6 +58,7 @@ main.rs: diagnostics → stderr, packet → stdout, evaluation::record_run
 main.rs → mcp::server::run()
   ProviderHandle::spawn()   ← UNA sola vez para toda la vida del proceso
   loop { framing::read_message → despacho por method → framing::write_message }
+    "initialize"   → Session::observe_initialize → actividad: agent.connected
     "prompts/list" → prompts::ACTIONS
     "prompts/get"  → prompts::render
     "tools/call" → handle_tools_call
@@ -58,6 +67,7 @@ main.rs → mcp::server::run()
         "explain_target"  → pipeline::explain
         "health"          → pipeline::health
         "finalize_change" → pipeline::finalize
+        "resolve_conflict" → canon::resolve_conflict → actividad: conflict.resolved
       })
       → { content: [...], isError } — nunca deja escapar un panic
 ```

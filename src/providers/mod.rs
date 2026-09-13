@@ -38,6 +38,26 @@ pub enum ProviderStatus {
     Unavailable,
 }
 
+impl ProviderStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProviderStatus::Successful => "successful",
+            ProviderStatus::Degraded => "degraded",
+            ProviderStatus::Unavailable => "unavailable",
+        }
+    }
+}
+
+impl Coverage {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Coverage::Complete => "complete",
+            Coverage::Partial => "partial",
+            Coverage::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderResult<T> {
     pub data: Option<T>,

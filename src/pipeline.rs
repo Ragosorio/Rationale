@@ -11,7 +11,7 @@
 use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
 use crate::storage::Record;
 use crate::{
-    assessment, binding_match, cache, canon, capture, configuration, context, evaluation,
+    activity, assessment, binding_match, cache, canon, capture, configuration, context, evaluation,
     operations, project, relationships, retrieval, revision, signals, storage, subjects,
 };
 use serde::Serialize;
@@ -46,6 +46,9 @@ pub struct PrepareOutcome {
     /// La operación abierta (persistida en `.rationale-local/operations/` si
     /// se pudo): la actividad y la UI la leen; el agente recibe su id.
     pub operation: operations::Operation,
+    /// Dónde registró la actividad esta llamada: el caller emite con él
+    /// `packet.delivered` cuando el packet sale hacia el agente.
+    pub activity: activity::Scope,
 }
 
 /// Compila el packet completo para un target — el cuerpo de `prepare_change`.
@@ -55,6 +58,7 @@ pub struct PrepareOutcome {
 pub fn prepare(
     req: &PrepareRequest,
     provider: &mut ProviderHandle,
+    recorder: &activity::Recorder,
 ) -> Result<PrepareOutcome, String> {
     let t0 = Instant::now();
     let mut diagnostics = Vec::new();
@@ -135,6 +139,44 @@ pub fn prepare(
         .ok()
         .and_then(|t| binding_match::target_rel_path(&req.repo_path, t));
 
+    // La operación nace aquí (ADR-0017): todo evento de esta llamada, también
+    // los del proveedor, la lleva. Su HEAD es la base honesta del cambio.
+    let snap = revision::snapshot(&req.repo_path);
+    let mut operation = operations::Operation::new(
+        &req.actor,
+        operations::OperationTarget {
+            spec: req.target_spec.clone(),
+            file_path: rel_file.clone(),
+            symbol: symbol.clone(),
+            node_key: None,
+            qualified_name: None,
+        },
+        req.intent.clone(),
+        snap.head.clone(),
+    );
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    let scope = activity::Scope::new(
+        &local_dir,
+        &config.project_root,
+        &config.project_id,
+        &req.actor,
+    )
+    .with_operation(&operation.operation_id);
+    recorder.emit(
+        &scope,
+        "context.requested",
+        activity::payload::context_requested(&req.target_spec, req.intent.as_deref()),
+    );
+    let provider_name = provider
+        .as_provider()
+        .map(|client| client.capabilities().name);
+    recorder.emit(
+        &scope,
+        "provider.started",
+        activity::payload::provider_started(provider_name.as_deref()),
+    );
+    let provider_clock = Instant::now();
+
     // 3. Consultar Codebase Memory — sesión MCP persistente real (ADR-0002).
     // La sesión (`provider`) ya fue spawneada por el caller: la CLI una vez
     // por invocación, el servidor MCP una sola vez para toda su vida.
@@ -175,6 +217,7 @@ pub fn prepare(
                 )],
             ),
         };
+    let mut provider_elapsed = provider_clock.elapsed();
 
     match &target {
         Ok(t) => diagnostics.push(format!("target resuelto: {}", t.path.display())),
@@ -182,7 +225,7 @@ pub fn prepare(
     }
 
     // 4. Verificar revisión — SIEMPRE desde Git, nunca desde el proveedor (ADR-0006).
-    let snap = revision::snapshot(&req.repo_path);
+    // `snap` se tomó al abrir la operación.
     let bound_revision = record
         .and_then(|record| record.bound_revision.clone())
         .unwrap_or_default();
@@ -286,6 +329,7 @@ pub fn prepare(
         .iter()
         .filter(|record| canon::is_active(record, &superseded))
         .collect();
+    let gather_clock = Instant::now();
     let mut structural = context::gather(
         provider,
         context::GatherInput {
@@ -297,18 +341,35 @@ pub fn prepare(
             budget: &req.structural_budget,
         },
     );
-    let target_node = structural.target_node.as_ref();
-    let mut operation = operations::Operation::new(
-        &req.actor,
-        operations::OperationTarget {
-            spec: req.target_spec.clone(),
-            file_path: rel_file.clone(),
-            symbol: symbol.clone(),
-            node_key: target_node.map(|node| node.key.clone()),
-            qualified_name: target_node.map(|node| node.binding.qualified_name.clone()),
-        },
-        req.intent.clone(),
-        snap.head.clone(),
+    provider_elapsed += gather_clock.elapsed();
+    if let Some(node) = structural.target_node.as_ref() {
+        operation.target.node_key = Some(node.key.clone());
+        operation.target.qualified_name = Some(node.binding.qualified_name.clone());
+    }
+    recorder.emit(
+        &scope,
+        "target.resolved",
+        activity::payload::target_resolved(&operation.target),
+    );
+    for assessment in &structural.relationships {
+        if let Some(kind) = activity::relationship_event_kind(assessment.state) {
+            recorder.emit(
+                &scope,
+                kind,
+                activity::payload::relationship_state(assessment),
+            );
+        }
+    }
+    recorder.emit(
+        &scope,
+        "provider.finished",
+        activity::payload::provider_finished(
+            provider_name.as_deref(),
+            provider_status.as_str(),
+            provider_coverage.as_str(),
+            structural.index_state.as_deref(),
+            provider_elapsed.as_millis(),
+        ),
     );
     let packet = retrieval::compile(
         retrieval::PacketInput {
@@ -353,12 +414,23 @@ pub fn prepare(
         packet_bytes: serde_json::to_vec(&packet).map_or(0, |bytes| bytes.len()),
         estimated_tokens: packet.token_estimate,
     };
-    let local_dir = configuration::find_rationale_local(&config.project_root);
+    // ADR-0014 §Decision 3: la exclusión de Git antes del snapshot, también
+    // con la actividad desactivada.
+    if let Err(e) = activity::ensure_excluded(&config.project_root) {
+        diagnostics.push(format!(
+            "advertencia: no se pudo excluir .rationale-local/ de Git: {e}"
+        ));
+    }
     if let Err(e) = operations::save(&local_dir, &operation) {
         diagnostics.push(format!(
             "advertencia: no se pudo guardar el snapshot de la operación: {e}"
         ));
     }
+    recorder.emit(
+        &scope,
+        "packet.compiled",
+        activity::payload::packet_compiled(&operation, packet.budget_overflow.as_deref()),
+    );
 
     Ok(PrepareOutcome {
         packet,
@@ -366,6 +438,7 @@ pub fn prepare(
         diagnostics,
         latency_ms: t0.elapsed().as_millis(),
         operation,
+        activity: scope,
     })
 }
 
@@ -610,6 +683,7 @@ pub struct FinalizeOutcome {
 pub fn finalize(
     req: FinalizeRequest,
     provider: &mut ProviderHandle,
+    recorder: &activity::Recorder,
 ) -> Result<FinalizeOutcome, String> {
     let mut diagnostics = Vec::new();
     let config = configuration::load(&req.project_root).map_err(|e| e.to_string())?;
@@ -623,6 +697,13 @@ pub fn finalize(
 
     let snap = revision::snapshot(&req.repo_path);
     let local_dir = configuration::find_rationale_local(&config.project_root);
+    let mut scope = activity::Scope::new(
+        &local_dir,
+        &config.project_root,
+        &config.project_id,
+        &req.actor,
+    );
+    scope.operation_id = req.operation_id.clone();
     // Un id desconocido (otra máquina, snapshot podado) no invalida el
     // cierre: solo no se enlaza con la operación.
     let operation = req.operation_id.as_deref().and_then(|id| {
@@ -650,6 +731,22 @@ pub fn finalize(
     let mut exclude_prefixes: Vec<&str> = vec![".rationale/", ".rationale-local/"];
     exclude_prefixes.extend(crate::agents::managed_paths());
     let mechanical = capture::capture(&req.repo_path, &base_revision, &exclude_prefixes, provider);
+    recorder.emit(
+        &scope,
+        "change.finalized",
+        activity::payload::change_finalized(req.candidates.len(), mechanical.changed_files.len()),
+    );
+    for (index, candidate) in req.candidates.iter().enumerate() {
+        let kind = candidate
+            .as_ref()
+            .ok()
+            .map(|candidate| candidate.kind.as_str());
+        recorder.emit(
+            &scope,
+            "capture.candidate",
+            activity::payload::capture_candidate(index, kind),
+        );
+    }
 
     let mut signal_set: std::collections::HashSet<signals::Signal> =
         signals::signals_from_paths(&mechanical.changed_files)
@@ -690,6 +787,11 @@ pub fn finalize(
                 .to_string(),
         );
     }
+    if let Err(e) = activity::ensure_excluded(&config.project_root) {
+        diagnostics.push(format!(
+            "advertencia: no se pudo excluir .rationale-local/ de Git: {e}"
+        ));
+    }
     let mut outcome = canon::capture_candidates(&ctx, req.candidates, provider);
     let committed_records: Vec<Record> = outcome
         .committed
@@ -713,6 +815,44 @@ pub fn finalize(
             duplicate_of: None,
             statement: canon::sanitize_control_chars(&statement),
         });
+    }
+
+    for discarded in &outcome.discarded {
+        recorder.emit(
+            &scope,
+            "capture.discarded",
+            activity::payload::capture_discarded(discarded),
+        );
+    }
+    for committed in &outcome.committed {
+        recorder.emit(
+            &scope,
+            "record.committed",
+            activity::payload::record_committed(committed),
+        );
+    }
+    for superseded in &outcome.superseded {
+        recorder.emit(
+            &scope,
+            "record.superseded",
+            activity::payload::record_superseded(superseded),
+        );
+    }
+    for conflict in &outcome.conflicts {
+        recorder.emit(
+            &scope,
+            "conflict.detected",
+            activity::payload::conflict_detected(conflict),
+        );
+    }
+    for assessment in &relationship_states {
+        if let Some(kind) = activity::relationship_event_kind(assessment.state) {
+            recorder.emit(
+                &scope,
+                kind,
+                activity::payload::relationship_state(assessment),
+            );
+        }
     }
 
     if let Some(operation) = &operation {

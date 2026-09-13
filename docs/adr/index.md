@@ -22,6 +22,7 @@ Los ADRs iniciales obligatorios (0001–0012, `Rationale_Arquitectura_Conceptual
 | [ADR-0014](ADR-0014-local-data-exclusion.md) | Local data exclusion in consumer projects | **proposed** | Migración `alpha.7` → `main` sobre copias de Monorepo y BoostAPI. Propone reemplazar la garantía de exclusión de ADR-0012 |
 | [ADR-0015](ADR-0015-mcp-executable-resolution.md) | Executable resolution in per-project MCP config | **proposed** | La premisa del `PATH` se refutó empíricamente contra Claude Code. Complementa ADR-0014 |
 | [ADR-0016](ADR-0016-user-scoped-agent-registration.md) | User-scoped MCP registration and convergent migration | **proposed** | La validación Cursor de ADR-0015 falló; propone reemplazarlo si recibe revisión y aprobación |
+| [ADR-0017](ADR-0017-local-activity-stream.md) | Local activity stream and operation snapshots | **proposed** | vNext: la vista de actividad necesita intención y target; acota ADR-0012 §Decision 3 para estos emisores (identificadores y una intención ≤280 caracteres, nunca contenido) y retira `RunLog` |
 
 **Una propuesta no supersede a otra propuesta.** Mientras dos ADRs estén en `proposed`, el que propone reemplazar al otro lo declara en su encabezado pero no adquiere autoridad sobre él; el campo `Superseded by` del ADR reemplazado solo se rellena cuando el reemplazo pasa revisión cruzada y aprobación humana. Es el caso hoy de ADR-0012 y ADR-0014.
 

@@ -80,6 +80,14 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
     only serves `kind: constraint`; the preflight of `pipeline::prepare` showed
     its governing decision only inside `assessment`. The vNext packet adds
     `decisions` (decision, exception and risk Records that govern the target).
+14. **ADR-0012 (proposed) forbids agent prompts and Record content in local
+    telemetry, and the guard test it promised never existed.** The activity
+    stream carries identifiers plus a single-line intent of at most 280
+    characters; statements and rationale travel by reference. Documented as
+    ADR-0017 (proposed) and enforced by a guard test.
+15. **vNext writers under `.rationale-local/` skipped the Git exclusion** that
+    only `init`/`install-agent` installed (ADR-0014 §Decision 3). Activity,
+    operation snapshots and conflicts now ensure it first.
 
 ## Governing Records and how vNext honors them
 
@@ -176,4 +184,7 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
   snapshots, bounded structural neighborhood (keys derived by the core),
   relationship why with derived state, governing decisions, token budget as a
   ceiling measured on the serialized packet, explicit `budget_overflow`
-- [ ] Phase 6 … Phase 10 (updated as each lands)
+- [x] Phase 6 — activity: per-session NDJSON `ActivityEvent` stream
+  (ADR-0017), minimization guard test, instrumentation of pipeline, MCP and
+  CLI, Git exclusion before vNext writes, `RunLog` retired
+- [ ] Phase 7 … Phase 10 (updated as each lands)

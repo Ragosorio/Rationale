@@ -1463,7 +1463,10 @@ fn git_common_dir(project_root: &Path) -> Option<PathBuf> {
 /// Devuelve `Ok(true)` si escribió la entrada, `Ok(false)` si ya estaba o si
 /// no hay repositorio Git. Fuera de un repo no falla ni bloquea (§Decision 5):
 /// sin gitdir no hay nada que excluir.
-fn ensure_local_data_excluded(project_root: &Path, dry_run: bool) -> Result<bool, String> {
+pub(crate) fn ensure_local_data_excluded(
+    project_root: &Path,
+    dry_run: bool,
+) -> Result<bool, String> {
     let Some(git_dir) = git_common_dir(project_root) else {
         return Ok(false);
     };

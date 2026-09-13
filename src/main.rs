@@ -7,6 +7,7 @@
 //! No más que esto — el resto (FTS, budget multi-constraint, capture,
 //! assessments persistidos) pertenece a Fase E/F.
 
+mod activity;
 mod agents;
 mod assessment;
 mod binding_match;
@@ -472,22 +473,19 @@ fn cmd_prepare(args: &[String]) {
     let intent = parse_string_flag(args, "--intent");
 
     let mut provider = providers::ProviderHandle::spawn();
+    let recorder = activity::Recorder::new(None);
     let outcome = pipeline::prepare(
         &pipeline::PrepareRequest {
             target_spec,
             intent,
-            project_root: project_root.clone(),
+            project_root,
             repo_path,
             budget: retrieval::Budget::default(),
             structural_budget: context::StructuralBudget::default(),
-            actor: canon::ActorContext {
-                client: "cli".to_string(),
-                client_source: "cli".to_string(),
-                session_id: None,
-                operation_id: None,
-            },
+            actor: cli_actor(),
         },
         &mut provider,
+        &recorder,
     )
     .unwrap_or_else(fail);
 
@@ -507,21 +505,23 @@ fn cmd_prepare(args: &[String]) {
     let packet_json = serde_json::to_string(&outcome.packet).expect("serialize packet");
     println!("{packet_json}");
 
-    // Instrumentación desde el día uno (Arquitectura §20).
-    let rationale_local = find_rationale_local(&project_root);
-    let _ = evaluation::record_run(
-        &rationale_local,
-        &evaluation::RunLog {
-            event: "prepare".to_string(),
-            timestamp: evaluation::now_iso8601(),
-            latency_ms: outcome.latency_ms,
-            git_revision: outcome.packet.snapshot.git_revision.clone(),
-            consistency: outcome.packet.snapshot.consistency.clone(),
-            provider_status: outcome.packet.snapshot.provider_status.clone(),
-            provider_coverage: outcome.packet.snapshot.provider_coverage.clone(),
-            packet_bytes: packet_json.len(),
-        },
+    // Actividad local (ADR-0017): reemplaza el `RunLog` de Fase D.
+    recorder.emit(
+        &outcome.activity,
+        "packet.delivered",
+        activity::payload::packet_delivered(outcome.latency_ms, packet_json.len()),
     );
+    recorder.end(&outcome.activity.actor);
+}
+
+/// El actor de una invocación de la CLI: nunca un agente, nunca inventado.
+fn cli_actor() -> canon::ActorContext {
+    canon::ActorContext {
+        client: "cli".to_string(),
+        client_source: "cli".to_string(),
+        session_id: None,
+        operation_id: None,
+    }
 }
 
 fn find_rationale_local(project_root: &Path) -> PathBuf {
@@ -1441,10 +1441,39 @@ fn cmd_resolve(args: &[String]) {
             human_answer: None,
         },
     ) {
-        Ok(resolution) => println!(
-            "{}",
-            serde_json::to_string_pretty(&resolution).unwrap_or_default()
-        ),
+        Ok(resolution) => {
+            let recorder = activity::Recorder::new(None);
+            let scope = activity::Scope::new(
+                &local_dir,
+                &config.project_root,
+                &config.project_id,
+                &cli_actor(),
+            );
+            recorder.emit(
+                &scope,
+                "conflict.resolved",
+                activity::payload::conflict_resolved(&resolution),
+            );
+            for committed in &resolution.outcome.committed {
+                recorder.emit(
+                    &scope,
+                    "record.committed",
+                    activity::payload::record_committed(committed),
+                );
+            }
+            for superseded in &resolution.outcome.superseded {
+                recorder.emit(
+                    &scope,
+                    "record.superseded",
+                    activity::payload::record_superseded(superseded),
+                );
+            }
+            recorder.end(&cli_actor());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&resolution).unwrap_or_default()
+            );
+        }
         Err(error) => fail(error),
     }
 }

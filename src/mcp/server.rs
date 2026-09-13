@@ -15,7 +15,7 @@
 
 use crate::mcp::framing;
 use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
-use crate::{canon, configuration, context, pipeline, retrieval};
+use crate::{activity, canon, configuration, context, pipeline, retrieval};
 use serde_json::{json, Value};
 use std::io::{self, BufReader};
 use std::path::PathBuf;
@@ -26,6 +26,8 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 /// representa este proceso.
 pub struct Session {
     pub actor: canon::ActorContext,
+    /// Actividad local de esta sesión (ADR-0017).
+    pub recorder: activity::Recorder,
 }
 
 impl Session {
@@ -34,11 +36,13 @@ impl Session {
             Some(client) => (client, "flag"),
             None => ("unknown".to_string(), "unknown"),
         };
+        let session_id = canon::generate_id("session");
         Session {
+            recorder: activity::Recorder::new(Some(&session_id)),
             actor: canon::ActorContext {
                 client,
                 client_source: client_source.to_string(),
-                session_id: Some(canon::generate_id("session")),
+                session_id: Some(session_id),
                 operation_id: None,
             },
         }
@@ -129,6 +133,20 @@ pub fn run(client_flag: Option<String>) {
                 if let Some(params) = msg.get("params") {
                     session.observe_initialize(params);
                 }
+                // La conexión se registra en el proyecto del cwd, si existe;
+                // cualquier otro proyecto que la sesión toque la recibe al
+                // encabezar su archivo.
+                let protocol = msg
+                    .get("params")
+                    .and_then(|params| params.get("protocolVersion"))
+                    .and_then(Value::as_str);
+                let scope = std::env::current_dir()
+                    .ok()
+                    .and_then(|cwd| activity::Scope::for_project(&cwd, &session.actor));
+                session.recorder.connected(
+                    scope.as_ref(),
+                    activity::payload::agent_connected(&session.actor, protocol),
+                );
                 let resp = json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -179,6 +197,7 @@ pub fn run(client_flag: Option<String>) {
             }
         }
     }
+    session.recorder.end(&session.actor);
 }
 
 fn prompt_definitions() -> Vec<Value> {
@@ -506,15 +525,25 @@ fn call_prepare_change(
             actor: session.actor.clone(),
         },
         provider,
+        &session.recorder,
     )?;
 
-    Ok(json!({
+    let response = json!({
         "operation_id": outcome.operation.operation_id,
         "packet": outcome.packet,
         "assessment": outcome.assessment,
         "diagnostics": outcome.diagnostics,
         "latency_ms": outcome.latency_ms,
-    }))
+    });
+    session.recorder.emit(
+        &outcome.activity,
+        "packet.delivered",
+        activity::payload::packet_delivered(
+            outcome.latency_ms,
+            outcome.operation.selection.packet_bytes,
+        ),
+    );
+    Ok(response)
 }
 
 fn call_explain_target(args: &Value) -> Result<Value, String> {
@@ -599,6 +628,7 @@ fn call_finalize_change(
             legacy_statement,
         },
         provider,
+        &session.recorder,
     )?;
     serde_json::to_value(&outcome).map_err(|e| format!("no se pudo serializar la respuesta: {e}"))
 }
@@ -648,6 +678,31 @@ fn call_resolve_conflict(args: &Value, session: &Session) -> Result<Value, Strin
             human_answer: Some(human_answer),
         },
     )?;
+    let scope = activity::Scope::new(
+        &local_dir,
+        &config.project_root,
+        &config.project_id,
+        &session.actor,
+    );
+    session.recorder.emit(
+        &scope,
+        "conflict.resolved",
+        activity::payload::conflict_resolved(&resolution),
+    );
+    for committed in &resolution.outcome.committed {
+        session.recorder.emit(
+            &scope,
+            "record.committed",
+            activity::payload::record_committed(committed),
+        );
+    }
+    for superseded in &resolution.outcome.superseded {
+        session.recorder.emit(
+            &scope,
+            "record.superseded",
+            activity::payload::record_superseded(superseded),
+        );
+    }
     serde_json::to_value(&resolution)
         .map_err(|e| format!("no se pudo serializar la respuesta: {e}"))
 }

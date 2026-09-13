@@ -1,40 +1,11 @@
-//! Evaluation and Telemetry — instrumentación desde la primera vertical,
-//! no al final (Arquitectura §20, §11.14).
+//! Tiempo — timestamps RFC3339 para todo lo que Rationale escribe.
 //!
-//! Local únicamente: nunca se envía automáticamente a ningún servicio
-//! (Arquitectura §11.14 "No enviar datos automáticamente").
+//! Este módulo contenía también `RunLog`, la telemetría local de Fase D
+//! (`.rationale-local/runs/vertical-slice.ndjson`: latencia, revisión,
+//! consistencia, proveedor y bytes). vNext la reemplaza por la actividad por
+//! sesión (`src/activity.rs`, ADR-0017); aquí queda la base temporal.
 
-use serde::Serialize;
-use std::path::Path;
 use std::time::Duration;
-
-#[derive(Debug, Serialize)]
-pub struct RunLog {
-    pub event: String,
-    pub timestamp: String,
-    pub latency_ms: u128,
-    pub git_revision: Option<String>,
-    pub consistency: String,
-    pub provider_status: String,
-    pub provider_coverage: String,
-    pub packet_bytes: usize,
-}
-
-/// Escribe un evento NDJSON en `.rationale-local/runs/` (ignorado por Git,
-/// Rationale_Proceso_Construccion_Agentes_v0.1.md §11).
-pub fn record_run(rationale_local_dir: &Path, log: &RunLog) -> std::io::Result<()> {
-    let runs_dir = rationale_local_dir.join("runs");
-    std::fs::create_dir_all(&runs_dir)?;
-    let log_path = runs_dir.join("vertical-slice.ndjson");
-
-    let line = serde_json::to_string(log).expect("serialize run log");
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path)?;
-    writeln!(file, "{line}")
-}
 
 fn unix_now() -> Duration {
     std::time::SystemTime::now()
@@ -57,7 +28,6 @@ pub fn now_iso8601() -> String {
 /// Variante con milisegundos para eventos de actividad: varios eventos de
 /// una misma operación caen en el mismo segundo y la UI necesita ordenarlos
 /// sin depender solo de `seq`, que es por sesión.
-#[allow(dead_code)] // consumido por el stream de actividad (vNext fase 6)
 pub fn now_rfc3339_millis() -> String {
     format_rfc3339(unix_now().as_millis() as u64, true)
 }
@@ -131,7 +101,6 @@ fn digits(text: &str, range: std::ops::Range<usize>) -> Option<u32> {
 /// escribieron las betas) o RFC3339 (`Z` o desplazamiento `±HH:MM`,
 /// fracción de segundo opcional). Devuelve milisegundos Unix, o `None` si el
 /// valor no es ninguno de los dos — nunca adivina un formato distinto.
-#[allow(dead_code)] // consumido por historia de lifecycle y actividad (vNext fases 2 y 6)
 pub fn parse_timestamp_millis(value: &str) -> Option<i64> {
     let value = value.trim();
     if let Some(seconds) = value.strip_prefix("epoch:") {

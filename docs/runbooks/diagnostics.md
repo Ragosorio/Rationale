@@ -23,14 +23,19 @@ ls .rationale/proposals/*.yaml 2>/dev/null
 rationale review --project-root /ruta/al/proyecto
 ```
 
-## Logs de instrumentación local
+## Actividad local
 
-Nunca se envían a ningún servicio (`Arquitectura §11.14`) — viven en `.rationale-local/` (ignorado por Git):
+Nunca se envía a ningún servicio (`Arquitectura §11.14`) y vive en `.rationale-local/`, excluido de Git (ADR-0014). Qué contiene y qué nunca contiene: ADR-0017.
 
 ```bash
-cat .rationale-local/runs/vertical-slice.ndjson       # cada rationale prepare: latencia, revisión, cobertura
-cat .rationale-local/runs/review-decisions.ndjson     # cada decisión de rationale review: aprobado/rechazado/saltado y tiempo hasta confirmar
+ls -t .rationale-local/activity/                                    # una sesión por proceso: rationale serve o una invocación de la CLI
+tail -n 20 "$(ls -t .rationale-local/activity/*.ndjson | head -1)"  # eventos de la sesión más reciente
+ls -t .rationale-local/operations/ | head                           # snapshots de operación: subgrafo y selección de cada prepare_change
+cat .rationale-local/runs/review-decisions.ndjson                   # legado: decisiones de rationale review
+RATIONALE_ACTIVITY=off rationale serve                              # desactiva el flujo de actividad
 ```
+
+El `RunLog` de Fase D (`runs/vertical-slice.ndjson`) se retiró en vNext: la actividad lo reemplaza.
 
 ## Probar el servidor MCP directamente
 

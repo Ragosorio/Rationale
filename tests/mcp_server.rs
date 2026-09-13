@@ -35,14 +35,27 @@ impl TestClient {
     }
 
     fn spawn_with(extra_args: &[&str], env: &[(&str, &str)]) -> Self {
+        Self::spawn_in(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+            extra_args,
+            env,
+        )
+    }
+
+    fn spawn_in(cwd: &std::path::Path, extra_args: &[&str], env: &[(&str, &str)]) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_rationale"));
         command
             .arg("serve")
             .args(extra_args)
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // Actividad local desactivada por defecto: el cwd de estos tests es
+        // el repo de Rationale, cuyo `.rationale-local/activity/` no debe
+        // llenarse de sesiones de prueba. Quien la verifica pasa
+        // `RATIONALE_ACTIVITY=on`.
+        command.env("RATIONALE_ACTIVITY", "off");
         for (key, value) in env {
             command.env(key, value);
         }
@@ -1557,7 +1570,14 @@ fn operation_lifecycle_links_prepare_structure_finalize_and_relationship_why() {
     });
     std::fs::write(&fixture, graph.to_string()).unwrap();
     let provider = format!("fixture:{}", fixture.display());
-    let mut client = TestClient::spawn_with(&[], &[("RATIONALE_PROVIDER", provider.as_str())]);
+    let mut client = TestClient::spawn_in(
+        &dir,
+        &[],
+        &[
+            ("RATIONALE_PROVIDER", provider.as_str()),
+            ("RATIONALE_ACTIVITY", "on"),
+        ],
+    );
     client.initialize();
     let project_root = dir.to_str().unwrap();
 
@@ -1664,6 +1684,71 @@ fn operation_lifecycle_links_prepare_structure_finalize_and_relationship_why() {
         .unwrap()
         .iter()
         .any(|e| e["kind"] == "uses" && e["record_ids"][0] == record_id.as_str()));
+
+    // 4. La actividad cuenta la misma historia, enlazada por operation_id,
+    // sin contenido: ni código ni rationale (ADR-0017).
+    let session_files: Vec<std::path::PathBuf> =
+        std::fs::read_dir(dir.join(".rationale-local/activity"))
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+    assert_eq!(session_files.len(), 1, "una sesión, un archivo");
+    let raw = std::fs::read_to_string(&session_files[0]).unwrap();
+    let events: Vec<Value> = raw
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let kinds: Vec<&str> = events.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+    assert_eq!(
+        &kinds[..2],
+        &["session.started", "agent.connected"],
+        "{kinds:?}"
+    );
+    let for_operation: Vec<&str> = events
+        .iter()
+        .filter(|e| e["operation_id"] == operation_id.as_str())
+        .map(|e| e["kind"].as_str().unwrap())
+        .collect();
+    let position = |kind: &str| {
+        for_operation
+            .iter()
+            .position(|k| *k == kind)
+            .unwrap_or_else(|| panic!("falta {kind}: {for_operation:?}"))
+    };
+    assert!(position("context.requested") < position("provider.started"));
+    assert!(position("provider.started") < position("target.resolved"));
+    assert!(position("target.resolved") < position("provider.finished"));
+    assert!(position("provider.finished") < position("packet.compiled"));
+    assert!(position("packet.compiled") < position("packet.delivered"));
+    assert!(position("packet.delivered") < position("change.finalized"));
+    assert!(position("change.finalized") < position("capture.candidate"));
+    assert!(position("capture.candidate") < position("record.committed"));
+    let seqs: Vec<u64> = events.iter().map(|e| e["seq"].as_u64().unwrap()).collect();
+    assert!(seqs.windows(2).all(|w| w[1] == w[0] + 1), "{seqs:?}");
+    assert!(events
+        .iter()
+        .all(|e| e["schema_version"] == "rationale/activity/1"
+            && e["actor"]["client"] == "test"
+            && e["timestamp"].as_str().unwrap().ends_with('Z')));
+    let compiled = events
+        .iter()
+        .find(|e| e["kind"] == "packet.compiled" && e["operation_id"] == operation_id.as_str())
+        .unwrap();
+    assert_eq!(compiled["payload"]["considered_nodes"], 4, "{compiled}");
+    let committed = events
+        .iter()
+        .find(|e| e["kind"] == "record.committed")
+        .unwrap();
+    assert_eq!(committed["payload"]["record_id"], record_id.as_str());
+    assert!(
+        !raw.contains("pub fn create_link"),
+        "el código nunca entra a la actividad"
+    );
+    assert!(
+        !raw.contains("Tenants define"),
+        "el rationale viaja por referencia"
+    );
 
     std::fs::remove_file(&fixture).ok();
     std::fs::remove_dir_all(&dir).ok();
