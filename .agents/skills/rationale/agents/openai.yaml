@@ -1,0 +1,13 @@
+interface:
+  display_name: "Rationale"
+  short_description: "Read the rules that govern code before changing it; keep what stays true"
+  default_prompt: "Use $rationale to prepare this change, then capture what stays true."
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "rationale"
+      description: "Rationale MCP server, registered by `rationale install-agent` as `rationale serve --client codex`"

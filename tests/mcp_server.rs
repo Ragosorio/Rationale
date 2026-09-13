@@ -194,8 +194,8 @@ fn prompts_list_and_get_expose_the_six_actions_from_one_source() {
     let capture_text = capture["result"]["messages"][0]["content"]["text"]
         .as_str()
         .unwrap();
-    assert!(capture_text.contains("prompt MCP"));
-    assert!(capture_text.contains("herramientas Git disponibles"));
+    assert!(capture_text.contains("MCP prompt"));
+    assert!(capture_text.contains("available Git tools"));
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn an_unknown_prompt_is_json_rpc_error_and_the_session_stays_alive() {
     let retired = client.get_prompt(3, "review", json!({}));
     assert_eq!(retired["error"]["code"], -32602);
     let message = retired["error"]["message"].as_str().unwrap();
-    assert!(message.contains("se retiró"), "{message}");
+    assert!(message.contains("was retired"), "{message}");
     assert!(message.contains("conflicts"), "{message}");
     assert!(message.contains("rationale migrate"), "{message}");
 

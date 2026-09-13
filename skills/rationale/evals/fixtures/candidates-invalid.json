@@ -1,0 +1,103 @@
+[
+  {
+    "kind": "rule",
+    "statement": "Payment retries stop after three attempts for the same charge.",
+    "rationale": "The processor blocks a merchant for one hour after four failed attempts.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": "Payment retries stop after three attempts for the same charge.",
+    "rationale": "The processor blocks a merchant for one hour after four failed attempts.",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": "The retry loop was rewritten during this session.",
+    "rationale": "It was easier to follow after the rewrite than before it.",
+    "durability": "transient",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": "Retries.",
+    "rationale": "The processor blocks a merchant for one hour after four failed attempts.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": "Payment retries stop after three attempts for the same charge.",
+    "rationale": "Because.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": "Payment retries stop after three attempts for the same charge.",
+    "rationale": "Payment retries stop after three attempts.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "decision",
+    "statement": "Updated the retry helper and its tests",
+    "rationale": "The helper and the tests were updated together today.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": "Payment retries stop after three attempts for the same charge.",
+    "rationale": "The processor blocks a merchant for one hour after four failed attempts.",
+    "durability": "durable",
+    "severity": "urgent",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "id": "Constraint/Bad",
+    "statement": "Payment retries stop after three attempts for the same charge.",
+    "rationale": "The processor blocks a merchant for one hour after four failed attempts.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "decision",
+    "id": "constraint.retry-cap",
+    "statement": "Payment retries stop after three attempts for the same charge.",
+    "rationale": "The processor blocks a merchant for one hour after four failed attempts.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": "Payment retries stop after three attempts for the same charge.",
+    "rationale": "The processor blocks a merchant for one hour after four failed attempts.",
+    "durability": "durable",
+    "bindings": ["src/does-not-exist.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": "A skill for a pre-made action that Rationale no longer offers must stay a recognized managed destination, and install-agent may delete it only while it still has the content hash Rationale recorded; without a recorded hash only --refresh-skills removes it.",
+    "rationale": "Manifests from earlier installs outlive a release, so forgetting the path would block uninstall.",
+    "durability": "durable",
+    "bindings": ["src/agents.rs"]
+  },
+  {
+    "kind": "constraint",
+    "id": "constraint.no-provider-internal-access",
+    "statement": "Structural providers are reached only through their public tools.",
+    "rationale": "Reading private storage would break silently when the provider changes its internals.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  },
+  {
+    "kind": "constraint",
+    "statement": 42,
+    "rationale": "The processor blocks a merchant for one hour after four failed attempts.",
+    "durability": "durable",
+    "bindings": ["src/canon.rs"]
+  }
+]

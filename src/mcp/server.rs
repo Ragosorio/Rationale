@@ -230,8 +230,8 @@ fn handle_prompts_get(msg: &Value, id: Option<Value>) -> Value {
         // Un cliente que actualizó Rationale puede seguir pidiendo un prompt
         // por su nombre anterior: se le dice qué lo reemplaza.
         let message = match crate::prompts::retired(name) {
-            Some(retired) => format!("el prompt '{name}' se retiró: {}", retired.replacement),
-            None => format!("prompt desconocido: '{name}'"),
+            Some(retired) => format!("prompt '{name}' was retired: {}", retired.replacement),
+            None => format!("unknown prompt: '{name}'"),
         };
         return json!({
             "jsonrpc": "2.0",
@@ -269,27 +269,27 @@ fn tool_definitions() -> Value {
     Value::Array(vec![
         json!({
             "name": "prepare_change",
-            "description": "Antes de un cambio no trivial: abre una operación y devuelve el contexto mínimo suficiente — constraints y decisiones que gobiernan el target, relaciones explicadas con su estado estructural (observed/indirect/orphaned/unknown) y su porqué, el subgrafo relevante, el código del target, riesgos, desconocidos y cobertura. Guarda el operation_id y pásalo a finalize_change.",
+            "description": "Call before a non-trivial change. Opens an operation and returns the minimal sufficient context: the constraints and decisions that govern the target with their authority and provenance, relationships explained by Records with their structural state (observed/indirect/orphaned/unknown) and why they exist, the relevant subgraph, the target's code, risks, unknowns, and coverage. Keep the operation_id and pass it to finalize_change. When Records govern the target or conflict with the intent, state whether the intent respects, contradicts, or leaves each one undetermined before editing.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "target": {"type": "string", "description": "path::symbol dentro del proyecto, ej. src/main.rs::cmd_prepare"},
-                    "intent": {"type": "string", "description": "Intención declarada opcional — si viene, activa detección de conflictos automáticamente (v0.5 §4.18)"},
-                    "mode": {"type": "string", "enum": ["baseline", "intent-aware"], "description": "Normalmente no hace falta: el modo se infiere de si viene 'intent'. Pasa 'baseline' explícito para forzar retrieval puro aunque venga 'intent'."},
-                    "project_root": {"type": "string", "description": "Por defecto: el proyecto Rationale que contiene el cwd del servidor"},
+                    "target": {"type": "string", "description": "path or path::symbol inside the project, e.g. src/main.rs::cmd_prepare"},
+                    "intent": {"type": "string", "description": "The change you actually intend. When present, intent-conflict detection runs automatically"},
+                    "mode": {"type": "string", "enum": ["baseline", "intent-aware"], "description": "Usually unnecessary: the mode follows from whether 'intent' is present. Pass 'baseline' to force plain retrieval even with an intent."},
+                    "project_root": {"type": "string", "description": "Default: the Rationale project that contains the server's working directory"},
                     "repo_path": {"type": "string"},
                     "max_tokens": {"type": "integer"},
                     "max_critical_constraints": {"type": "integer"},
                     "max_risks": {"type": "integer"},
-                    "max_nodes": {"type": "integer", "description": "Techo de nodos estructurales del packet (default 12)"},
-                    "max_relationships": {"type": "integer", "description": "Techo de relaciones estructurales del packet (default 16); las explicadas por el canon nunca se recortan"}
+                    "max_nodes": {"type": "integer", "description": "Ceiling for structural nodes in the packet (default 12)"},
+                    "max_relationships": {"type": "integer", "description": "Ceiling for structural relationships in the packet (default 16); relationships explained by the canon are never cut"}
                 },
                 "required": ["target"]
             }
         }),
         json!({
             "name": "explain_target",
-            "description": "Por qué existe un target, qué Records lo gobiernan por binding exacto, y qué es conocido vs desconocido.",
+            "description": "Explains why a target exists: the Records that govern it by exact binding, its Subject, and what is known versus unknown. Call it before simplifying or removing code that looks redundant or odd.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -302,7 +302,7 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "health",
-            "description": "Revisión Git, working tree, proveedor estructural y cobertura — y qué no sabe.",
+            "description": "Git revision, working tree, structural provider status and coverage, and what Rationale does not know.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -312,29 +312,30 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "finalize_change",
-            "description": "Cierra un cambio. Envía en `candidates` solo conocimiento que seguirá siendo cierto después del cambio (por qué el código es como es, qué debe mantenerse). Rationale descarta ruido y duplicados y escribe el resto como Records canónicos automáticamente — no hay aprobación pendiente. Sin candidatos no se escribe memoria. Si un candidato intenta reemplazar una regla fijada (pinned), devuelve `conflicts`: pregunta al humano cuál debe gobernar y llama `resolve_conflict`.",
+            "description": "Closes a change. Send in `candidates` only knowledge that will stay true after the change: why the code is the way it is and what must be preserved. Rationale discards noise and duplicates with a reason and writes the rest as canonical Records in the same call; there is no approval queue. Without candidates, no memory is written. If a candidate tries to replace a pinned Record, the result contains `conflicts`: ask the person which statement should govern, then call `resolve_conflict` with their answer.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "operation_id": {"type": "string", "description": "El operation_id que devolvió prepare_change, si existe"},
-                    "summary": {"type": "string", "description": "Qué cambió, en una o dos frases — informa, no se convierte en memoria"},
-                    "target": {"type": "string", "description": "path::symbol del target principal (diagnóstico)"},
-                    "base_revision": {"type": "string", "description": "Revisión Git desde la que capturar el diff; por defecto, el HEAD que vio prepare_change en esa operación, y sin operación, HEAD"},
+                    "operation_id": {"type": "string", "description": "The operation_id returned by prepare_change, if any"},
+                    "summary": {"type": "string", "description": "What changed, in one or two sentences. Reported, never stored as memory"},
+                    "target": {"type": "string", "description": "path::symbol of the main target (diagnostics only)"},
+                    "base_revision": {"type": "string", "description": "Git revision to capture the diff from. Default: the HEAD prepare_change saw for this operation, or HEAD without an operation"},
                     "candidates": {
                         "type": "array",
-                        "description": "Conocimiento durable. Un Record por decisión: divide cuando las partes podrían reemplazarse o revocarse por separado.",
+                        "description": "Durable knowledge. One Record per decision: split when the parts could be replaced or revoked separately.",
                         "items": {
                             "type": "object",
                             "required": ["kind", "statement", "rationale", "durability", "bindings"],
                             "properties": {
                                 "kind": {"type": "string", "enum": ["constraint", "decision", "risk", "exception"]},
-                                "statement": {"type": "string", "description": "La afirmación que debe seguir siendo cierta"},
-                                "rationale": {"type": "string", "description": "Por qué — la causa, no una repetición del statement"},
-                                "durability": {"type": "string", "enum": ["durable", "transient"], "description": "'durable' solo si seguirá siendo cierto después de este cambio"},
-                                "bindings": {"type": "array", "items": {"type": "string"}, "description": "Código que gobierna: 'src/x.rs' o 'src/x.rs::symbol'"},
-                                "supersedes": {"type": "array", "items": {"type": "string"}, "description": "ids de Records que este reemplaza explícitamente"},
+                                "statement": {"type": "string", "description": "The assertion that must stay true"},
+                                "rationale": {"type": "string", "description": "Why: the cause, not a restatement of the statement"},
+                                "durability": {"type": "string", "enum": ["durable", "transient"], "description": "'durable' only if it stays true after this change"},
+                                "bindings": {"type": "array", "items": {"type": "string"}, "description": "Code the Record governs: 'src/x.rs' or 'src/x.rs::symbol'"},
+                                "relationships": {"type": "array", "description": "Relationships this Record explains, as path::symbol endpoints; kind is calls, uses, writes, imports, defines, implements, tests, configures, depends_on, http_calls, contains, or decorates. A resolved relationship also anchors the Record", "items": {"type": "object", "required": ["source", "kind", "target"], "properties": {"source": {"type": "string"}, "kind": {"type": "string"}, "target": {"type": "string"}}}},
+                                "supersedes": {"type": "array", "items": {"type": "string"}, "description": "ids of active Records this one explicitly replaces"},
                                 "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
-                                "id": {"type": "string", "description": "Opcional: '<kind>.<slug>'; si falta se genera"},
+                                "id": {"type": "string", "description": "Optional: '<kind>.<slug>'; generated when absent"},
                                 "risks": {"type": "array", "items": {"type": "string"}},
                                 "evidence": {"type": "array", "items": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string"}, "type": {"type": "string"}, "note": {"type": "string"}}}},
                                 "subject": {"type": "object", "required": ["id", "title"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "type": {"type": "string"}}}
@@ -348,13 +349,13 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "resolve_conflict",
-            "description": "Aplica la decisión del humano sobre un conflicto devuelto por finalize_change. Úsalo solo después de preguntarle al humano cuál afirmación debe gobernar; nunca decidas por él. keep_pinned conserva la regla fijada; adopt_new la reemplaza (requiere autoridad declarada en .rationale/config.yaml).",
+            "description": "Applies a person's decision on a conflict returned by finalize_change. Use it only after asking the person which statement should govern; never decide for them. keep_pinned keeps the pinned Record; adopt_new replaces it and requires authority declared in .rationale/config.yaml.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "conflict_id": {"type": "string"},
                     "decision": {"type": "string", "enum": ["keep_pinned", "adopt_new"]},
-                    "human_answer": {"type": "string", "description": "La respuesta literal del humano, para la auditoría"},
+                    "human_answer": {"type": "string", "description": "The person's literal answer, kept for audit"},
                     "project_root": {"type": "string"},
                     "repo_path": {"type": "string"}
                 },

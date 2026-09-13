@@ -30,6 +30,7 @@ mod retrieval;
 mod review;
 mod revision;
 mod signals;
+mod skill_bundle;
 mod storage;
 mod subjects;
 mod ui;

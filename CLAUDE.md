@@ -1,10 +1,13 @@
-<!-- rationale:begin (no editar a mano — `rationale uninstall-agent` lo revierte) -->
-## Rationale — protocolo de invocación
+<!-- rationale:begin (managed by Rationale; `rationale uninstall-agent` removes this block) -->
+## Rationale — invocation protocol
 
-Este proyecto usa Rationale (servidor MCP `rationale`) para preservar el
-*por qué* del código. Sigue este protocolo:
+You are working in a project that uses Rationale to keep the *why* of its code:
+the constraints, decisions, risks, and exceptions that explain why the code is
+the way it is. Rationale serves them through its MCP server (`rationale`) and
+stores them as Records in `.rationale/`, versioned with the code.
 
-You are working in a project that uses Rationale to keep the *why* of its code.
+Reply in the language the user writes in. Keep tool names, arguments, Record
+ids, field values, paths, and commands exactly as they are.
 
 Use this protocol at the start of every conversation that may change code:
 
@@ -30,7 +33,8 @@ Use this protocol at the start of every conversation that may change code:
 6. After a non-trivial change, run the relevant tests and call
    `finalize_change` with the `operation_id`, a short `summary`, and
    `candidates`: only knowledge that will stay true after this change — why
-   the code is the way it is and what must be preserved. Rationale discards
+   the code is the way it is and what must be preserved. Write statements and
+   rationales in the language the existing Records use. Rationale discards
    noise and duplicates and writes the rest as canonical Records in the same
    call; there is no approval queue. When nothing durable was learned, send no
    candidates. Report what was written and what was discarded, with reasons.
@@ -52,29 +56,39 @@ When Codebase Memory is unavailable, continue with the coverage reported by
 Rationale and state that limitation. Never invent a symbol resolution,
 authority, human decision, evidence, or provider result.
 
-## Pre-made actions
+## The rationale skill
 
-`rationale install-agent` installs six project-scoped Claude Code skills. Type
-`/rationale` to filter them in autocomplete:
+`rationale install-agent` installs the `rationale` skill next to this
+protocol: a playbook for each operation (preflight, explain, capture,
+conflicts, health, adopt, maintain), a guide to writing Records the capture
+gate keeps, report templates, and a validator for candidates. It lives in
+`.claude/skills/rationale/` for Claude Code and `.agents/skills/rationale/`
+for Codex; other agents can install it with
+`npx skills add Ragosorio/Rationale`. Load it when this protocol does not
+answer your question.
+
+## Shortcuts
+
+In Claude Code, `/rationale` loads the skill, optionally with an operation
+(`/rationale capture`). People can also type these shortcuts; agents do not
+invoke them on their own:
 
 - `/rationale-preflight <target> <intent>` — locate the target, call
   `prepare_change`, and state governing Records or conflicts before editing.
 - `/rationale-explain <target>` — call `explain_target` before simplifying a
   possible Chesterton fence.
-- `/rationale-capture [statement]` — inject live Git context and guide
-  `finalize_change` with durable candidates after the change.
+- `/rationale-capture [statement]` — inject live Git context and close the
+  change with durable candidates.
 - `/rationale-conflicts` — list pending conflicts with pinned Records and hand
-  the decision to the human. Agents cannot invoke this skill automatically.
+  the decision to the human.
 - `/rationale-health` — combine MCP `health` with `rationale doctor`.
-- `/rationale-protocol` — load this full protocol when project instructions
-  were not loaded by the client.
 
-The MCP server exposes the same source actions as prompts named `preflight`,
+The MCP server exposes the same actions as prompts named `preflight`,
 `explain`, `capture`, `conflicts`, `health`, and `protocol`. Prompt discovery
 and command decoration belong to each MCP client; do not assume a
-slash-command name without verifying that client. In Codex, the portable path
-is to ask in plain language, for example: “Prepare this change with Rationale
-for `<target>` with intent `<intent>`.”
+slash-command name without verifying that client. In Codex, invoke the skill
+with `$rationale`, or ask in plain language, for example: “Prepare this change
+with Rationale for `<target>` with intent `<intent>`.”
 
 People follow agent work live with `rationale ui`, pin the rules no agent may
 replace with `rationale pin <record-id>`, and decide conflicts with

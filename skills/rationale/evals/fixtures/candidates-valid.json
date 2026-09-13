@@ -1,0 +1,22 @@
+{
+  "operation_id": "op_example",
+  "summary": "Example capture used only to exercise the candidate validator.",
+  "candidates": [
+    {
+      "kind": "constraint",
+      "statement": "The capture gate refuses a candidate whose rationale only repeats its statement.",
+      "rationale": "A Record without a cause cannot tell a future agent whether the rule still applies, so storing it would mislead every later change.",
+      "durability": "durable",
+      "severity": "high",
+      "bindings": ["src/canon.rs::validate_shape"],
+      "evidence": [{ "type": "test", "path": "src/canon.rs", "note": "gate_discards_without_writing_anything" }]
+    },
+    {
+      "kind": "decision",
+      "statement": "Candidate bindings accept a path::symbol string or a structured path and symbol object.",
+      "rationale": "Agents emit both shapes, and accepting both avoids discarding real knowledge because of formatting.",
+      "durability": "durable",
+      "bindings": [{ "path": "src/canon.rs", "symbol": "CandidateBinding" }]
+    }
+  ]
+}

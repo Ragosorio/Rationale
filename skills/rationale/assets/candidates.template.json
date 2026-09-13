@@ -1,0 +1,13 @@
+[
+  {
+    "kind": "constraint",
+    "statement": "<one present-tense assertion that must stay true>",
+    "rationale": "<the cause: what breaks otherwise, the source, or the rejected alternative>",
+    "durability": "durable",
+    "severity": "medium",
+    "bindings": ["<path/to/file.ext::symbol>"],
+    "supersedes": [],
+    "evidence": [{ "type": "test", "path": "<path/to/test/file>", "note": "<test name>" }],
+    "risks": []
+  }
+]

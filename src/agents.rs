@@ -20,7 +20,12 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const MARKER_BEGIN: &str =
-    "<!-- rationale:begin (no editar a mano — `rationale uninstall-agent` lo revierte) -->";
+    "<!-- rationale:begin (managed by Rationale; `rationale uninstall-agent` removes this block) -->";
+/// Prefijo de todo marcador de inicio que Rationale escribió. Hasta 1.0 el
+/// marcador iba en español: buscar el prefijo reconoce esos bloques, los
+/// reemplaza por el vigente al reinstalar y deja que `uninstall-agent` los
+/// retire.
+const MARKER_BEGIN_PREFIX: &str = "<!-- rationale:begin";
 const MARKER_END: &str = "<!-- rationale:end -->";
 const MANIFEST_FILE: &str = "installed-agent-files.json";
 const MASTER_PROMPT: &str = include_str!("../docs/prompt-master.md");
@@ -58,16 +63,31 @@ struct AgentTarget {
     /// —que crea `.cursor/` pero no `mcp.json`— nunca se detectaba si el
     /// usuario no tenía el CLI `cursor-agent` en el `PATH`.
     detect_dir: Option<&'static str>,
+    /// Directorio donde se instala el skill `rationale` completo
+    /// (`skill_bundle::FILES`), si el agente lee Agent Skills del proyecto:
+    /// Claude Code en `.claude/skills/`, Codex en `.agents/skills/`. No
+    /// detecta al agente — `.agents/skills/` lo comparten muchas herramientas
+    /// y su presencia no prueba que el proyecto use Codex.
+    skill_bundle_dir: Option<&'static str>,
 }
 
 /// Frontmatter de una regla de Cursor. `alwaysApply: true` la incluye en todo
 /// el proyecto, que es lo que un protocolo de invocación necesita; con
 /// `alwaysApply` activo, `globs` no acota nada y se deja vacío.
 const CURSOR_RULE_PREAMBLE: &str = "---\n\
-description: Protocolo de invocación de Rationale — preserva el porqué del código.\n\
+description: Rationale invocation protocol — keeps the why of the code.\n\
 globs:\n\
 alwaysApply: true\n\
 ---\n\n";
+
+/// Cabeceras que escribieron versiones anteriores. Una regla creada con una
+/// de ellas sigue siendo de Rationale: si es todo lo que queda al
+/// desinstalar, el archivo se borra igual que con la vigente.
+const LEGACY_CURSOR_RULE_PREAMBLES: &[&str] = &["---\n\
+description: Protocolo de invocación de Rationale — preserva el porqué del código.\n\
+globs:\n\
+alwaysApply: true\n\
+---\n\n"];
 
 const TARGETS: &[AgentTarget] = &[
     AgentTarget {
@@ -78,6 +98,7 @@ const TARGETS: &[AgentTarget] = &[
         skills_dir: Some(".claude/skills"),
         file_preamble: None,
         detect_dir: None,
+        skill_bundle_dir: Some(".claude/skills/rationale"),
     },
     AgentTarget {
         name: "codex",
@@ -87,6 +108,7 @@ const TARGETS: &[AgentTarget] = &[
         skills_dir: None,
         file_preamble: None,
         detect_dir: None,
+        skill_bundle_dir: Some(".agents/skills/rationale"),
     },
     AgentTarget {
         name: "cursor",
@@ -96,6 +118,7 @@ const TARGETS: &[AgentTarget] = &[
         skills_dir: None,
         file_preamble: Some(CURSOR_RULE_PREAMBLE),
         detect_dir: Some(".cursor"),
+        skill_bundle_dir: None,
     },
 ];
 
@@ -110,6 +133,7 @@ pub fn managed_paths() -> Vec<&'static str> {
         .flat_map(|t| std::iter::once(t.instructions_file).chain(t.legacy_mcp_config_file))
         .collect();
     paths.extend(TARGETS.iter().filter_map(|target| target.skills_dir));
+    paths.extend(TARGETS.iter().filter_map(|target| target.skill_bundle_dir));
     paths
 }
 
@@ -236,6 +260,18 @@ pub fn install(
                 validate_no_symlink_components(project_root, &path)?;
             }
         }
+        // Un directorio del skill que atraviesa un symlink lo administra otra
+        // herramienta —`npx skills` enlaza `.claude/skills/<skill>` a
+        // `.agents/skills/<skill>`—: se respeta y se informa, en vez de
+        // abortar la instalación de todo lo demás.
+        let bundle_dir = target
+            .skill_bundle_dir
+            .filter(|dir| !crosses_symlink(project_root, &project_root.join(dir)));
+        if let Some(dir) = bundle_dir {
+            for file in crate::skill_bundle::managed_file_paths() {
+                validate_no_symlink_components(project_root, &project_root.join(dir).join(file))?;
+            }
+        }
 
         let instructions_path = project_root.join(target.instructions_file);
         let (action, changed) =
@@ -290,68 +326,42 @@ pub fn install(
         if let Some(skills_dir) = target.skills_dir {
             for action in crate::prompts::ACTIONS {
                 let relative = format!("{skills_dir}/rationale-{}/SKILL.md", action.name);
-                let path = project_root.join(&relative);
-                let content = skill_content(action);
-                // El manifest guarda rutas RELATIVAS al proyecto desde la
-                // migración de rutas portables; `path` es absoluta. Comparar
-                // las dos con `==` no casaba nunca, así que `previous_hash`
-                // salía siempre `None` y todo skill se conservaba como si el
-                // usuario lo hubiera editado — incluso con el hash correcto
-                // registrado. Esto hacía indistribuible cualquier corrección
-                // de skill. `existing_entry_index` ya canoniza los dos lados.
-                let previous_hash = existing_entry_index(&manifest, project_root, &path)
-                    .and_then(|index| manifest.entries[index].content_hash.as_deref());
-                let outcome = upsert_owned_file(
-                    &path,
-                    content.as_bytes(),
-                    previous_hash,
-                    refresh_skills,
-                    dry_run,
-                )?;
-
-                if outcome.preserved {
-                    report.actions.push(match outcome.preserve_reason {
-                        Some(PreserveReason::UserEdited) => format!(
-                            "{}: conservado {} porque contiene cambios del usuario",
-                            target.name, relative
-                        ),
-                        // Sin entrada en el manifest no hay prueba de nada. Se
-                        // conserva por prudencia, pero se dice la verdad y se
-                        // nombra la salida.
-                        _ => format!(
-                            "{}: conservado {} — procedencia desconocida (sin registro en el \
-                             manifest local). Si Rationale lo escribió, \
-                             `install-agent --refresh-skills` lo regenera",
-                            target.name, relative
-                        ),
-                    });
-                } else if outcome.changed {
-                    report.actions.push(format!(
-                        "{}: {} skill {}",
-                        target.name,
-                        if outcome.action == FileAction::Created {
-                            "creado"
-                        } else {
-                            "actualizado"
-                        },
-                        relative
-                    ));
-                } else {
-                    report
-                        .actions
-                        .push(format!("{}: skill al día en {}", target.name, relative));
-                }
-
-                if outcome.owned && !dry_run {
-                    record_owned_entry(
+                if !action.skill {
+                    // Sigue como prompt MCP pero ya no como skill: se retira con
+                    // las mismas pruebas de propiedad que una acción retirada.
+                    retire_skill(
                         &mut manifest,
+                        &mut report,
                         project_root,
                         target.name,
-                        &path,
-                        outcome.action,
-                        &content_hash(content.as_bytes()),
-                    );
+                        &relative,
+                        refresh_skills,
+                        dry_run,
+                    )?;
+                    continue;
                 }
+                let content = skill_content(action);
+                let message = match install_owned_file(
+                    &mut manifest,
+                    project_root,
+                    target.name,
+                    &relative,
+                    content.as_bytes(),
+                    refresh_skills,
+                    dry_run,
+                )? {
+                    OwnedInstall::Created => format!("{}: creado skill {relative}", target.name),
+                    OwnedInstall::Updated => {
+                        format!("{}: actualizado skill {relative}", target.name)
+                    }
+                    OwnedInstall::UpToDate => {
+                        format!("{}: skill al día en {relative}", target.name)
+                    }
+                    OwnedInstall::Preserved(reason) => {
+                        preserved_message(target.name, &relative, &reason)
+                    }
+                };
+                report.actions.push(message);
             }
             for retired in crate::prompts::RETIRED_ACTIONS {
                 retire_skill(
@@ -364,6 +374,24 @@ pub fn install(
                     dry_run,
                 )?;
             }
+        }
+
+        if let Some(dir) = bundle_dir {
+            install_skill_bundle(
+                &mut manifest,
+                &mut report,
+                project_root,
+                target.name,
+                dir,
+                refresh_skills,
+                dry_run,
+            )?;
+        } else if let Some(dir) = target.skill_bundle_dir {
+            report.actions.push(format!(
+                "{}: {dir} atraviesa un enlace simbólico — otra herramienta administra ese \
+                 skill y no se modifica",
+                target.name
+            ));
         }
     }
 
@@ -461,6 +489,13 @@ fn expected_managed_entry(
                         .join(format!("rationale-{name}"))
                         .join("SKILL.md")
             }) {
+                return Some((target.name, ReversalStrategy::OwnedFile));
+            }
+        }
+        if let Some(bundle_dir) = target.skill_bundle_dir {
+            if crate::skill_bundle::managed_file_paths()
+                .any(|file| candidate == project_root.join(bundle_dir).join(file))
+            {
                 return Some((target.name, ReversalStrategy::OwnedFile));
             }
         }
@@ -595,10 +630,7 @@ fn is_executable(path: &Path) -> bool {
 fn instructions_block() -> String {
     format!(
         "{MARKER_BEGIN}\n\
-## Rationale — protocolo de invocación
-
-Este proyecto usa Rationale (servidor MCP `rationale`) para preservar el
-*por qué* del código. Sigue este protocolo:
+## Rationale — invocation protocol
 
 {prompt}
 {MARKER_END}\n",
@@ -694,6 +726,165 @@ fn retire_skill(
         }
     }
     Ok(())
+}
+
+/// Resultado de instalar un archivo que Rationale posee.
+enum OwnedInstall {
+    Created,
+    Updated,
+    UpToDate,
+    Preserved(PreserveReason),
+}
+
+/// Escribe o actualiza un archivo que Rationale posee —el skill de una acción
+/// o un archivo del skill `rationale`— con las pruebas de propiedad de
+/// siempre: se reemplaza si conserva el hash registrado, una edición probada
+/// se conserva y, sin registro, solo `--refresh-skills` decide.
+fn install_owned_file(
+    manifest: &mut Manifest,
+    project_root: &Path,
+    agent: &str,
+    relative: &str,
+    content: &[u8],
+    refresh_skills: bool,
+    dry_run: bool,
+) -> Result<OwnedInstall, String> {
+    let path = project_root.join(relative);
+    // El manifest guarda rutas RELATIVAS al proyecto desde la migración de
+    // rutas portables; `path` es absoluta. Comparar las dos con `==` no casaba
+    // nunca, así que `previous_hash` salía siempre `None` y todo skill se
+    // conservaba como si el usuario lo hubiera editado — incluso con el hash
+    // correcto registrado. Esto hacía indistribuible cualquier corrección de
+    // skill. `existing_entry_index` ya canoniza los dos lados.
+    let previous_hash = existing_entry_index(manifest, project_root, &path)
+        .and_then(|index| manifest.entries[index].content_hash.as_deref());
+    let outcome = upsert_owned_file(&path, content, previous_hash, refresh_skills, dry_run)?;
+    let created = outcome.action == FileAction::Created;
+
+    if outcome.owned && !dry_run {
+        record_owned_entry(
+            manifest,
+            project_root,
+            agent,
+            &path,
+            outcome.action,
+            &content_hash(content),
+        );
+    }
+
+    Ok(if outcome.preserved {
+        // Sin entrada en el manifest no hay prueba de nada: se conserva por
+        // prudencia, pero se dice la verdad y se nombra la salida.
+        OwnedInstall::Preserved(
+            outcome
+                .preserve_reason
+                .unwrap_or(PreserveReason::ProvenanceUnknown),
+        )
+    } else if outcome.changed && created {
+        OwnedInstall::Created
+    } else if outcome.changed {
+        OwnedInstall::Updated
+    } else {
+        OwnedInstall::UpToDate
+    })
+}
+
+fn preserved_message(agent: &str, relative: &str, reason: &PreserveReason) -> String {
+    match reason {
+        PreserveReason::UserEdited => {
+            format!("{agent}: conservado {relative} porque contiene cambios del usuario")
+        }
+        PreserveReason::ProvenanceUnknown => format!(
+            "{agent}: conservado {relative} — procedencia desconocida (sin registro en el \
+             manifest local). Si Rationale lo escribió, `install-agent --refresh-skills` lo \
+             regenera"
+        ),
+    }
+}
+
+/// Instala el skill `rationale` completo. Cada archivo lleva su propio hash en
+/// el manifest, así que una edición del usuario en una referencia se conserva
+/// sin bloquear la actualización del resto. El reporte resume por skill en vez
+/// de listar cada archivo por agente; solo una edición conservada se nombra
+/// archivo por archivo.
+fn install_skill_bundle(
+    manifest: &mut Manifest,
+    report: &mut InstallReport,
+    project_root: &Path,
+    agent: &str,
+    bundle_dir: &str,
+    refresh_skills: bool,
+    dry_run: bool,
+) -> Result<(), String> {
+    let (mut created, mut updated, mut current, mut unknown) = (0, 0, 0, 0);
+    for file in crate::skill_bundle::FILES {
+        let relative = format!("{bundle_dir}/{}", file.path);
+        match install_owned_file(
+            manifest,
+            project_root,
+            agent,
+            &relative,
+            file.content.as_bytes(),
+            refresh_skills,
+            dry_run,
+        )? {
+            OwnedInstall::Created => created += 1,
+            OwnedInstall::Updated => updated += 1,
+            OwnedInstall::UpToDate => current += 1,
+            OwnedInstall::Preserved(PreserveReason::ProvenanceUnknown) => unknown += 1,
+            OwnedInstall::Preserved(reason) => report
+                .actions
+                .push(preserved_message(agent, &relative, &reason)),
+        }
+    }
+    for retired in crate::skill_bundle::RETIRED_FILES {
+        retire_skill(
+            manifest,
+            report,
+            project_root,
+            agent,
+            &format!("{bundle_dir}/{retired}"),
+            refresh_skills,
+            dry_run,
+        )?;
+    }
+
+    let name = crate::skill_bundle::SKILL_NAME;
+    if unknown > 0 {
+        report.actions.push(format!(
+            "{agent}: conservados {unknown} archivo(s) en {bundle_dir} — procedencia desconocida \
+             (sin registro en el manifest local). Si Rationale los escribió, \
+             `install-agent --refresh-skills` los regenera"
+        ));
+    }
+    report.actions.push(if created + updated == 0 {
+        format!("{agent}: skill {name} al día en {bundle_dir}")
+    } else {
+        format!(
+            "{agent}: skill {name} en {bundle_dir} — {created} creado(s), {updated} \
+             actualizado(s), {current} al día"
+        )
+    });
+    Ok(())
+}
+
+/// `true` si algún componente entre la raíz del proyecto y `candidate` es un
+/// symlink. A diferencia de `validate_no_symlink_components`, no es un error:
+/// sirve para decidir no tocar un directorio que administra otra herramienta.
+fn crosses_symlink(project_root: &Path, candidate: &Path) -> bool {
+    let Ok(relative) = candidate.strip_prefix(project_root) else {
+        return false;
+    };
+    let mut current = project_root.to_path_buf();
+    for component in relative.components() {
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return true,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    }
+    false
 }
 
 fn skill_content(action: &crate::prompts::Action) -> String {
@@ -1101,7 +1292,7 @@ fn upsert_instructions_block(
             }
             Ok((FileAction::Created, true))
         }
-        Some(content) if content.contains(MARKER_BEGIN) => {
+        Some(content) if content.contains(MARKER_BEGIN_PREFIX) => {
             let current_block = extract_block(&content)?.unwrap_or_default();
             if current_block.trim() == block.trim() {
                 Ok((FileAction::Modified, false))
@@ -1134,10 +1325,17 @@ fn upsert_instructions_block(
 /// silencio, que es peor que el panic. Ahora ambos casos devuelven un error
 /// legible y ninguna función toca el archivo.
 fn locate_block(content: &str) -> Result<Option<(usize, usize)>, String> {
-    let Some(start) = content.find(MARKER_BEGIN) else {
+    let Some(start) = content.find(MARKER_BEGIN_PREFIX) else {
         return Ok(None);
     };
-    let begin_end = start + MARKER_BEGIN.len();
+    let Some(marker_close) = content[start..].find("-->") else {
+        return Err(
+            "el archivo tiene un 'rationale:begin' sin cerrar (marcador incompleto, posiblemente \
+             por un merge conflict) — no se modifica para no corromper contenido del usuario"
+                .to_string(),
+        );
+    };
+    let begin_end = start + marker_close + "-->".len();
     match content[begin_end..].find(MARKER_END) {
         Some(offset) => Ok(Some((start, begin_end + offset + MARKER_END.len()))),
         None => Err(
@@ -1199,7 +1397,12 @@ fn remove_instructions_block(path: &Path, preamble: Option<&str>) -> Result<(), 
     // cabecera: en un `.mdc` quitarla invalidaría la regla que el usuario
     // quiere mantener.
     let only_our_preamble = preamble
-        .map(|preamble| !trimmed.is_empty() && trimmed == preamble.trim())
+        .map(|preamble| {
+            !trimmed.is_empty()
+                && std::iter::once(preamble)
+                    .chain(LEGACY_CURSOR_RULE_PREAMBLES.iter().copied())
+                    .any(|written| trimmed == written.trim())
+        })
         .unwrap_or(false);
     if trimmed.is_empty() || only_our_preamble {
         std::fs::remove_file(path)
@@ -1765,6 +1968,11 @@ fn managed_destinations() -> Vec<String> {
         if let Some(skills_dir) = target.skills_dir {
             for name in skill_names() {
                 destinations.push(format!("{skills_dir}/rationale-{name}/SKILL.md"));
+            }
+        }
+        if let Some(bundle_dir) = target.skill_bundle_dir {
+            for file in crate::skill_bundle::managed_file_paths() {
+                destinations.push(format!("{bundle_dir}/{file}"));
             }
         }
     }
@@ -2433,7 +2641,7 @@ mod tests {
         // Simular un bloque de una versión anterior para forzar el reemplazo.
         let stale = std::fs::read_to_string(&claude_md)
             .unwrap()
-            .replace("protocolo de invocación", "protocolo viejo");
+            .replace("invocation protocol", "old protocol");
         std::fs::write(&claude_md, stale).unwrap();
 
         upsert_instructions_block(&claude_md, None, false).unwrap();
@@ -2457,7 +2665,7 @@ mod tests {
         .unwrap();
         let stale2 = std::fs::read_to_string(&claude_md)
             .unwrap()
-            .replace("protocolo de invocación", "otra vez viejo");
+            .replace("invocation protocol", "stale again");
         std::fs::write(&claude_md, stale2).unwrap();
         upsert_instructions_block(&claude_md, None, false).unwrap();
         let with_user = std::fs::read_to_string(&claude_md).unwrap();
@@ -2691,7 +2899,10 @@ mod tests {
         assert!(content.starts_with("---\n"));
         assert!(content.contains("argument-hint: \"[target] [intent]\""));
         assert!(content.contains("arguments: [\"target\",\"intent\"]"));
-        assert!(content.contains("disable-model-invocation: false"));
+        assert!(
+            content.contains("disable-model-invocation: true"),
+            "las acciones son atajos humanos: el modelo elige el skill `rationale`"
+        );
         assert!(content.contains(action.description));
         assert!(content.contains(action.body.trim()));
         assert!(
@@ -2776,6 +2987,205 @@ mod tests {
             .any(|action| action.contains("conservado") && action.contains("rationale-conflicts")));
 
         std::fs::remove_dir_all(project).ok();
+    }
+
+    /// El skill `rationale` completo llega a Claude Code y a Codex con el mismo
+    /// contenido que `skills/rationale/`, sin `evals/`, y `uninstall-agent` lo
+    /// retira entero —directorios incluidos— porque cada archivo quedó en el
+    /// manifest con su hash.
+    #[test]
+    fn install_writes_the_rationale_skill_for_claude_code_and_codex_and_uninstall_removes_it() {
+        let repo = git_repo("skill-bundle");
+        let local = repo.join(".rationale-local");
+
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
+        for dir in [".claude/skills/rationale", ".agents/skills/rationale"] {
+            for file in crate::skill_bundle::FILES {
+                let path = repo.join(dir).join(file.path);
+                assert_eq!(
+                    std::fs::read_to_string(&path).unwrap(),
+                    file.content,
+                    "{}",
+                    path.display()
+                );
+            }
+            assert!(!repo.join(dir).join("evals").exists());
+        }
+        assert!(
+            !repo.join(".cursor/skills").exists(),
+            "Cursor recibe su regla, no el skill"
+        );
+        assert!(
+            report
+                .actions
+                .iter()
+                .any(|a| a.starts_with("claude-code: skill rationale en .claude/skills/rationale")),
+            "{:?}",
+            report.actions
+        );
+
+        let again = install(&repo, &local, &fake_binary(), false, false).unwrap();
+        assert!(
+            again
+                .actions
+                .iter()
+                .any(|a| a == "codex: skill rationale al día en .agents/skills/rationale"),
+            "{:?}",
+            again.actions
+        );
+
+        uninstall(&repo, &local).unwrap();
+        assert!(!repo.join(".claude/skills/rationale").exists());
+        assert!(!repo.join(".agents/skills/rationale").exists());
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn an_edited_skill_reference_is_preserved_while_the_rest_of_the_skill_stays_managed() {
+        let repo = git_repo("skill-bundle-edited");
+        let local = repo.join(".rationale-local");
+        install(&repo, &local, &fake_binary(), false, false).unwrap();
+
+        let records = repo.join(".claude/skills/rationale/references/records.md");
+        let edited = format!(
+            "{}\n## Nuestra convención\n",
+            std::fs::read_to_string(&records).unwrap()
+        );
+        std::fs::write(&records, &edited).unwrap();
+
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
+        assert_eq!(std::fs::read_to_string(&records).unwrap(), edited);
+        assert!(report.actions.iter().any(|a| {
+            a.contains("conservado .claude/skills/rationale/references/records.md")
+                && a.contains("cambios del usuario")
+        }));
+
+        uninstall(&repo, &local).unwrap();
+        assert!(records.exists(), "uninstall no borra una edición probada");
+        assert!(!repo.join(".claude/skills/rationale/SKILL.md").exists());
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// `protocol` sigue como prompt MCP, pero `/rationale` ya carga el
+    /// protocolo y sus playbooks: el skill propio se retira con las mismas
+    /// pruebas de propiedad que una acción retirada.
+    #[test]
+    fn install_retires_the_protocol_skill_now_served_by_the_rationale_skill() {
+        let repo = git_repo("retire-protocol-skill");
+        let local = repo.join(".rationale-local");
+        let protocol = repo.join(".claude/skills/rationale-protocol/SKILL.md");
+        let written_before = skill_content(crate::prompts::action("protocol").unwrap());
+        crate::storage::atomic_write_bytes(&protocol, written_before.as_bytes()).unwrap();
+        let mut manifest = Manifest::default();
+        record_owned_entry(
+            &mut manifest,
+            &repo,
+            "claude-code",
+            &protocol,
+            FileAction::Created,
+            &content_hash(written_before.as_bytes()),
+        );
+        save_manifest(&local, &manifest).unwrap();
+
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
+        assert!(!protocol.exists(), "{:?}", report.actions);
+        assert!(!protocol.parent().unwrap().exists());
+        assert!(report
+            .actions
+            .iter()
+            .any(|a| a.contains("retirado") && a.contains("rationale-protocol")));
+        assert!(crate::prompts::action("protocol").is_some());
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    /// Hasta 1.0 el bloque llevaba un marcador en español. Reinstalar lo
+    /// reemplaza por el vigente sin duplicarlo, y desinstalar lo reconoce.
+    #[test]
+    fn a_spanish_block_from_an_earlier_version_is_migrated_and_removable() {
+        let project = temp_dir("legacy-marker");
+        let claude_md = project.join("CLAUDE.md");
+        let legacy = "# Notas del equipo\n\n\
+<!-- rationale:begin (no editar a mano — `rationale uninstall-agent` lo revierte) -->\n\
+## Rationale — protocolo de invocación\n\ntexto viejo\n<!-- rationale:end -->\n";
+
+        std::fs::write(&claude_md, legacy).unwrap();
+        let (_, changed) = upsert_instructions_block(&claude_md, None, false).unwrap();
+        assert!(changed);
+        let written = std::fs::read_to_string(&claude_md).unwrap();
+        assert!(written.contains(MARKER_BEGIN));
+        assert!(!written.contains("no editar a mano") && !written.contains("texto viejo"));
+        assert_eq!(written.matches(MARKER_BEGIN_PREFIX).count(), 1);
+        assert!(written.contains("# Notas del equipo"));
+
+        std::fs::write(&claude_md, legacy).unwrap();
+        remove_instructions_block(&claude_md, None).unwrap();
+        let after = std::fs::read_to_string(&claude_md).unwrap();
+        assert!(!after.contains("rationale:begin") && after.contains("# Notas del equipo"));
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn a_cursor_rule_created_with_the_spanish_preamble_is_still_removed_entirely() {
+        let project = temp_dir("legacy-cursor-preamble");
+        let rule = project.join(".cursor/rules/rationale.mdc");
+        std::fs::create_dir_all(rule.parent().unwrap()).unwrap();
+        std::fs::write(
+            &rule,
+            format!(
+                "{}{}",
+                LEGACY_CURSOR_RULE_PREAMBLES[0],
+                instructions_block()
+            ),
+        )
+        .unwrap();
+
+        remove_instructions_block(&rule, Some(CURSOR_RULE_PREAMBLE)).unwrap();
+        assert!(
+            !rule.exists(),
+            "solo quedaba la cabecera que escribió Rationale"
+        );
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// `npx skills` enlaza `.claude/skills/<skill>` a `.agents/skills/<skill>`.
+    /// Ese enlace es de otra herramienta: `install-agent` lo informa y sigue
+    /// con todo lo demás, en vez de abortar ni escribir a través del enlace.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_skill_directory_is_left_to_the_tool_that_owns_it() {
+        let repo = git_repo("skill-bundle-symlink");
+        let local = repo.join(".rationale-local");
+        let shared = repo.join(".agents/skills/rationale");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("SKILL.md"), "from npx skills\n").unwrap();
+        std::os::unix::fs::symlink(
+            "../../.agents/skills/rationale",
+            repo.join(".claude/skills/rationale"),
+        )
+        .unwrap();
+
+        let report = install(&repo, &local, &fake_binary(), false, false)
+            .expect("un skill enlazado no aborta la instalación");
+        assert!(report
+            .actions
+            .iter()
+            .any(|a| a.starts_with("claude-code: .claude/skills/rationale atraviesa un enlace")));
+        assert!(repo
+            .join(".claude/skills/rationale-preflight/SKILL.md")
+            .exists());
+        assert_eq!(
+            std::fs::read_to_string(shared.join("SKILL.md")).unwrap(),
+            "from npx skills\n",
+            "un SKILL.md sin registro en el manifest no se sobrescribe"
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn managed_paths_cover_the_skill_bundle_directories() {
+        let paths = managed_paths();
+        assert!(paths.contains(&".claude/skills/rationale"));
+        assert!(paths.contains(&".agents/skills/rationale"));
     }
 
     /// Un skill retirado (`review`, la cola de aprobación pre-vNext) sale de la
@@ -4005,6 +4415,6 @@ mod tests {
             "CLAUDE.md y AGENTS.md son documentación compartida: no pueden llevar la \
              instalación de una persona"
         );
-        assert!(block.contains("servidor MCP `rationale`"));
+        assert!(block.contains("MCP server (`rationale`)"));
     }
 }

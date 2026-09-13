@@ -89,17 +89,32 @@ fn init_on_an_existing_project_configures_a_newly_available_claude_code() {
     assert!(std::fs::read_to_string(project.join("CLAUDE.md"))
         .unwrap()
         .contains("rationale:begin"));
-    for name in [
-        "preflight",
-        "explain",
-        "capture",
-        "conflicts",
-        "health",
-        "protocol",
-    ] {
+    for name in ["preflight", "explain", "capture", "conflicts", "health"] {
         let skill = project.join(format!(".claude/skills/rationale-{name}/SKILL.md"));
         assert!(skill.is_file(), "falta el skill {}", skill.display());
     }
+    // `/rationale` carga el protocolo y sus playbooks: `protocol` sigue como
+    // prompt MCP, no como skill.
+    assert!(
+        !project.join(".claude/skills/rationale-protocol").exists(),
+        "el protocolo ya no se instala como skill propio"
+    );
+    for file in [
+        "SKILL.md",
+        "references/records.md",
+        "scripts/check_candidates.py",
+    ] {
+        let path = project.join(".claude/skills/rationale").join(file);
+        assert!(
+            path.is_file(),
+            "falta {} del skill rationale",
+            path.display()
+        );
+    }
+    assert!(
+        !project.join(".claude/skills/rationale/evals").exists(),
+        "las evals del skill son para quien lo mantiene, no para el proyecto"
+    );
     assert!(
         !project.join(".claude/skills/rationale-review").exists(),
         "vNext no instala la cola de aprobación como skill"

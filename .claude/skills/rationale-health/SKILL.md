@@ -1,21 +1,21 @@
 ---
-description: "Comprueba conexión MCP, proveedor y salud del canon."
+description: "Checks the MCP connection, the structural provider, and the health of the canon."
 argument-hint: ""
 arguments: []
-disable-model-invocation: false
+disable-model-invocation: true
 allowed-tools: Bash(rationale doctor:*)
 ---
 
-Diagnostica la salud de Rationale.
+Diagnose Rationale's health.
 
-Resultado local de `doctor` inyectado por el skill:
+Local `doctor` result injected by the skill:
 
 !`rationale doctor`
 
-Si la línea anterior todavía aparece como un literal `!`comando`` (por
-ejemplo, mediante un prompt MCP), ejecuta el chequeo equivalente antes de
-responder.
+If the line above still appears as a literal `!`command`` (for example, through an MCP prompt), run the equivalent check before replying.
 
-1. Llama la herramienta MCP `health`.
-2. Distingue: disponibilidad de las herramientas MCP, estado/cobertura de Codebase Memory, revisión Git y salud del canon.
-3. Reporta exactamente qué funciona, qué está degradado y qué no fue comprobado. No conviertas ausencia del proveedor en ausencia del canon ni inventes cobertura.
+Reply in the language the user writes in. Keep tool names, field values, and commands verbatim.
+
+1. Call the MCP tool `health`.
+2. Keep apart: availability of the MCP tools, Codebase Memory status and coverage, the Git revision, and the health of the canon.
+3. Report exactly what works, what is degraded, and what was not checked. Do not turn a missing provider into a missing canon, and never invent coverage.

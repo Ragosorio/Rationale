@@ -34,8 +34,8 @@ use std::time::{Duration, Instant};
 
 pub const VALID_KINDS: [&str; 4] = ["constraint", "decision", "risk", "exception"];
 const CONFLICT_SCHEMA: &str = "rationale/conflict/1";
-const MIN_TEXT_CHARS: usize = 16;
-const MIN_TEXT_WORDS: usize = 3;
+pub(crate) const MIN_TEXT_CHARS: usize = 16;
+pub(crate) const MIN_TEXT_WORDS: usize = 3;
 
 // ---------------------------------------------------------------------------
 // Contrato de entrada
@@ -282,7 +282,7 @@ fn is_meaningful_text(text: &str) -> bool {
 /// como es. Solo cuentan como ruido si ni el statement ni el rationale
 /// cargan un marcador causal o normativo (`CAUSAL_MARKERS`): el clasificador
 /// prefiere dejar pasar ruido a descartar conocimiento real.
-const MECHANICAL_PREFIXES: &[&str] = &[
+pub(crate) const MECHANICAL_PREFIXES: &[&str] = &[
     "added",
     "add",
     "adds",
@@ -341,7 +341,7 @@ const MECHANICAL_PREFIXES: &[&str] = &[
     "limpieza",
 ];
 
-const CAUSAL_MARKERS: &[&str] = &[
+pub(crate) const CAUSAL_MARKERS: &[&str] = &[
     "because",
     "so that",
     "in order to",

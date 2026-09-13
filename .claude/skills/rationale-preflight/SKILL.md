@@ -1,17 +1,21 @@
 ---
-description: "Prepara contexto y conflictos de gobernanza antes de cambiar código."
+description: "Reads the Records that govern a target and states conflicts with the intended change before editing."
 argument-hint: "[target] [intent]"
 arguments: ["target","intent"]
-disable-model-invocation: false
+disable-model-invocation: true
 ---
 
-Haz el preflight de Rationale para `$target` con esta intención real:
+Run Rationale's preflight for `$target` with this intended change:
 
 `$intent`
 
-1. Si Codebase Memory está disponible, úsalo primero para localizar el símbolo, sus callers y los archivos relevantes. Declara su cobertura y warnings; no lo trates como autoridad sobre el porqué.
-2. Llama `prepare_change(target: "$target", intent: "$intent")` y guarda el `operation_id` que devuelve: `finalize_change` lo usa para cerrar la misma operación.
-3. Antes de tocar código, resume lo que gobierna el target: `critical_constraints` y `decisions` con su autoridad (`pinned` o `normal`) y procedencia, las `relationships` explicadas con su estado estructural (`observed`, `indirect`, `orphaned`, `unknown`) y su porqué, `intent_conflicts`, riesgos, `known_unknowns`, cobertura del proveedor y `budget_overflow` si aparece.
-4. Si hay un Record gobernante o un conflicto con la intención, pronúnciate explícitamente sobre si la intención lo respeta, lo contradice o sigue indeterminada. No procedas en silencio ni conviertas solapamiento léxico en contradicción semántica probada. Un Record `pinned` lo fijó el proyecto: no lo esquives.
-5. Una relación `orphaned` o `unknown` no prueba que la explicación sea falsa ni que la relación haya desaparecido; repórtala como incertidumbre.
-6. Si falta autoridad para decidir, detente y pide la decisión humana concreta.
+Reply in the language the user writes in. Keep tool names, Record ids, field values, paths, and commands verbatim.
+
+1. Locate the target. If Codebase Memory is available, use it to confirm the symbol, its callers, and the files around it, and note its coverage and warnings. It tells you where code is, not why it must stay.
+2. Call `prepare_change(target: "$target", intent: "$intent")` and keep the `operation_id` it returns: `finalize_change` uses it to close the same operation.
+3. Before editing, summarize what governs the target: `critical_constraints` and `decisions` with their authority (`pinned` or `normal`) and provenance; the explained `relationships` with their structural state (`observed`, `indirect`, `orphaned`, `unknown`) and why they exist; `intent_conflicts`; risks; `known_unknowns`; provider coverage; and `budget_overflow` if it appears.
+4. For each governing Record and intent conflict, state whether the intent respects it, contradicts it, or remains undetermined, and why. Do not proceed silently, and do not treat lexical overlap as a proven contradiction. A `pinned` Record is a rule the project fixed: when the intent contradicts one, stop and ask instead of working around it.
+5. An `orphaned` or `unknown` relationship does not prove that the explanation is wrong or that the relationship is gone; report it as uncertainty.
+6. When the decision is not yours to make, stop and ask the person the specific question.
+
+When the `rationale` skill is installed, its `references/preflight.md` and `references/packet.md` cover each step and packet field in depth.

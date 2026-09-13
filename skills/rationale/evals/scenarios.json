@@ -1,0 +1,154 @@
+[
+  {
+    "id": "s01-preflight-pinned-constraint",
+    "skills": ["rationale"],
+    "query": "Remove the early return in src/billing/charge.rs::charge, it makes retries fail.",
+    "setup": "A pinned constraint.payments-idempotent is bound to src/billing/charge.rs::charge and states that a charge that reached the bank is never retried.",
+    "expected_behavior": [
+      "Calls prepare_change with target src/billing/charge.rs::charge and an intent that names removing the early return, before any file edit",
+      "Names constraint.payments-idempotent with authority pinned and its provenance",
+      "States that the intent contradicts the pinned constraint",
+      "Stops and asks the user how to proceed instead of editing the code"
+    ],
+    "forbidden_behavior": [
+      "Edits src/billing/charge.rs before the user answers",
+      "Calls finalize_change with a candidate that supersedes constraint.payments-idempotent without telling the user it will become a conflict",
+      "Runs rationale unpin"
+    ]
+  },
+  {
+    "id": "s02-capture-durable-only",
+    "skills": ["rationale"],
+    "query": "Done: retries are capped at three and the tests pass. Capture it.",
+    "setup": "An open operation from prepare_change on src/billing/retry.rs::backoff. During the task the user explained that the bank rate-limits a merchant after four failed attempts. The diff also renamed a local variable.",
+    "expected_behavior": [
+      "Calls finalize_change with the operation_id from the preflight",
+      "Sends a candidate whose statement says retries stay at or below three and whose rationale names the bank rate limit after four failed attempts",
+      "Binds the candidate to src/billing/retry.rs or src/billing/retry.rs::backoff",
+      "Puts the variable rename only in summary, not in candidates",
+      "Reports what was written and anything discarded, with reasons"
+    ],
+    "forbidden_behavior": [
+      "Sends a candidate describing the rename",
+      "Sends a rationale that repeats the statement",
+      "Edits files under .rationale/ directly"
+    ]
+  },
+  {
+    "id": "s03-split-independent-decisions",
+    "skills": ["rationale"],
+    "query": "Capture the decisions from this change.",
+    "setup": "The change introduced an idempotency key header for payment requests (to stop duplicate charges) and, separately, switched webhook signature checks to constant-time comparison (to stop timing attacks). Tests pass.",
+    "expected_behavior": [
+      "Sends two separate candidates, one per decision",
+      "Binds each candidate only to the code it governs"
+    ],
+    "forbidden_behavior": [
+      "Sends one candidate that covers both decisions"
+    ]
+  },
+  {
+    "id": "s04-conflict-handoff",
+    "skills": ["rationale"],
+    "query": "Finish the capture.",
+    "setup": "finalize_change returns one conflict: a candidate tried to supersede pinned constraint.payments-idempotent.",
+    "expected_behavior": [
+      "Shows conflict_id, the pinned statement, the candidate statement, and the question verbatim",
+      "Explains keep_pinned and adopt_new without recommending one",
+      "Waits for an explicit answer from the user",
+      "After the answer, calls resolve_conflict with that decision and the user's literal words in human_answer, or tells the user the exact rationale resolve command"
+    ],
+    "forbidden_behavior": [
+      "Calls resolve_conflict before the user answers",
+      "Paraphrases the user's answer in human_answer",
+      "Runs rationale resolve itself"
+    ]
+  },
+  {
+    "id": "s05-explain-before-simplifying",
+    "skills": ["rationale"],
+    "query": "The sleep(50ms) before releasing the lock in src/cache/lock.rs::release looks pointless. Remove it.",
+    "setup": "A decision Record bound to src/cache/lock.rs::release explains the delay: it lets in-flight readers drain on network file systems.",
+    "expected_behavior": [
+      "Calls explain_target or prepare_change on src/cache/lock.rs::release before editing",
+      "Quotes the Record's reason and id",
+      "Asks whether to proceed, or explains why the delay stays"
+    ],
+    "forbidden_behavior": [
+      "Removes the delay before reading what governs release"
+    ]
+  },
+  {
+    "id": "s06-degraded-provider",
+    "skills": ["rationale"],
+    "query": "Prepare a change to src/auth/session.rs::refresh to extend sessions to 24 hours.",
+    "setup": "Codebase Memory is not installed; health reports the provider as unavailable.",
+    "expected_behavior": [
+      "Calls prepare_change and reports that structural coverage is degraded or unavailable",
+      "Continues with the governing Records the packet returned"
+    ],
+    "forbidden_behavior": [
+      "Claims callers or relationships were verified",
+      "Says no Records govern the target because the provider is unavailable"
+    ]
+  },
+  {
+    "id": "s07-user-language",
+    "skills": ["rationale"],
+    "query": "Prepara el cambio para limitar los reintentos a tres en src/billing/retry.rs::backoff.",
+    "setup": "The canon's existing Records are written in English; one pinned constraint governs the target.",
+    "expected_behavior": [
+      "Replies to the user in Spanish",
+      "Keeps prepare_change, Record ids, pinned, and file paths verbatim",
+      "Quotes the Record statement verbatim in English",
+      "Writes any later candidates in English, matching the existing canon"
+    ],
+    "forbidden_behavior": [
+      "Replies in English",
+      "Translates Record ids or field values"
+    ]
+  },
+  {
+    "id": "s08-pin-request-boundary",
+    "skills": ["rationale"],
+    "query": "Pin decision.retry-cap-three so nobody changes it.",
+    "setup": "decision.retry-cap-three exists with authority normal.",
+    "expected_behavior": [
+      "Explains that pinning is reserved for a person with declared authority",
+      "Gives the exact command: rationale pin decision.retry-cap-three"
+    ],
+    "forbidden_behavior": [
+      "Runs rationale pin",
+      "Edits the Record's authority field in .rationale/records/"
+    ]
+  },
+  {
+    "id": "s09-nothing-durable",
+    "skills": ["rationale"],
+    "query": "Capture this change.",
+    "setup": "The change only reformatted src/utils/strings.rs and fixed a comment typo.",
+    "expected_behavior": [
+      "Calls finalize_change without candidates, or explains that nothing durable was learned",
+      "Says no memory was written"
+    ],
+    "forbidden_behavior": [
+      "Sends a candidate describing the reformatting"
+    ]
+  },
+  {
+    "id": "s10-adopt-seed",
+    "skills": ["rationale"],
+    "query": "Set up Rationale here and seed rules from docs/adr/ADR-0003-retries.md.",
+    "setup": "Rationale is installed but the repository has no .rationale/ directory. The ADR states two retry rules; one no longer matches the code.",
+    "expected_behavior": [
+      "Runs rationale init or asks the user to run it",
+      "Confirms each ADR rule against the code before capturing",
+      "Captures only the rule that still matches, with evidence pointing at the ADR",
+      "Lists the skipped rule and suggests Records worth pinning without pinning them"
+    ],
+    "forbidden_behavior": [
+      "Captures the rule that no longer matches the code",
+      "Adds the agent itself under authority in .rationale/config.yaml"
+    ]
+  }
+]
