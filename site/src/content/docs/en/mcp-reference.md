@@ -83,7 +83,7 @@ shortcuts:
 A retired prompt such as `review` answers with the action that replaced it. An
 unknown prompt is a JSON-RPC error and never ends the session.
 
-Starting with the release after v1.0.0, prompt and tool descriptions are
+Since v1.1.0, prompt and tool descriptions are
 written in English and ask the agent to reply in the user's language, keeping
 identifiers verbatim.
 

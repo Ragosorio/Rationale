@@ -57,8 +57,8 @@ you are ready. Restart your agent afterwards so it loads the tools.
 | MCP server registration | `~/.claude.json`, `~/.cursor/mcp.json`, or `codex mcp` — per user | No — never in the project |
 | Activity and operations | `<project>/.rationale-local/` | No — excluded automatically, never leaves the machine |
 
-The complete `rationale` skill is installed by `install-agent` starting with the
-release after v1.0.0. With v1.0.0, install it from GitHub with
+`install-agent` installs the complete `rationale` skill for Claude Code and
+Codex. For another agent that reads Agent Skills, run
 `npx skills add Ragosorio/Rationale`. See [the skill guide](user-guide/skills.md).
 
 ## The real flow

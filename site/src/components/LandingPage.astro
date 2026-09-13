@@ -37,8 +37,8 @@ const home = isSpanish ? "/es/" : "/";
 const alternateHome = isSpanish ? "/" : "/es/";
 const alternateLabel = isSpanish ? "EN" : "ES";
 const pageTitle = isSpanish
-  ? "Rationale 1.0 · Tus agentes olvidan el porqué. Rationale lo recuerda."
-  : "Rationale 1.0 · Your agents forget why. Rationale remembers.";
+  ? "Rationale 1.1 · Tus agentes olvidan el porqué. Rationale lo recuerda."
+  : "Rationale 1.1 · Your agents forget why. Rationale remembers.";
 const pageDescription = isSpanish
   ? "Memoria causal local para agentes de código: contexto antes del cambio, memoria durable después, y las reglas que fijas fuera del alcance de cualquier agente."
   : "Local causal memory for coding agents: context before the change, durable memory after it, and the rules you pin out of any agent's reach.";
@@ -450,7 +450,7 @@ const inline = (text: string) =>
             </div>
             <div class="l-release">
               <div>
-                <h3>{t.releaseVerifiedLabel}<small>v1.0.0</small></h3>
+                <h3>{t.releaseVerifiedLabel}<small>v1.1.0</small></h3>
                 <ul class="l-checks">{t.releaseVerified.map((item) => <li>{item}</li>)}</ul>
                 <a class="l-link" href={docs.evidence}>{t.releaseEvidence}</a>
               </div>

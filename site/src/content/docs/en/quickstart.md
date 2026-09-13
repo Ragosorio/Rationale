@@ -69,14 +69,13 @@ rule. Restart the agent afterwards.
 
 The protocol tells your agent *that* it must prepare and capture. The
 [`rationale` skill](/docs/skill) teaches it *how*, one playbook per operation,
-loaded only when a task needs it:
+loaded only when a task needs it. `init` and `install-agent` already installed
+it in `.claude/skills/rationale/` and `.agents/skills/rationale/`. For another
+agent that reads Agent Skills:
 
 ```bash
 npx skills add Ragosorio/Rationale
 ```
-
-Starting with the release after v1.0.0, `install-agent` installs it for you in
-`.claude/skills/rationale/` and `.agents/skills/rationale/`.
 
 ## Make the first governed change
 

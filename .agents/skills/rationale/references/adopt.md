@@ -26,10 +26,10 @@ rationale install-agent --dry-run   # what agent configuration would change
 ```
 
 `install-agent` registers the MCP server once per user and writes the protocol
-block into `CLAUDE.md`, `AGENTS.md`, or the Cursor rule. Starting with the
-release after v1.0.0 it also installs this skill in `.claude/skills/rationale/`
-for Claude Code and `.agents/skills/rationale/` for Codex. The agent has to
-restart before it sees the tools.
+block into `CLAUDE.md`, `AGENTS.md`, or the Cursor rule. Since v1.1.0 it also
+installs this skill in `.claude/skills/rationale/` for Claude Code and
+`.agents/skills/rationale/` for Codex. The agent has to restart before it sees
+the tools.
 
 Codebase Memory is recommended so symbol bindings and structural context work.
 Without it, file bindings still work and coverage is reported as degraded.

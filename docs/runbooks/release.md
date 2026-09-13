@@ -40,8 +40,8 @@ git rev-parse origin/main          # ...this one
 Only then:
 
 ```bash
-git tag -a v1.0.0 -m "Rationale 1.0.0"
-git push origin v1.0.0
+git tag -a v1.1.0 -m "Rationale 1.1.0"
+git push origin v1.1.0
 ```
 
 `release.yml` marks `--prerelease` only for `-alpha.`, `-rc.`, and `-dogfood.`.

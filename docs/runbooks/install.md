@@ -25,7 +25,7 @@ Supported variables:
   most recent release, pre-release or not. ADR-0010 distinguished both channels
   while the project was pre-1.0; with a stable version published, a later `-rc`
   must not reach someone who did not ask for it.
-- `RATIONALE_VERSION=v1.0.0` pins a specific version.
+- `RATIONALE_VERSION=v1.1.0` pins a specific version.
 - `RATIONALE_INSTALL_DIR=$HOME/.local/bin` changes the destination.
 - `RATIONALE_SKIP_AGENT_CONFIG=1` skips registering agents.
 
@@ -84,17 +84,17 @@ It detects each agent by its binary on `PATH` (`claude`, `codex`,
 
 - writes a delimited, idempotent block into `CLAUDE.md`, `AGENTS.md`, or
   `.cursor/rules/rationale.mdc`;
-- installs the Claude Code shortcuts into `.claude/skills/rationale-*/` and,
-  starting with the release after v1.0.0, the `rationale` skill into
-  `.claude/skills/rationale/` and `.agents/skills/rationale/`;
+- installs the Claude Code shortcuts into `.claude/skills/rationale-*/` and the
+  `rationale` skill into `.claude/skills/rationale/` and
+  `.agents/skills/rationale/`;
 - registers the MCP server globally for Claude Code, Codex, and Cursor with the
   absolute path of the installed binary, as `serve --client <agent>`.
 
 An older registration of the same binary (plain `serve`) is migrated;
 per-project MCP entries from old versions are removed only when they keep
-Rationale's known shape, and other servers are preserved. Starting with the
-release after v1.0.0, instruction blocks written with the earlier Spanish marker
-are recognized and replaced. A skill file you edited is kept, and a skill
+Rationale's known shape, and other servers are preserved. Instruction
+blocks written with the Spanish marker of v1.0.0 and earlier are recognized and
+replaced. A skill file you edited is kept, and a skill
 directory that is a symbolic link created by another tool is left alone.
 
 Revert the project with `rationale uninstall-agent`, and the user registration

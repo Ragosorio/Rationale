@@ -34,11 +34,9 @@ Installation is convergent: running it again is a no-op, an older registration
 of the same binary is migrated, and `rationale uninstall-agent` reverts exactly
 what was written — skill files you edited are kept.
 
-The table describes `install-agent` starting with the release after v1.0.0.
-v1.0.0 writes the same instruction blocks, and for Claude Code six skills: the
-five shortcuts below plus `/rationale-protocol`, which the next release retires
-in favor of `/rationale`. Until then, add the skill with
-`npx skills add Ragosorio/Rationale`.
+Updating from v1.0.0 retires the `/rationale-protocol` skill in favor of
+`/rationale`, unless you edited it. For an agent Rationale does not configure,
+add the skill with `npx skills add Ragosorio/Rationale`.
 
 ## Claude Code
 

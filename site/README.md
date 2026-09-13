@@ -24,9 +24,9 @@ relative; set Astro's `site` option in `astro.config.mjs` if absolute canonical
 URLs are ever needed.
 
 The landing copy for both languages lives in `src/lib/landing.ts`, and the
-documentation pages in `src/content/docs/{en,es}/`. When a release ships the
-`rationale` skill through `install-agent`, update the availability notes that
-say "starting with the release after v1.0.0".
+documentation pages in `src/content/docs/{en,es}/`. Copy that describes behavior
+on `main` but not yet in `releases/latest` says which release ships it; update
+that wording when the release is cut.
 
 To keep Astro and official integrations current, use the official upgrader:
 

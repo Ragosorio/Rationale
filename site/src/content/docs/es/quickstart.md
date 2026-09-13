@@ -69,14 +69,13 @@ Cursor. Reinicia el agente después.
 
 El protocolo le dice a tu agente *que* debe preparar y capturar. El
 [skill `rationale`](/es/docs/skill) le enseña *cómo*, con un playbook por
-operación que se carga solo cuando una tarea lo necesita:
+operación que se carga solo cuando una tarea lo necesita. `init` e
+`install-agent` ya lo instalaron en `.claude/skills/rationale/` y
+`.agents/skills/rationale/`. Para otro agente que lea Agent Skills:
 
 ```bash
 npx skills add Ragosorio/Rationale
 ```
-
-A partir de la release posterior a v1.0.0, `install-agent` lo instala por ti en
-`.claude/skills/rationale/` y `.agents/skills/rationale/`.
 
 ## Haz el primer cambio gobernado
 

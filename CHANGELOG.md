@@ -3,10 +3,12 @@
 Notable changes are recorded here by release. The technical detail of each
 change lives in the linked commits, ADRs, and work items.
 
-## Unreleased
+## v1.1.0
 
-Changes on `main` after release v1.0.0. The published binaries and installer
-are still v1.0.0 (`releases/latest`).
+Rationale ships an Agent Skill that teaches coding agents every operation, and
+the text agents read is written in English while they answer in the user's
+language. The CLI, the MCP tools, and the canon format are unchanged, so a
+1.0 canon keeps working as is.
 
 **The `rationale` Agent Skill.** A complete, portable skill in
 `skills/rationale/`, following the Agent Skills format and the published
@@ -40,6 +42,13 @@ descriptions. The `/rationale-protocol` skill is retired in favor of
 `/rationale` and removed by `install-agent` while it keeps its recorded hash;
 the `protocol` MCP prompt remains.
 
+**Identical bytes on every platform.** A `.gitattributes` keeps the embedded
+skill, the master prompt, the installed skill copies, and shell scripts in LF
+on every checkout. Without it, Git on Windows converted them to CRLF: the
+Windows binary would have embedded different bytes and hashes than macOS and
+Linux, and `install-agent` would have treated a teammate's committed skill
+files as edited. Tests fail if an embedded file contains a carriage return.
+
 **`finalize_change` documents `relationships`.** The MCP input schema now
 describes the `relationships` a candidate can explain, which the gate already
 accepted.
@@ -59,10 +68,9 @@ install and invoke it, the validator, and the language rule); the Claude Code
 card lists `/rationale` and the five shortcuts instead of `/rationale-protocol`.
 The documentation adds a page for the skill in English and Spanish and updates
 the quickstart, agents, master prompt, MCP reference, versioning,
-troubleshooting, limits, architecture, and evidence pages. Availability notes
-say which parts ship with the release after v1.0.0.
+troubleshooting, limits, architecture, and evidence pages.
 
-**Earlier unreleased changes.**
+**Also in this release.**
 
 - The structural client announces the artifact's real version in
   `initialize.clientInfo.version` instead of the `0.0.0` placeholder from

@@ -63,8 +63,8 @@ skills/rationale/
 
 | Method | Where it goes | Notes |
 |---|---|---|
-| `rationale install-agent` | `.claude/skills/rationale/` and `.agents/skills/rationale/` | Starting with the release after v1.0.0. Every file is recorded with a hash; edited files are kept on reinstall and uninstall |
-| `npx skills add Ragosorio/Rationale` | The directories of the agents it detects | Works from `main` today. The `skills` CLI links agent directories to one copy |
+| `rationale install-agent` | `.claude/skills/rationale/` and `.agents/skills/rationale/` | Since v1.1.0; `rationale init` runs it. Every file is recorded with a hash; edited files are kept on reinstall and uninstall |
+| `npx skills add Ragosorio/Rationale` | The directories of the agents it detects | For agents Rationale does not configure. The `skills` CLI links agent directories to one copy |
 | Manual copy | Any skills directory your agent reads | Copy `skills/rationale/` without `evals/` |
 
 When `.claude/skills/rationale/` is a symbolic link created by another tool,

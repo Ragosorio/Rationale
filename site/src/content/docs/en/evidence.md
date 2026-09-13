@@ -9,11 +9,28 @@ order: 14
 
 ## Release status
 
-`v1.0.0` is the first stable Release: the full loop — context before a change,
+`v1.1.0` is the current Release. The full loop — context before a change,
 autonomous capture after it, human authority over pinned rules, and the live
-Control Room — is implemented, tested, and used on Rationale's own repository.
+Control Room — has been stable since `v1.0.0` and is used on Rationale's own
+repository. `v1.1.0` adds the `rationale` skill and English agent-facing text
+with replies in the user's language.
 
-## How it was verified
+## How 1.1 was verified
+
+- **CI on three platforms.** Formatting, Clippy with warnings denied, and 386
+  Rust tests on macOS, Linux, and Windows, plus the Control Room and this
+  site's checks. The tests keep the embedded skill identical to its directory,
+  enforce the Agent Skills limits, fail when the candidate validator drifts from
+  the capture gate, and fail if an embedded file was checked out with CRLF.
+- **Windows line endings.** The first CI run of the skill failed on Windows
+  because Git converted the skill to CRLF. The fix forces LF through
+  `.gitattributes`, and all 386 tests pass on a fresh clone with
+  `core.autocrlf=true`, the setting Git for Windows uses by default.
+- **Release workflow.** The tagged source goes through formatting, Clippy,
+  release-profile tests, the dependency audit, and the documentation, Control
+  Room, and website checks before any artifact is packaged.
+
+## How 1.0 was verified
 
 - **Automated gates.** Formatting, Clippy with warnings denied, 366 Rust tests
   (unit and integration, including a governance chain in which an agent
@@ -36,15 +53,6 @@ Control Room — is implemented, tested, and used on Rationale's own repository.
   governing, and the whole operation visible live in the Control Room.
 
 The detailed records live in the repository under `docs/work-items/`.
-
-## On `main`, not released yet
-
-The `rationale` Agent Skill, agent-facing text in English with replies in the
-user's language, and a documented `relationships` input for `finalize_change`
-are on `main` and listed under *Unreleased* in the changelog. Tests keep the
-embedded skill identical to its directory, enforce the Agent Skills limits, and
-fail when the candidate validator drifts from the capture gate. They ship with
-the next release.
 
 ## What remains open
 

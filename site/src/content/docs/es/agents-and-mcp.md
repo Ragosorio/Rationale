@@ -34,11 +34,9 @@ La instalación es convergente: repetirla no cambia nada, un registro anterior
 del mismo binario se migra, y `rationale uninstall-agent` revierte exactamente
 lo que se escribió — los archivos de skills que editaste se conservan.
 
-La tabla describe `install-agent` a partir de la release posterior a v1.0.0.
-v1.0.0 escribe los mismos bloques de instrucciones y, para Claude Code, seis
-skills: los cinco atajos de abajo más `/rationale-protocol`, que la próxima
-release retira en favor de `/rationale`. Mientras tanto, agrega el skill con
-`npx skills add Ragosorio/Rationale`.
+Al actualizar desde v1.0.0 se retira el skill `/rationale-protocol` en favor de
+`/rationale`, salvo que lo hayas editado. Para un agente que Rationale no
+configura, agrega el skill con `npx skills add Ragosorio/Rationale`.
 
 ## Claude Code
 

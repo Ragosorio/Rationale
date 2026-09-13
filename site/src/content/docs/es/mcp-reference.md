@@ -85,7 +85,7 @@ Claude Code:
 Un prompt retirado, como `review`, responde con la acción que lo reemplazó. Un
 prompt desconocido es un error JSON-RPC y nunca termina la sesión.
 
-A partir de la release posterior a v1.0.0, las descripciones de prompts y
+Desde v1.1.0, las descripciones de prompts y
 herramientas están escritas en inglés y le piden al agente responder en el
 idioma de la persona, manteniendo literales los identificadores.
 

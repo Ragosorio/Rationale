@@ -9,12 +9,29 @@ order: 14
 
 ## Estado de la release
 
-`v1.0.0` es la primera release estable: el ciclo completo — contexto antes de
-un cambio, captura autónoma después, autoridad humana sobre las reglas fijadas
-y el Control Room en vivo — está implementado, probado y en uso sobre el propio
-repositorio de Rationale.
+`v1.1.0` es la release actual. El ciclo completo — contexto antes de un cambio,
+captura autónoma después, autoridad humana sobre las reglas fijadas y el Control
+Room en vivo — es estable desde `v1.0.0` y está en uso sobre el propio
+repositorio de Rationale. `v1.1.0` agrega el skill `rationale` y el texto para
+agentes en inglés con respuestas en el idioma de la persona.
 
-## Cómo se verificó
+## Cómo se verificó 1.1
+
+- **CI en tres plataformas.** Formato, Clippy con warnings denegados y 386 tests
+  de Rust en macOS, Linux y Windows, además de los chequeos del Control Room y de
+  este sitio. Los tests mantienen el skill embebido idéntico a su directorio,
+  hacen cumplir los límites de Agent Skills, fallan si el validador de
+  candidatos se aparta del gate de captura y fallan si un archivo embebido se
+  extrajo con CRLF.
+- **Finales de línea en Windows.** La primera ejecución de CI con el skill falló
+  en Windows porque Git convirtió el skill a CRLF. La corrección fuerza LF con
+  `.gitattributes`, y los 386 tests pasan en un clon nuevo con
+  `core.autocrlf=true`, la configuración que Git para Windows usa por defecto.
+- **Workflow de release.** El código etiquetado pasa por formato, Clippy, tests
+  en perfil release, la auditoría de dependencias y los chequeos de
+  documentación, Control Room y sitio antes de empaquetar cualquier artefacto.
+
+## Cómo se verificó 1.0
 
 - **Gates automáticos.** Formato, Clippy con warnings denegados, 366 tests de
   Rust (unitarios y de integración, incluida una cadena de gobierno en la que un
@@ -39,15 +56,6 @@ repositorio de Rationale.
   Room.
 
 Los registros detallados viven en el repositorio, en `docs/work-items/`.
-
-## En `main`, sin publicar todavía
-
-El Agent Skill `rationale`, el texto para agentes en inglés con respuestas en el
-idioma de la persona y una entrada `relationships` documentada para
-`finalize_change` están en `main` y figuran como *Unreleased* en el changelog.
-Los tests mantienen el skill embebido idéntico a su directorio, hacen cumplir
-los límites de Agent Skills y fallan si el validador de candidatos se aparta del
-gate de captura. Llegan con la próxima release.
 
 ## Qué sigue abierto
 

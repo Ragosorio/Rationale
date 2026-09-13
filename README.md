@@ -22,17 +22,14 @@ Website and documentation, in English and Spanish:
 
 ## Status
 
-`v1.0.0` is the first stable release. The full loop is implemented, tested, and
-used on Rationale's own repository: context before the change, autonomous
-capture after it, human authority over pinned rules, and the live Control Room.
-What was verified and what is still open is recorded in
-[`docs/work-items/v1.0-release-verification.md`](docs/work-items/v1.0-release-verification.md)
-and [`CHANGELOG.md`](CHANGELOG.md).
-
-`main` also carries changes that are not in a release yet, listed under
-*Unreleased* in the changelog. The largest is the `rationale` Agent Skill, which
-`rationale install-agent` installs starting with the next release. You can
-install the skill from `main` today with `npx skills add Ragosorio/Rationale`.
+`v1.1.0` is the current release. The full loop has been stable since `v1.0.0`
+and is used on Rationale's own repository: context before the change,
+autonomous capture after it, human authority over pinned rules, and the live
+Control Room. `v1.1.0` adds the `rationale` Agent Skill, which `install-agent`
+installs for Claude Code and Codex, and writes the text agents read in English
+while they answer in your language. What changed is in
+[`CHANGELOG.md`](CHANGELOG.md); how 1.0 was verified is in
+[`docs/work-items/v1.0-release-verification.md`](docs/work-items/v1.0-release-verification.md).
 
 ## Quick install
 
@@ -120,8 +117,8 @@ templates, Codex metadata, and evals. Agent-facing text is written in English
 and tells the agent to reply in the user's language.
 
 ```bash
-npx skills add Ragosorio/Rationale   # any agent that reads Agent Skills, from main
-rationale install-agent              # Claude Code and Codex, starting with the next release
+rationale install-agent              # Claude Code and Codex (rationale init already runs it)
+npx skills add Ragosorio/Rationale   # any other agent that reads Agent Skills
 ```
 
 ## How it works

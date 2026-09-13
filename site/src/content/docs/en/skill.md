@@ -38,15 +38,14 @@ A normal coding task is `preflight`, then the change, then `capture`.
 
 | Method | Where it goes | Availability |
 | --- | --- | --- |
-| `npx skills add Ragosorio/Rationale` | The skills directories of the agents it detects | Today, from GitHub |
-| `rationale install-agent` | `.claude/skills/rationale/` and `.agents/skills/rationale/` | Starting with the release after v1.0.0 |
+| `rationale install-agent` | `.claude/skills/rationale/` and `.agents/skills/rationale/` | Since v1.1.0; `rationale init` runs it |
+| `npx skills add Ragosorio/Rationale` | The skills directories of the agents it detects | For agents Rationale does not configure |
 | Manual copy | Any skills directory your agent reads | Copy `skills/rationale/` without `evals/` |
 
 `install-agent` records a hash for every file it writes: a file you edit is
 kept on reinstall and uninstall, and a skill directory that another tool
-created as a symbolic link is left alone. v1.0.0 installs five Claude Code
-shortcuts and a `/rationale-protocol` skill; the next release retires
-`/rationale-protocol` in favor of `/rationale`.
+created as a symbolic link is left alone. Updating from v1.0.0 retires the
+`/rationale-protocol` skill in favor of `/rationale`, unless you edited it.
 
 ## Invoke it
 
