@@ -12,6 +12,10 @@
 /dist/
 node_modules/
 
+# Build de la Control Room: `build.rs` lo embebe en el binario si existe;
+# se regenera con `npm --prefix ui ci && npm --prefix ui run build`.
+ui/dist/
+
 # Language spike build artifacts (docs/research/language/) — el código
 # fuente de los candidatos se versiona; sus binarios y caches, no.
 spikes/language/rust/target/

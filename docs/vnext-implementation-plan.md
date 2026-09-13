@@ -104,6 +104,13 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
     confirmed before it is remembered. The
     integration tests run with `RATIONALE_PROVIDER=none` unless they pass a
     fixture.
+17. **`build.rs` can keep embedding an empty asset table.** It watches
+    `ui/dist`, else `ui/`, else only `build.rs` (a missing path would rerun
+    it on every build). A target dir whose last build predates `ui/` — here,
+    Phase 7 before the frontend existed — keeps serving the fallback page
+    after `npm run build` until `build.rs` changes or is touched. Once `ui/`
+    is versioned a fresh checkout watches it, so the trade-off stays; the
+    symptom is `aviso: este binario no incluye la interfaz web` at startup.
 
 ## Governing Records and how vNext honors them
 
@@ -167,7 +174,7 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
    per-session NDJSON, reader/merger), instrumentation in pipeline/MCP/CLI.
 7. **UI backend**: new `ui/server.rs` (std-only localhost HTTP, Host
    validation, bounded requests, SSE), `main.rs` (`rationale ui`).
-8. **Control Room frontend**: `ui/web/` (React + Three + d3-force-3d, Graph +
+8. **Control Room frontend**: `ui/` (React + Three + d3-force-3d, Graph +
    Activity, adapted CBM renderer with MIT notices), `THIRD_PARTY.md`.
 9. **Agent workflow**: `prompts.rs`, `docs/prompt-master*.md`, `agents.rs`
    (`serve --client <name>`, migration-tolerant registration matching), docs.
@@ -207,4 +214,15 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
   allow-list, GET/HEAD, bounded heads, CSP), read-only REST views over canon,
   operations and activity, SSE activity stream, assets embedded from
   `ui/dist` with an explicit fallback page
-- [ ] Phase 8 … Phase 10 (updated as each lands)
+- [x] Phase 8 — Control Room frontend in `ui/` (Vite build embedded from
+  `ui/dist`): Graph (instanced 3D working subgraph, roles, structural state
+  and causal overlay, node/edge/operation panels), Activity (sessions,
+  operations folded from events, timeline), Memory (canon browser, pending
+  conflicts) and System views; REST snapshots plus SSE with debounced
+  refresh; CBM render techniques adapted under MIT with per-file headers and
+  `THIRD_PARTY.md`. Verified live on this repo: a CLI `prepare` reached the
+  open UI as 8 SSE events and refreshed the graph and operation panel
+  without reload; Host allow-list (421) and read-only method guard (405)
+  confirmed. Fixed in verification: ticker items shrank below their content
+  and overlapped; Spanish singular counts.
+- [ ] Phase 9 … Phase 10 (updated as each lands)
