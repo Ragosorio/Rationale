@@ -21,10 +21,10 @@
 //! nunca un bloqueo), ordenar SHAs de Git, ni otorgar `pinned` por cuenta de
 //! un agente.
 
-use crate::providers::ProviderHandle;
+use crate::providers::{NodeBinding, ProviderHandle, RelationKind};
 use crate::storage::{
     self, BindingDeclaration, EpistemicStatus, Evidence, Provenance, ProvenanceKind, Record,
-    RecordAuthority, RecordSubjectRef, Risk,
+    RecordAuthority, RecordSubjectRef, RelationshipBinding, Risk,
 };
 use crate::{binding_match, evaluation, project, retrieval, subjects};
 use serde::{Deserialize, Serialize};
@@ -111,6 +111,10 @@ pub struct Candidate {
     pub severity: Option<String>,
     #[serde(default)]
     pub bindings: Vec<CandidateBinding>,
+    /// Relaciones que el candidato explica: `{source, kind, target}` con
+    /// extremos `path::symbol`. Cuentan como anclaje igual que `bindings`.
+    #[serde(default)]
+    pub relationships: Vec<CandidateRelationship>,
     #[serde(default)]
     pub supersedes: Vec<String>,
     #[serde(default)]
@@ -119,6 +123,13 @@ pub struct Candidate {
     pub evidence: Vec<CandidateEvidence>,
     #[serde(default)]
     pub subject: Option<CandidateSubject>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct CandidateRelationship {
+    pub source: String,
+    pub kind: String,
+    pub target: String,
 }
 
 /// Quién está actuando. `client` nunca se inventa: `unknown` cuando ni el
@@ -197,6 +208,8 @@ pub struct CommittedRecord {
     pub authority: String,
     pub path: String,
     pub bindings: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relationships: Vec<String>,
     pub superseded: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject_id: Option<String>,
@@ -434,10 +447,19 @@ struct PreparedCandidate {
     statement: String,
     rationale: String,
     bindings: Vec<PreparedBinding>,
+    #[serde(default)]
+    relationships: Vec<PreparedRelationship>,
     supersedes: Vec<String>,
     risks: Vec<String>,
     evidence: Vec<CandidateEvidence>,
     subject: Option<CandidateSubject>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct PreparedRelationship {
+    source: NodeBinding,
+    kind: RelationKind,
+    target: NodeBinding,
 }
 
 /// Verificaciones puras de forma y texto — sin disco ni proveedor.
@@ -636,13 +658,9 @@ fn resolve_bindings(
         let Some(symbol) = target.symbol.as_deref().filter(|s| !s.is_empty()) else {
             continue;
         };
-        let confirmed = provider.as_provider().and_then(|client| {
-            client
-                .resolve_target(ctx.repo_path.to_str().unwrap_or(""), &rel_path, symbol)
-                .data
-        });
+        let confirmed = resolve_symbol(ctx, provider, &rel_path, symbol);
         match confirmed {
-            Some(node) if node_matches_symbol(&node.qualified_name, symbol) => {
+            Some((node, provider_name)) => {
                 if !resolved
                     .iter()
                     .any(|b| b.structural_id.as_deref() == Some(node.qualified_name.as_str()))
@@ -651,7 +669,7 @@ fn resolve_bindings(
                         kind: "symbol".to_string(),
                         path_hint: rel_path.clone(),
                         structural_id: Some(node.qualified_name),
-                        provider: Some("codebase-memory".to_string()),
+                        provider: Some(provider_name),
                         provisional,
                     });
                 }
@@ -665,11 +683,100 @@ fn resolve_bindings(
     resolved
 }
 
+/// Nodo confirmado por el proveedor con identidad portable (sin prefijo de
+/// proyecto del proveedor), o `None`. Nunca se sintetiza un símbolo que el
+/// proveedor no confirmó.
+fn resolve_symbol(
+    ctx: &CanonContext,
+    provider: &mut ProviderHandle,
+    rel_path: &str,
+    symbol: &str,
+) -> Option<(NodeBinding, String)> {
+    let client = provider.as_provider()?;
+    let provider_name = client.capabilities().name;
+    let node = client
+        .resolve_node(ctx.repo_path.to_str().unwrap_or(""), rel_path, symbol)
+        .data?;
+    node_matches_symbol(&node.binding.qualified_name, symbol)
+        .then_some((node.binding, provider_name))
+}
+
+/// Resuelve los extremos de cada relación contra el proveedor. Una relación
+/// sin ambos extremos confirmados no se ancla: inventar su identidad sería
+/// peor que no registrarla.
+fn resolve_relationships(
+    ctx: &CanonContext,
+    relationships: &[CandidateRelationship],
+    provider: &mut ProviderHandle,
+    warnings: &mut Vec<String>,
+) -> Vec<PreparedRelationship> {
+    let mut resolved = Vec::new();
+    for relationship in relationships {
+        let label = format!(
+            "{} --{}--> {}",
+            relationship.source, relationship.kind, relationship.target
+        );
+        let Some(kind) = RelationKind::parse(&relationship.kind)
+            .filter(|kind| !kind.is_inferred() && *kind != RelationKind::Other)
+        else {
+            warnings.push(format!(
+                "relación '{label}' ignorada: el tipo debe ser estructural (calls, uses, writes, \
+                 imports, defines, implements, tests, configures, depends_on, http_calls)"
+            ));
+            continue;
+        };
+        let mut endpoints = Vec::new();
+        for spec in [&relationship.source, &relationship.target] {
+            let (path, symbol) = project::parse_target_spec(spec);
+            if symbol.as_deref().is_none_or(str::is_empty) {
+                warnings.push(format!(
+                    "relación '{label}' ignorada: '{spec}' necesita un símbolo (path::symbol)"
+                ));
+                break;
+            }
+            let target = match project::resolve_target(ctx.repo_path, spec) {
+                Ok(target) if target.path.is_file() => target,
+                _ => {
+                    warnings.push(format!(
+                        "relación '{label}' ignorada: '{path}' no es un archivo del repositorio"
+                    ));
+                    break;
+                }
+            };
+            let Some(rel_path) = binding_match::target_rel_path(ctx.repo_path, &target) else {
+                break;
+            };
+            let symbol = target.symbol.clone().unwrap_or_default();
+            match resolve_symbol(ctx, provider, &rel_path, &symbol) {
+                Some((binding, _)) => endpoints.push(binding),
+                None => {
+                    warnings.push(format!(
+                        "relación '{label}' ignorada: el proveedor no confirmó '{symbol}' en \
+                         '{rel_path}' — una relación solo se ancla a nodos reales"
+                    ));
+                    break;
+                }
+            }
+        }
+        if let [source, target] = endpoints.as_slice() {
+            resolved.push(PreparedRelationship {
+                source: source.clone(),
+                kind,
+                target: target.clone(),
+            });
+        }
+    }
+    resolved
+}
+
 /// El proveedor puede devolver su mejor coincidencia aunque no sea el
 /// símbolo pedido; un binding de símbolo solo nace si el nombre coincide en
 /// un límite de token.
 fn node_matches_symbol(qualified_name: &str, symbol: &str) -> bool {
-    let tail = symbol.rsplit([':', '.']).next().unwrap_or(symbol);
+    let tail = symbol
+        .rsplit([':', '.'])
+        .find(|s| !s.is_empty())
+        .unwrap_or(symbol);
     qualified_name == tail
         || qualified_name
             .strip_suffix(tail)
@@ -686,7 +793,8 @@ fn prepare_candidate(
     validate_shape(index, &candidate)?;
     let statement = sanitize_control_chars(candidate.statement.trim());
     let bindings = resolve_bindings(ctx, &candidate.bindings, provider, warnings);
-    if bindings.is_empty() {
+    let relationships = resolve_relationships(ctx, &candidate.relationships, provider, warnings);
+    if bindings.is_empty() && relationships.is_empty() {
         return Err(discard(
             index,
             DiscardReason::NoMeaningfulBinding,
@@ -713,6 +821,7 @@ fn prepare_candidate(
         statement,
         rationale: sanitize_control_chars(candidate.rationale.trim()),
         bindings,
+        relationships,
         supersedes: candidate
             .supersedes
             .into_iter()
@@ -1032,6 +1141,19 @@ fn build_record(
         })
         .collect();
 
+    let relationship_bindings = prepared
+        .relationships
+        .iter()
+        .enumerate()
+        .map(|(i, relationship)| RelationshipBinding {
+            id: format!("rel.{id}.{i}"),
+            source: relationship.source.clone(),
+            kind: relationship.kind.as_str().to_string(),
+            target: relationship.target.clone(),
+            extra: yaml_serde::Mapping::new(),
+        })
+        .collect();
+
     let mut extra = yaml_serde::Mapping::new();
     extra.insert(
         string_value("schema_version"),
@@ -1050,6 +1172,7 @@ fn build_record(
         supersedes: superseded.to_vec(),
         approvals: vec![],
         binding_declarations,
+        relationship_bindings,
         evidence,
         risks,
         bound_revision: ctx.head_revision.clone(),
@@ -1579,6 +1702,20 @@ fn commit_one(
                 None => b.path_hint.clone(),
             })
             .collect(),
+        relationships: candidate
+            .relationships
+            .iter()
+            .map(|r| {
+                format!(
+                    "{}::{} --{}--> {}::{}",
+                    r.source.file_path,
+                    r.source.qualified_name,
+                    r.kind.as_str(),
+                    r.target.file_path,
+                    r.target.qualified_name
+                )
+            })
+            .collect(),
         superseded,
         subject_id,
     });
@@ -1936,6 +2073,7 @@ fn migration_verdict(
         durability: Some("durable".to_string()),
         severity: Some(proposal.severity.clone()),
         bindings: vec![],
+        relationships: vec![],
         supersedes: vec![],
         risks: vec![],
         evidence: vec![],
@@ -2052,6 +2190,7 @@ mod tests {
             durability: Some("durable".to_string()),
             severity: Some("high".to_string()),
             bindings: vec![CandidateBinding::Spec("src/payments.rs".to_string())],
+            relationships: vec![],
             supersedes: vec![],
             risks: vec![],
             evidence: vec![],
@@ -2157,6 +2296,104 @@ mod tests {
         );
         assert!(outcome.committed.is_empty());
         assert!(fixture.records().is_empty());
+    }
+
+    fn capture_with_fixture(fixture: &Fixture, candidates: Vec<Candidate>) -> CaptureOutcome {
+        let mut provider =
+            ProviderHandle::Custom(Box::new(crate::providers::fixture::payments_fixture()));
+        capture_candidates(
+            &fixture.ctx(),
+            candidates.into_iter().map(Ok).collect(),
+            &mut provider,
+        )
+    }
+
+    #[test]
+    fn relationship_candidates_anchor_confirmed_nodes_with_portable_identity() {
+        let fixture = Fixture::new();
+        let mut candidate = durable(
+            "Payment expiration is read from entity configuration, never hardcoded.",
+            "Each tenant defines its own payment policy, so a global constant was wrong for most of them.",
+        );
+        candidate.bindings.clear();
+        candidate.relationships = vec![CandidateRelationship {
+            source: "src/payments.rs::create_link".to_string(),
+            kind: "uses".to_string(),
+            target: "src/config.rs::EntityConfig::payment_expiration".to_string(),
+        }];
+        let outcome = capture_with_fixture(&fixture, vec![candidate]);
+        assert_eq!(outcome.committed.len(), 1, "{outcome:?}");
+        let record = fixture.records().pop().unwrap();
+        assert_eq!(record.relationship_bindings.len(), 1);
+        let relationship = &record.relationship_bindings[0];
+        assert_eq!(relationship.kind, "uses");
+        assert_eq!(
+            relationship.source.qualified_name,
+            "src.payments.create_link"
+        );
+        assert_eq!(
+            relationship.target.qualified_name,
+            "src.config.EntityConfig.payment_expiration"
+        );
+        assert!(
+            record.binding_declarations.is_empty(),
+            "una relación es anclaje suficiente"
+        );
+    }
+
+    #[test]
+    fn relationships_with_unconfirmed_or_inferred_parts_are_never_invented() {
+        let fixture = Fixture::new();
+        let mut candidate = durable(
+            "Payment expiration is read from entity configuration, never hardcoded.",
+            "Each tenant defines its own payment policy, so a global constant was wrong for most of them.",
+        );
+        candidate.bindings.clear();
+        candidate.relationships = vec![
+            CandidateRelationship {
+                source: "src/payments.rs::does_not_exist".to_string(),
+                kind: "uses".to_string(),
+                target: "src/config.rs::EntityConfig::payment_expiration".to_string(),
+            },
+            CandidateRelationship {
+                source: "src/payments.rs::create_link".to_string(),
+                kind: "similar_to".to_string(),
+                target: "src/payments.rs::sign_link".to_string(),
+            },
+            CandidateRelationship {
+                source: "src/payments.rs".to_string(),
+                kind: "calls".to_string(),
+                target: "src/payments.rs::sign_link".to_string(),
+            },
+        ];
+        let outcome = capture_with_fixture(&fixture, vec![candidate]);
+        assert_eq!(
+            outcome.discarded[0].reason,
+            DiscardReason::NoMeaningfulBinding
+        );
+        assert_eq!(outcome.warnings.len(), 3, "{:?}", outcome.warnings);
+    }
+
+    #[test]
+    fn symbol_bindings_store_portable_qualified_names() {
+        let fixture = Fixture::new();
+        let mut candidate = durable(EXPIRY, EXPIRY_WHY);
+        candidate.bindings = vec![CandidateBinding::Spec(
+            "src/payments.rs::create_link".to_string(),
+        )];
+        let outcome = capture_with_fixture(&fixture, vec![candidate]);
+        assert_eq!(outcome.committed.len(), 1, "{outcome:?}");
+        let record = fixture.records().pop().unwrap();
+        let symbol = record
+            .binding_declarations
+            .iter()
+            .find(|b| b.kind == "symbol")
+            .expect("el fixture confirma el símbolo");
+        assert_eq!(
+            symbol.structural_id.as_deref(),
+            Some("src.payments.create_link")
+        );
+        assert_eq!(symbol.provider.as_deref(), Some("fixture"));
     }
 
     #[test]

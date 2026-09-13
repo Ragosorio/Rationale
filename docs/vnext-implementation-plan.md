@@ -123,8 +123,9 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
    `resolve_conflict`), `main.rs` (`pin`, `unpin`, `migrate`), `review.rs`
    (claim reuse), tests.
 3. **Structural model**: `providers/mod.rs` (normalized types + trait),
-   `providers/codebase_memory.rs` (adapter), `providers/fake.rs`
-   (deterministic provider), tests.
+   `providers/codebase_memory.rs` (adapter), `providers/fixture.rs`
+   (deterministic provider, also `RATIONALE_PROVIDER=fixture:<path>`;
+   `RATIONALE_PROVIDER=none` disables the provider), tests.
 4. **Relationship rationale**: `storage.rs` (`relationship_bindings`), new
    `relationships.rs` (derived state), `binding_match.rs`, tests.
 5. **Context compiler**: `pipeline.rs::prepare`, `retrieval.rs` packet vNext,
@@ -157,4 +158,9 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
 ## Progress
 
 - [x] Inspection, baseline, preflight
-- [ ] Phase 1 … Phase 10 (updated as each lands)
+- [x] Phase 1 — foundation fixes (`634b234`)
+- [x] Phase 2 — autonomous canon, provenance, pinned authority, conflicts (`aa6cb08`)
+- [x] Phase 3 + 4 — normalized structural provider and relationship rationale
+  (one commit: relationship bindings extend the same Record/candidate/matcher
+  code the provider model feeds)
+- [ ] Phase 5 … Phase 10 (updated as each lands)

@@ -549,6 +549,7 @@ mod tests {
             authority: None,
             provenance: None,
             supersedes: vec![],
+            relationship_bindings: vec![],
             evidence: vec![],
             risks: vec![Risk {
                 id: "risk.golden".to_string(),
@@ -919,6 +920,7 @@ mod tests {
             authority: None,
             provenance: None,
             supersedes: vec![],
+            relationship_bindings: vec![],
             evidence: vec![],
             risks: vec![],
             approvals: vec![Approval {
@@ -1078,6 +1080,7 @@ mod tests {
             risks: vec![],
             approvals: vec![],
             binding_declarations: vec![],
+            relationship_bindings: vec![],
             bound_revision: None,
             subject: None,
             extra: yaml_serde::Mapping::new(),

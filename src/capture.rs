@@ -293,13 +293,12 @@ pub fn capture(
         Verifiability::PartiallyUncommitted
     };
 
-    let (provider_status, provider_coverage) = match provider {
-        ProviderHandle::Live(client) => {
-            use crate::providers::CodeIntelligenceProvider;
+    let (provider_status, provider_coverage) = match provider.as_provider() {
+        Some(client) => {
             let result = client.health(repo_path.to_str().unwrap_or(""));
             (result.status, result.coverage)
         }
-        ProviderHandle::Unavailable(_) => (ProviderStatus::Unavailable, Coverage::Unknown),
+        None => (ProviderStatus::Unavailable, Coverage::Unknown),
     };
 
     MechanicalCapture {

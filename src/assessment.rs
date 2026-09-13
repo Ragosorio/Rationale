@@ -330,6 +330,7 @@ mod tests {
                 vec![]
             },
             binding_declarations,
+            relationship_bindings: vec![],
             bound_revision: Some(bound_revision.to_string()),
             subject: None,
             extra: yaml_serde::Mapping::new(),

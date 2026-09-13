@@ -21,7 +21,7 @@
 //! inventar una gramática que el canon no garantiza.
 
 use crate::project::Target;
-use crate::storage::{has_human_endorsement, BindingDeclaration, Record};
+use crate::storage::{has_human_endorsement, BindingDeclaration, Record, RelationshipBinding};
 use std::path::Path;
 
 #[derive(Debug, Clone, Default)]
@@ -36,6 +36,10 @@ pub struct TargetKey {
 pub enum MatchKind {
     FileExact,
     FileContainsSymbol,
+    /// El target es un extremo de una relación que el Record explica
+    /// (`relationship_bindings`, vNext): cambiar ese nodo puede romper el
+    /// porqué de la relación.
+    RelationshipEndpoint,
     Structural,
 }
 
@@ -44,6 +48,7 @@ impl MatchKind {
         match self {
             MatchKind::FileExact => "file-exact",
             MatchKind::FileContainsSymbol => "file-contains-symbol",
+            MatchKind::RelationshipEndpoint => "relationship-endpoint",
             MatchKind::Structural => "structural",
         }
     }
@@ -51,8 +56,6 @@ impl MatchKind {
 
 pub struct GovernanceMatch<'a> {
     pub record: &'a Record,
-    #[allow(dead_code)] // usado por assessment::linkage (1.4) para diagnosticar resolución
-    pub binding: &'a BindingDeclaration,
     pub kind: MatchKind,
 }
 
@@ -142,6 +145,26 @@ pub fn match_one(key: &TargetKey, binding: &BindingDeclaration) -> Option<MatchK
     None
 }
 
+/// Un extremo de relación gobierna el target cuando coincide el archivo y,
+/// si la consulta trae símbolo, el nombre calificado termina en ese símbolo
+/// en un límite de token (`Tipo::metodo` se compara como `Tipo.metodo`).
+pub fn match_relationship(key: &TargetKey, binding: &RelationshipBinding) -> Option<MatchKind> {
+    let rel_path = key.rel_path.as_deref()?;
+    [&binding.source, &binding.target]
+        .into_iter()
+        .any(|endpoint| {
+            clean_rel(&endpoint.file_path) == rel_path
+                && match &key.symbol {
+                    None => true,
+                    Some(symbol) => ends_with_symbol_at_boundary(
+                        &endpoint.qualified_name,
+                        &symbol.replace("::", "."),
+                    ),
+                }
+        })
+        .then_some(MatchKind::RelationshipEndpoint)
+}
+
 /// Todos los Records que gobiernan el target — uno por Record (el binding
 /// de mejor `MatchKind` cuando varios matchean), ordenados por
 /// especificidad, luego autoridad aprobada primero, luego `id` ascendente
@@ -156,25 +179,25 @@ pub fn governing<'a>(key: &TargetKey, records: &'a [Record]) -> Vec<GovernanceMa
     let mut best_per_record: std::collections::HashMap<&str, GovernanceMatch<'a>> =
         std::collections::HashMap::new();
     for record in records {
-        for binding in &record.binding_declarations {
-            if let Some(kind) = match_one(key, binding) {
-                match best_per_record.entry(record.id.as_str()) {
-                    std::collections::hash_map::Entry::Occupied(mut existing) => {
-                        if kind > existing.get().kind {
-                            existing.insert(GovernanceMatch {
-                                record,
-                                binding,
-                                kind,
-                            });
-                        }
+        let kinds = record
+            .binding_declarations
+            .iter()
+            .filter_map(|binding| match_one(key, binding))
+            .chain(
+                record
+                    .relationship_bindings
+                    .iter()
+                    .filter_map(|binding| match_relationship(key, binding)),
+            );
+        for kind in kinds {
+            match best_per_record.entry(record.id.as_str()) {
+                std::collections::hash_map::Entry::Occupied(mut existing) => {
+                    if kind > existing.get().kind {
+                        existing.insert(GovernanceMatch { record, kind });
                     }
-                    std::collections::hash_map::Entry::Vacant(slot) => {
-                        slot.insert(GovernanceMatch {
-                            record,
-                            binding,
-                            kind,
-                        });
-                    }
+                }
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(GovernanceMatch { record, kind });
                 }
             }
         }
@@ -208,6 +231,7 @@ mod tests {
             supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![binding],
+            relationship_bindings: vec![],
             evidence: vec![],
             risks: vec![],
             bound_revision: None,
@@ -366,6 +390,54 @@ mod tests {
         )];
         let key = TargetKey::default();
         assert!(governing(&key, &records).is_empty());
+    }
+
+    #[test]
+    fn relationship_endpoints_govern_their_symbols_only() {
+        let mut record =
+            record_with_binding("decision.payment-expiration", file_binding("docs/x.md"));
+        record.binding_declarations.clear();
+        record.relationship_bindings.push(RelationshipBinding {
+            id: "rel.0".to_string(),
+            source: crate::providers::NodeBinding {
+                file_path: "src/payments.rs".to_string(),
+                qualified_name: "src.payments.PaymentService.create_link".to_string(),
+                symbol_kind: None,
+            },
+            kind: "uses".to_string(),
+            target: crate::providers::NodeBinding {
+                file_path: "src/config.rs".to_string(),
+                qualified_name: "src.config.EntityConfig.payment_expiration".to_string(),
+                symbol_kind: None,
+            },
+            extra: yaml_serde::Mapping::new(),
+        });
+        let records = vec![record];
+        let query = |path: &str, symbol: Option<&str>| TargetKey {
+            rel_path: Some(path.to_string()),
+            symbol: symbol.map(str::to_string),
+        };
+
+        let source = governing(
+            &query("src/payments.rs", Some("PaymentService::create_link")),
+            &records,
+        );
+        assert_eq!(source.len(), 1);
+        assert_eq!(source[0].kind, MatchKind::RelationshipEndpoint);
+        assert_eq!(
+            governing(
+                &query("src/config.rs", Some("payment_expiration")),
+                &records
+            )
+            .len(),
+            1
+        );
+        assert_eq!(governing(&query("src/config.rs", None), &records).len(), 1);
+        assert!(
+            governing(&query("src/payments.rs", Some("sign_link")), &records).is_empty(),
+            "otro símbolo del mismo archivo no es extremo de la relación"
+        );
+        assert!(governing(&query("src/other.rs", Some("create_link")), &records).is_empty());
     }
 
     #[test]

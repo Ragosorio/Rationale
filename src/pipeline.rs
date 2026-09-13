@@ -8,11 +8,11 @@
 //! de `diagnostics` — cada caller (CLI o servidor MCP) decide dónde
 //! escribirlos.
 
-use crate::providers::{CodeIntelligenceProvider, Coverage, ProviderHandle, ProviderStatus};
+use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
 use crate::storage::Record;
 use crate::{
-    assessment, binding_match, cache, canon, capture, configuration, project, retrieval, revision,
-    signals, storage, subjects,
+    assessment, binding_match, cache, canon, capture, configuration, project, relationships,
+    retrieval, revision, signals, storage, subjects,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -121,8 +121,11 @@ pub fn prepare(
     // 3. Consultar Codebase Memory — sesión MCP persistente real (ADR-0002).
     // La sesión (`provider`) ya fue spawneada por el caller: la CLI una vez
     // por invocación, el servidor MCP una sola vez para toda su vida.
-    let (provider_status, provider_coverage, resolved_target, provider_warnings) = match provider {
-        ProviderHandle::Live(client) => {
+    let unavailable_reason = provider.unavailable_reason().map(str::to_string);
+    let (provider_status, provider_coverage, resolved_target, provider_warnings) = match provider
+        .as_provider()
+    {
+        Some(client) => {
             let sym = symbol.clone().unwrap_or_default();
             let file = target
                 .as_ref()
@@ -138,11 +141,14 @@ pub fn prepare(
                 result.warnings,
             )
         }
-        ProviderHandle::Unavailable(msg) => (
+        None => (
             ProviderStatus::Unavailable,
             Coverage::Unknown,
             None,
-            vec![format!("no se pudo iniciar Codebase Memory: {msg}")],
+            vec![format!(
+                "no se pudo iniciar el proveedor estructural: {}",
+                unavailable_reason.unwrap_or_default()
+            )],
         ),
     };
 
@@ -293,15 +299,16 @@ pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> Result<Heal
     let config = configuration::load(project_root).map_err(|e| e.to_string())?;
     let snap = revision::snapshot(&config.project_root);
 
-    let (provider_status, provider_coverage, provider_error) = match provider {
-        ProviderHandle::Live(client) => {
+    let unavailable_reason = provider.unavailable_reason().map(str::to_string);
+    let (provider_status, provider_coverage, provider_error) = match provider.as_provider() {
+        Some(client) => {
             let result = client.health(config.project_root.to_str().unwrap_or(""));
             (result.status, result.coverage, None)
         }
-        ProviderHandle::Unavailable(msg) => (
+        None => (
             ProviderStatus::Unavailable,
             Coverage::Unknown,
-            Some(msg.clone()),
+            unavailable_reason,
         ),
     };
 
@@ -497,6 +504,10 @@ pub struct FinalizeOutcome {
     /// fijada: el agente debe preguntar al humano y llamar `resolve_conflict`.
     pub conflicts: Vec<canon::ConflictSummary>,
     pub superseded: Vec<canon::SupersededRecord>,
+    /// Estado estructural derivado de las relaciones que los Records recién
+    /// escritos explican — informativo: una relación `orphaned` o `unknown`
+    /// al capturar se reporta, nunca bloquea ni borra la explicación.
+    pub relationships: Vec<relationships::RelationshipAssessment>,
     /// Hechos observados del cambio — informan, nunca escriben memoria.
     pub signals: Vec<signals::Signal>,
     pub capture: capture::MechanicalCapture,
@@ -578,6 +589,18 @@ pub fn finalize(
         );
     }
     let mut outcome = canon::capture_candidates(&ctx, req.candidates, provider);
+    let committed_records: Vec<Record> = outcome
+        .committed
+        .iter()
+        .filter_map(|committed| storage::read_record(Path::new(&committed.path)).ok())
+        .filter(|record| !record.relationship_bindings.is_empty())
+        .collect();
+    let relationship_states = relationships::assess_records(
+        provider,
+        req.repo_path.to_str().unwrap_or(""),
+        &config.project_id,
+        &committed_records.iter().collect::<Vec<_>>(),
+    );
     if let Some(statement) = req.legacy_statement {
         outcome.discarded.push(canon::DiscardedCandidate {
             index: 0,
@@ -601,6 +624,7 @@ pub fn finalize(
         discarded: outcome.discarded,
         conflicts: outcome.conflicts,
         superseded: outcome.superseded,
+        relationships: relationship_states,
         signals: signal_list,
         capture: mechanical,
         warnings: outcome.warnings,

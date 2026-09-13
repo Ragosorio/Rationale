@@ -22,6 +22,7 @@ mod pipeline;
 mod project;
 mod prompts;
 mod providers;
+mod relationships;
 mod retrieval;
 mod review;
 mod revision;

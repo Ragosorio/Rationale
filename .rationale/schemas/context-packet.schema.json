@@ -51,7 +51,7 @@
           },
           "match_kind": {
             "type": ["string", "null"],
-            "enum": ["file-exact", "file-contains-symbol", "structural", null]
+            "enum": ["file-exact", "file-contains-symbol", "relationship-endpoint", "structural", null]
           }
         }
       }

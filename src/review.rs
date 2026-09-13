@@ -766,6 +766,7 @@ mod tests {
             authority: None,
             provenance: None,
             supersedes: vec![],
+            relationship_bindings: vec![],
             approvals: vec![],
             binding_declarations: vec![BindingDeclaration {
                 id: "binding.test".to_string(),

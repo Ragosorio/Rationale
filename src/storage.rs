@@ -177,6 +177,25 @@ pub struct BindingDeclaration {
     pub extra: yaml_serde::Mapping,
 }
 
+/// Relación explicada por un Record: `source --kind--> target`, con
+/// identidad normalizada de ambos extremos. `kind` es texto por la misma
+/// razón que `severity`: leer es tolerante, escribir es estricto.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct RelationshipBinding {
+    pub id: String,
+    pub source: crate::providers::NodeBinding,
+    pub kind: String,
+    pub target: crate::providers::NodeBinding,
+    #[serde(flatten)]
+    pub extra: yaml_serde::Mapping,
+}
+
+impl RelationshipBinding {
+    pub fn relation_kind(&self) -> Option<crate::providers::RelationKind> {
+        crate::providers::RelationKind::parse(&self.kind)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(dead_code)]
 pub struct Approval {
@@ -356,6 +375,12 @@ pub struct Record {
     pub approvals: Vec<Approval>,
     #[serde(default)]
     pub binding_declarations: Vec<BindingDeclaration>,
+    /// Por qué dos nodos se relacionan (vNext). La relación es semántica y
+    /// agregada: los call-sites concretos son evidencia actual, nunca
+    /// identidad, y su estado (observada/indirecta/huérfana) se deriva en
+    /// cada consulta — nunca se persiste.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relationship_bindings: Vec<RelationshipBinding>,
     #[serde(default)]
     #[allow(dead_code)] // consumido por Trust Evaluator en Fase F (minimización, v0.5 §4.11)
     pub evidence: Vec<Evidence>,
@@ -390,6 +415,7 @@ pub enum StorageError {
     /// declara.
     InvalidSeverity(String),
     InvalidProvenance(String),
+    InvalidRelationshipKind(String),
 }
 
 impl std::fmt::Display for StorageError {
@@ -407,6 +433,10 @@ impl std::fmt::Display for StorageError {
             StorageError::InvalidAuthority(authority) => {
                 write!(f, "autoridad inválida: '{authority}'")
             }
+            StorageError::InvalidRelationshipKind(kind) => write!(
+                f,
+                "tipo de relación inválido: '{kind}' — solo relaciones estructurales (calls, uses, writes, imports, defines, implements, tests, configures, depends_on, http_calls)"
+            ),
             StorageError::InvalidProvenance(kind) => {
                 write!(
                     f,
@@ -536,6 +566,16 @@ pub fn write_record(path: &Path, record: &Record) -> Result<(), StorageError> {
     if let Some(kind) = record.provenance.as_ref().and_then(|p| p.kind.as_deref()) {
         if ProvenanceKind::parse(kind).is_none() {
             return Err(StorageError::InvalidProvenance(kind.to_string()));
+        }
+    }
+    for relationship in &record.relationship_bindings {
+        let structural = relationship.relation_kind().is_some_and(|kind| {
+            !kind.is_inferred() && kind != crate::providers::RelationKind::Other
+        });
+        if !structural {
+            return Err(StorageError::InvalidRelationshipKind(
+                relationship.kind.clone(),
+            ));
         }
     }
 
@@ -768,6 +808,7 @@ mod tests {
                 extra: yaml_serde::Mapping::new(),
             }],
             binding_declarations: vec![],
+            relationship_bindings: vec![],
             evidence: vec![],
             risks: vec![],
             bound_revision: None,
@@ -956,6 +997,7 @@ mod tests {
             supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![],
+            relationship_bindings: vec![],
             evidence: vec![],
             risks: vec![],
             bound_revision: None,
@@ -1030,6 +1072,7 @@ mod tests {
                         supersedes: vec![],
                         approvals: vec![],
                         binding_declarations: vec![],
+                        relationship_bindings: vec![],
                         evidence: vec![],
                         risks: vec![],
                         bound_revision: None,
@@ -1094,6 +1137,7 @@ mod tests {
             supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![],
+            relationship_bindings: vec![],
             evidence: vec![],
             risks: vec![],
             bound_revision: None,
@@ -1127,6 +1171,7 @@ mod tests {
             supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![],
+            relationship_bindings: vec![],
             evidence: vec![],
             risks: vec![],
             bound_revision: None,
