@@ -1,126 +1,121 @@
 # ADR-0017: Local activity stream and operation snapshots
 
-**Status:** proposed — pendiente de revisión cruzada independiente y aprobación humana antes de `accepted`.
+**Status:** proposed — pending independent cross-review and human approval before `accepted`.
 **Date:** 2026-09-12
-**Deciders:** Claude Code (análisis e implementación), por encargo del dueño del proyecto (brief de Rationale vNext, 2026-09-12); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno. Acota ADR-0012 §Decision 3 para dos emisores nuevos —el flujo de actividad y los snapshots de operación— y retira `RunLog`. Mientras ADR-0012 y este ADR sigan en `proposed`, este no adquiere autoridad sobre aquel: declara la tensión en vez de resolverla en silencio.
+**Deciders:** Claude Code (analysis and implementation), commissioned by the project owner (Rationale vNext brief, 2026-09-12); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** none. It narrows ADR-0012 §Decision 3 for two new emitters — the activity stream and operation snapshots — and retires `RunLog`. While ADR-0012 and this ADR remain `proposed`, this one gains no authority over that one: it declares the tension instead of resolving it silently.
 
 ## Context
 
-El brief de vNext pide que Rationale sea observable mientras un agente
-trabaja: una vista de actividad con el cliente, la intención, el target, lo
-considerado y lo seleccionado, el tamaño del packet, y un grafo que reacciona
-a eventos (`ActivityEvent`). El `RunLog` de Fase D (`runs/vertical-slice.ndjson`)
-solo tenía latencia, revisión, consistencia, estado del proveedor y bytes: no
-alcanza para nada de eso.
+The vNext brief asks for Rationale to be observable while an agent works: an
+activity view with the client, the intent, the target, what was considered and
+selected, the packet size, and a graph that reacts to events (`ActivityEvent`).
+Phase D's `RunLog` (`runs/vertical-slice.ndjson`) had only latency, revision,
+consistency, provider status, and bytes: not enough for any of that.
 
-ADR-0012 §Decision 3 prohíbe por defecto en la telemetría local los prompts de
-agente y el contenido de Records, y su *revisit trigger* exige una decisión
-explícita —no una ampliación silenciosa— para registrar algo prohibido. La
-intención declarada en `prepare_change` se parece a un prompt. Además:
+ADR-0012 §Decision 3 forbids agent prompts and Record content in local telemetry
+by default, and its *revisit trigger* requires an explicit decision — not a
+silent extension — to record something forbidden. The intent declared in
+`prepare_change` resembles a prompt. In addition:
 
-- Los snapshots de operación de vNext (`.rationale-local/operations/`) ya
-  guardan la intención, el target y el subgrafo seleccionado, porque
-  `finalize_change` y la UI los necesitan.
-- Los conflictos pendientes (`.rationale-local/conflicts/`) guardan los dos
-  statements en tensión, porque `resolve_conflict` debe poder continuar.
-- El test guardián que ADR-0012 §Validation prometía («falla si hay un campo de
-  texto libre no acotado») nunca se escribió.
-- Los escritores nuevos bajo `.rationale-local/` no aplicaban la exclusión de
-  Git antes de escribir; solo `init` e `install-agent` la instalaban
-  (ADR-0014 §Decision 3).
+- vNext's operation snapshots (`.rationale-local/operations/`) already store the
+  intent, the target, and the selected subgraph, because `finalize_change` and
+  the UI need them.
+- Pending conflicts (`.rationale-local/conflicts/`) store the two statements in
+  tension, because `resolve_conflict` must be able to continue.
+- The guard test ADR-0012 §Validation promised ("fails if there is an unbounded
+  free-text field") was never written.
+- New writers under `.rationale-local/` did not apply the Git exclusion before
+  writing; only `init` and `install-agent` installed it (ADR-0014 §Decision 3).
 
 ## Decision
 
-1. **Flujo de actividad** en `.rationale-local/activity/<session-id>.ndjson`:
-   append-only, un archivo por proceso (`rationale serve`, cada invocación de
-   la CLI), esquema `rationale/activity/1`. Cada evento lleva
-   `schema_version`, `session_id`, `seq`, `trace_id`, `operation_id`,
-   `timestamp` (RFC3339 UTC con milisegundos), `actor`, `project`, `kind` y
-   `payload`. Un archivo por sesión evita que Claude Code, Codex y Cursor
-   compitan por el mismo archivo.
-2. **Inventario de contenido permitido:** identificadores (ids de sesión,
-   traza, operación, Record y conflicto; claves de nodo y arista; rutas;
-   nombres calificados; el spec del target, ≤200 caracteres), estados,
-   conteos, latencias, tamaños, versión y nombre del cliente. **Un solo texto
-   libre:** la intención declarada, en una línea y ≤280 caracteres.
-   **Prohibido:** código y snippets, diffs, statements, rationale, evidencia,
-   preguntas de conflicto, respuestas humanas y resúmenes. El contenido de un
-   Record o de un conflicto viaja por referencia: la UI lo lee del canon.
-3. **Snapshots de operación** (`.rationale-local/operations/<op>.json`): estado
-   derivado funcional, no telemetría. Guardan el subgrafo (nombres, rutas,
-   claves, roles, ids de Records), la selección, el actor, la revisión base y
-   la intención; nunca el código del target. Retención: 200 operaciones.
-4. **Exclusión antes de escribir:** los escritores de vNext —el de
-   actividad, y el pipeline antes de un snapshot de operación o de un
-   conflicto— instalan la exclusión de `.rationale-local/` (ADR-0014) antes
-   de su primer contenido en cada proyecto, también con la actividad
-   desactivada.
-5. **Opt-out:** `RATIONALE_ACTIVITY=off` desactiva el flujo y los snapshots de
-   operación, porque ambos guardan la intención. Por defecto están activos: la
-   vista de actividad es parte del producto. Sin snapshot, `finalize_change`
-   no puede enlazar la operación y usa la base declarada o HEAD.
-6. **Retención:** sesiones de más de 14 días se eliminan, y nunca quedan más de
-   500 archivos. Se usa antigüedad y no solo conteo, para que una ráfaga de
-   sesiones cortas (una suite de tests) no desaloje la historia real.
-7. **`RunLog` se retira.** `review-decisions.ndjson` (flujo de revisión legado)
-   no cambia en este ADR.
+1. **Activity stream** in `.rationale-local/activity/<session-id>.ndjson`:
+   append-only, one file per process (`rationale serve`, each CLI invocation),
+   schema `rationale/activity/1`. Every event carries `schema_version`,
+   `session_id`, `seq`, `trace_id`, `operation_id`, `timestamp` (RFC 3339 UTC
+   with milliseconds), `actor`, `project`, `kind`, and `payload`. One file per
+   session keeps Claude Code, Codex, and Cursor from competing for the same file.
+2. **Inventory of allowed content:** identifiers (session, trace, operation,
+   Record, and conflict ids; node and edge keys; paths; qualified names; the
+   target spec, ≤200 characters), states, counts, latencies, sizes, and the
+   client's version and name. **A single free text:** the declared intent, on one
+   line and ≤280 characters. **Forbidden:** code and snippets, diffs,
+   statements, rationales, evidence, conflict questions, human answers, and
+   summaries. The content of a Record or a conflict travels by reference: the UI
+   reads it from the canon.
+3. **Operation snapshots** (`.rationale-local/operations/<op>.json`): functional
+   derived state, not telemetry. They store the subgraph (names, paths, keys,
+   roles, Record ids), the selection, the actor, the base revision, and the
+   intent; never the target's code. Retention: 200 operations.
+4. **Exclusion before writing:** vNext's writers — the activity writer, and the
+   pipeline before an operation snapshot or a conflict — install the
+   `.rationale-local/` exclusion (ADR-0014) before their first content in each
+   project, even when activity is disabled.
+5. **Opt-out:** `RATIONALE_ACTIVITY=off` disables the stream and the operation
+   snapshots, because both store the intent. They are active by default: the
+   activity view is part of the product. Without a snapshot, `finalize_change`
+   cannot link the operation and uses the declared base or HEAD.
+6. **Retention:** sessions older than 14 days are deleted, and never more than
+   500 files remain. Age is used, not only count, so that a burst of short
+   sessions (a test suite) does not evict the real history.
+7. **`RunLog` is retired.** `review-decisions.ndjson` (the legacy review flow) is
+   not changed by this ADR.
 
 ## Evidence
 
-- Brief de vNext (2026-09-12): modelo `ActivityEvent`, eventos requeridos y
-  vista de actividad con intención y target.
-- `src/activity.rs`: los payloads solo se construyen con `activity::payload::*`;
-  el test `payloads_are_bounded_and_carry_content_only_by_reference` recorre
-  cada constructor con entradas de 10.000 caracteres con secuencias ANSI y
-  falla ante un string sin techo, bytes de control, listas sin límite o claves
-  de contenido (`statement`, `rationale`, `detail`, `question`, `source`…).
-- `git_exclusion_is_installed_before_the_first_event` comprueba que, en un
-  repo recién inicializado, `.git/info/exclude` contiene `.rationale-local/`
-  y que `git status` no ve la actividad.
+- The vNext brief (2026-09-12): the `ActivityEvent` model, required events, and
+  an activity view with intent and target.
+- `src/activity.rs`: payloads are built only with `activity::payload::*`; the
+  test `payloads_are_bounded_and_carry_content_only_by_reference` walks every
+  constructor with 10,000-character inputs containing ANSI sequences and fails
+  on an unbounded string, control bytes, unbounded lists, or content keys
+  (`statement`, `rationale`, `detail`, `question`, `source`…).
+- `git_exclusion_is_installed_before_the_first_event` checks that, in a freshly
+  initialized repository, `.git/info/exclude` contains `.rationale-local/` and
+  that `git status` does not see the activity.
 
 ## Alternatives considered
 
-- **Conservar solo `RunLog`:** la UI no podría mostrar qué hace el agente ni
-  encender el subgrafo seleccionado. Descartado: contradice el brief.
-- **Incluir statements en los eventos:** duplicaría el contenido del canon en
-  un segundo almacén no versionado, contra la minimización (v0.5 §4.11). La UI
-  ya puede leer el canon.
-- **Un único `activity.ndjson`:** varios procesos de agente escribirían a la
-  vez; habría que coordinar locks entre procesos sin necesidad.
-- **Desactivado por defecto (opt-in):** la vista de actividad quedaría vacía
-  en el flujo normal. Se prefiere activo por defecto, con contenido mínimo,
-  local, excluido de Git y con opt-out explícito.
+- **Keeping only `RunLog`:** the UI could not show what the agent is doing or
+  light up the selected subgraph. Discarded: it contradicts the brief.
+- **Including statements in events:** it would duplicate canon content in a
+  second, unversioned store, against minimization (v0.5 §4.11). The UI can
+  already read the canon.
+- **A single `activity.ndjson`:** several agent processes would write at once;
+  cross-process locks would have to be coordinated for no reason.
+- **Disabled by default (opt-in):** the activity view would be empty in the
+  normal flow. Active by default is preferred, with minimal content, local,
+  excluded from Git, and with an explicit opt-out.
 
 ## Consequences
 
-- La UI observa sesiones de varios agentes sin coordinación entre procesos.
-- Cualquier evento nuevo debe pasar por `activity::payload`, así que el test
-  guardián lo cubre automáticamente.
-- Una intención escrita por una persona queda en disco local, acotada, hasta
-  por 14 días.
+- The UI observes sessions of several agents without coordination between
+  processes.
+- Any new event must go through `activity::payload`, so the guard test covers it
+  automatically.
+- An intent written by a person stays on local disk, bounded, for up to 14 days.
 
 ## Risks
 
-- **La intención puede contener texto sensible.** Mitigación: una línea, ≤280
-  caracteres, local-only, excluida de Git, retención de 14 días y
+- **The intent may contain sensitive text.** Mitigation: one line, ≤280
+  characters, local-only, excluded from Git, 14-day retention, and
   `RATIONALE_ACTIVITY=off`.
-- **Rutas y nombres calificados revelan la estructura del código.** Ya están
-  en el canon versionado y en Git; los eventos no añaden contenido de código.
-- **Proyectos con `.rationale-local/` ya versionado:** `info/exclude` no saca
-  archivos seguidos. `install-agent` sigue advirtiendo con el comando de
-  remediación (ADR-0014 §Decision 6).
+- **Paths and qualified names reveal the code's structure.** They are already in
+  the versioned canon and in Git; events add no code content.
+- **Projects with `.rationale-local/` already versioned:** `info/exclude` does
+  not untrack files. `install-agent` keeps warning with the remediation command
+  (ADR-0014 §Decision 6).
 
 ## Validation
 
-Tests unitarios de `src/activity.rs` (orden y `seq`, combinación de sesiones,
-*tail* de líneas completas, exclusión, opt-out, retención, minimización) y el
-test de integración MCP del ciclo de vida de una operación, que verifica la
-secuencia de eventos de `prepare_change` y `finalize_change`.
+Unit tests in `src/activity.rs` (order and `seq`, merging sessions, *tailing*
+complete lines, exclusion, opt-out, retention, minimization) and the MCP
+integration test of an operation's lifecycle, which checks the sequence of
+`prepare_change` and `finalize_change` events.
 
 ## Revisit trigger
 
-Reabrir si la UI necesita un texto libre más allá de la intención, si se
-propone transmitir actividad fuera de la máquina (eso requiere además la
-decisión de opt-in de ADR-0012) o si la actividad debe compartirse entre
-clones.
+Reopen if the UI needs free text beyond the intent, if transmitting activity off
+the machine is proposed (that also requires ADR-0012's opt-in decision), or if
+activity must be shared between clones.

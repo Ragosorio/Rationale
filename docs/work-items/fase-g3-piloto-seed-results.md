@@ -1,68 +1,66 @@
-# G3.1 — sembrado de decisiones históricas en el piloto
+# G3.1 — seeding historical decisions in the pilot
 
-Fecha de ejecución: 2026-07-26. Esta evidencia cubre la primera actividad del
-piloto comparativo: convertir decisiones ya documentadas en propuestas de
-Rationale sin aprobarlas automáticamente.
+Run date: 2026-07-26. This evidence covers the first activity of the comparative
+pilot: turning already documented decisions into Rationale proposals without
+approving them automatically.
 
-## Alcance y fuentes
+## Scope and sources
 
-Se trabajó sobre los clones locales autorizados:
+Work was done on the authorized local clones:
 
-| Proyecto | HEAD | Índice Codebase Memory | Propuestas creadas |
+| Project | HEAD | Codebase Memory index | Proposals created |
 |---|---|---:|---:|
-| Monorepo | `8588e14329a39e8f206296a94abcc1b840964de9` | 12.555 nodos / 23.910 aristas | 11 |
-| BoostAPI | `3102e5d2b9d65861fe9eb5756a5e34d7aeeae96c` | 8.605 nodos / 27.719 aristas | 18 |
+| Monorepo | `8588e14329a39e8f206296a94abcc1b840964de9` | 12,555 nodes / 23,910 edges | 11 |
+| BoostAPI | `3102e5d2b9d65861fe9eb5756a5e34d7aeeae96c` | 8,605 nodes / 27,719 edges | 18 |
 
-Las fuentes fueron documentación contemporánea y un commit verificable, no una
-reconstrucción basada únicamente en memoria:
+The sources were contemporary documentation and a verifiable commit, not a
+reconstruction based only on memory:
 
-- BoostAPI: decisiones de assignment, workflows, auth/RBAC, sesiones de
-  WhatsApp, pagos, interacciones y tres commits incident-driven.
-- Monorepo: auditoría BFF/auth, contrato BoostAPI, RBAC, despliegue, sesión,
-  plan OAuth mobile, catálogo, ADR de documentación, sanitización y el commit
-  `5287080` sobre límites de mensajes.
+- BoostAPI: decisions about assignment, workflows, auth/RBAC, WhatsApp sessions,
+  payments, interactions, and three incident-driven commits.
+- Monorepo: the BFF/auth audit, the BoostAPI contract, RBAC, deployment,
+  sessions, the mobile OAuth plan, the catalog, the documentation ADR,
+  sanitization, and commit `5287080` about message limits.
 
-La cobertura del grafo es útil para ubicar símbolos y fronteras, pero no se
-trata como verdad única. La verificación directa de cada fuente documental fue
-la base de las afirmaciones; los índices quedaron en estado `ready` y los
-providers reportaron `successful/Complete` en ambos repositorios.
+The graph coverage is useful to locate symbols and boundaries, but it is not
+treated as the sole truth. Directly verifying each documentary source was the
+basis of the claims; the indexes stayed `ready` and the providers reported
+`successful/Complete` in both repositories.
 
-## Resultado de validación
+## Validation result
 
-| Proyecto | Archivos YAML | Interfaz usada | Resultado |
+| Project | YAML files | Interface used | Result |
 |---|---:|---|---|
-| BoostAPI | 18 | `rationale review --project-root ... </dev/null` | 18 listadas; EOF saltó todas |
-| Monorepo | 11 | `rationale review --project-root ... </dev/null` | 11 listadas; EOF saltó todas |
+| BoostAPI | 18 | `rationale review --project-root ... </dev/null` | 18 listed; EOF skipped all |
+| Monorepo | 11 | `rationale review --project-root ... </dev/null` | 11 listed; EOF skipped all |
 
-La CLI leyó las 29 propuestas sin errores de YAML ni de deserialización. Cada
-una mostró afirmación, razón, Subject, severidad, actor y autoridad declarada.
-No se escribió ningún Record aprobado: `approvals` permanece vacío y la
-entrada por EOF conserva todas las propuestas pendientes en `proposals/`.
+The CLI read the 29 proposals without YAML or deserialization errors. Each one
+showed its statement, rationale, Subject, severity, actor, and declared
+authority. No approved Record was written: `approvals` stays empty, and the EOF
+input keeps every proposal pending in `proposals/`.
 
-## Estado de los repositorios
+## State of the repositories
 
-La estructura `.rationale/` ya existía vacía en Monorepo; BoostAPI conserva las
-18 propuestas recién creadas. Ningún agente instaló bloques en `CLAUDE.md`,
-`.mcp.json` u otros archivos de configuración. Ambos clones quedaron dirty
-únicamente por artefactos del piloto (`.rationale/` en BoostAPI y
-`.rationale-local/` de ejecuciones previas); no se hicieron commits en esos
-repositorios.
+The `.rationale/` structure already existed, empty, in Monorepo; BoostAPI keeps
+the 18 newly created proposals. No agent installed blocks in `CLAUDE.md`,
+`.mcp.json`, or other configuration files. Both clones were left dirty only by
+pilot artifacts (`.rationale/` in BoostAPI and `.rationale-local/` from earlier
+runs); no commits were made in those repositories.
 
-## Qué demuestra y qué no demuestra
+## What it demonstrates and what it does not
 
-Demuestra que Rationale puede recibir un lote heterogéneo de decisiones reales
-de dos repositorios, mantener su evidencia y presentarlas una por pantalla sin
-aprobarlas ni ocultar errores.
+It demonstrates that Rationale can receive a heterogeneous batch of real
+decisions from two repositories, keep their evidence, and present them one per
+screen without approving them or hiding errors.
 
-Todavía no demuestra recall/precisión del contexto ni autoriza captura asistida.
-El siguiente paso de G3 es revisión humana de las 29 propuestas (corregir,
-rechazar o aprobar explícitamente). Después se ejecutará la matriz read-only de
-20–30 targets con ground truth antes de habilitar mutaciones sobre cambios
-reales.
+It does not yet demonstrate context recall/precision or authorize assisted
+capture. The next step of G3 is a human review of the 29 proposals (correct,
+reject, or approve explicitly). After that, the read-only matrix of 20–30 targets
+with ground truth will run before enabling mutations on real changes.
 
-## Gate humano pendiente
+## Pending human gate
 
-El actor resuelto por la CLI fue `user:Roo Rolando Osorio <rosorio@roo.com.gt>`
-con autoridad declarada `contributor`. Eso identifica quién revisaría, pero no
-es una aprobación. El agente no debe convertir estas propuestas en Records sin
-la sesión humana explícita de `rationale review`.
+The actor resolved by the CLI was `user:Roo Rolando Osorio <rosorio@roo.com.gt>`
+with declared authority `contributor`. That identifies who would review, but it is
+not an approval. The agent must not turn these proposals into Records without the
+explicit human `rationale review` session.

@@ -1,65 +1,85 @@
 # Diagnostics
 
-## Estado general
+## Overall state
 
 ```bash
-rationale health --project-root /ruta/al/proyecto
+rationale health --project-root /path/to/project
 ```
 
-Reporta: `project_id`, `git_revision`, `working_tree_dirty`, `provider_status`, `provider_coverage` — y, si el proveedor no respondió, `provider_error` con el mensaje real (nunca oculto).
+It reports `project_id`, `git_revision`, `working_tree_dirty`,
+`provider_status`, and `provider_coverage` — and, when the provider did not
+respond, `provider_error` with the real message, never hidden.
 
-## Ver qué decidió Rationale sobre un target concreto
+## See what Rationale decided about a target
 
 ```bash
 rationale prepare "src/auth/authorization.ts::resolveEntityRole"
 ```
 
-`stderr` trae el diagnóstico paso a paso (Subject resuelto, target resuelto, cache HIT/MISS, applicability/linkage/authority calculados); `stdout` trae solo el `ContextPacket` JSON — nunca mezclados (`Arquitectura §11.1`).
+`stderr` carries the step-by-step diagnostics (resolved Subject, resolved
+target, cache HIT/MISS, computed applicability, linkage, and authority);
+`stdout` carries only the `ContextPacket` JSON. They are never mixed
+(`Arquitectura §11.1`).
 
-## Conflictos con reglas fijadas
+## Conflicts with pinned rules
 
 ```bash
-rationale conflicts --project-root /ruta/al/proyecto
+rationale conflicts --project-root /path/to/project
 rationale resolve <conflict-id> keep-pinned
 ```
 
-Un conflicto aparece cuando un agente intentó reemplazar un Record `pinned`; su
-afirmación no se escribió y espera la decisión humana.
+A conflict appears when an agent tried to replace a `pinned` Record; its
+assertion was not written and waits for a human decision.
 
-## Integridad del canon y propuestas anteriores a 1.0
+## Canon integrity and pre-1.0 proposals
 
 ```bash
 rationale doctor --check
 rationale migrate --dry-run
 ```
 
-## Ver el trabajo en vivo
+## Agents and skills
+
+```bash
+rationale install-agent --dry-run
+```
+
+It prints what the installer would change without writing anything: protocol
+blocks, skill files kept because you edited them, skills with unknown
+provenance, and skill directories left alone because they are symbolic links.
+In Claude Code, `/rationale-health` combines the MCP `health` tool with
+`rationale doctor`.
+
+## Watch work live
 
 ```bash
 rationale ui
 ```
 
-El Control Room muestra operaciones, actividad y memoria sin escribir nada. Ver
-[`docs/user-guide/control-room.md`](../user-guide/control-room.md).
+The Control Room shows operations, activity, and memory without writing
+anything. See [`docs/user-guide/control-room.md`](../user-guide/control-room.md).
 
-## Actividad local
+## Local activity
 
-Nunca se envía a ningún servicio (`Arquitectura §11.14`) y vive en `.rationale-local/`, excluido de Git (ADR-0014). Qué contiene y qué nunca contiene: ADR-0017.
+It is never sent to any service (`Arquitectura §11.14`) and lives in
+`.rationale-local/`, excluded from Git (ADR-0014). What it contains and never
+contains: ADR-0017.
 
 ```bash
-ls -t .rationale-local/activity/                                    # una sesión por proceso: rationale serve o una invocación de la CLI
-tail -n 20 "$(ls -t .rationale-local/activity/*.ndjson | head -1)"  # eventos de la sesión más reciente
-ls -t .rationale-local/operations/ | head                           # snapshots de operación: subgrafo y selección de cada prepare_change
-RATIONALE_ACTIVITY=off rationale serve                              # desactiva el flujo de actividad
+ls -t .rationale-local/activity/                                    # one session per process: rationale serve or one CLI invocation
+tail -n 20 "$(ls -t .rationale-local/activity/*.ndjson | head -1)"  # events of the most recent session
+ls -t .rationale-local/operations/ | head                           # operation snapshots: subgraph and selection of each prepare_change
+RATIONALE_ACTIVITY=off rationale serve                              # disables the activity stream
 ```
 
-El `RunLog` de Fase D (`runs/vertical-slice.ndjson`) se retiró en vNext: la actividad lo reemplaza.
+The Phase D `RunLog` (`runs/vertical-slice.ndjson`) was retired in vNext; the
+activity stream replaces it.
 
-## Probar el servidor MCP directamente
+## Talk to the MCP server directly
 
-Sin un agente de por medio. El servidor de Rationale habla JSON-RPC delimitado
-por líneas sobre stdio (ADR-0007); `Content-Length` solo lo usa el cliente que
-Rationale abre hacia Codebase Memory.
+Without an agent in between. Rationale's server speaks line-delimited JSON-RPC
+over stdio (ADR-0007); `Content-Length` framing is used only by the client
+Rationale opens toward Codebase Memory.
 
 ```bash
 python3 - <<'PY'
@@ -74,15 +94,16 @@ proc.stdin.close(); proc.wait()
 PY
 ```
 
-## Verificar que el schema de un Record/Subject no divergió
+## Check that a Record or Subject schema has not diverged
 
 ```bash
 cargo test --test schema_validation
 ```
 
-Compara los campos `required` de los 7 schemas JSON contra los campos no-`Option` de los structs Rust reales.
+It compares the `required` fields of the seven JSON schemas with the
+non-`Option` fields of the real Rust structs.
 
-## Round-trip de un Record (verificar que escribir no pierde datos)
+## Round-trip a Record (check that writing loses no data)
 
 ```bash
 cargo test storage::tests::real_record_roundtrip_loses_no_data

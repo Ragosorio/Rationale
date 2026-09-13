@@ -1,80 +1,80 @@
-# beta.3 — migración de agentes e identidad de Codebase Memory
+# beta.3 — agent migration and Codebase Memory identity
 
-**Estado:** validación end-to-end completa, incluida recarga real de Cursor
+**Status:** end-to-end validation complete, including a real Cursor reload
 (2026-07-29).
 
-## Hallazgos
+## Findings
 
-1. Cursor cargó la configuración pero no resolvió el comando lógico
-   `rationale` desde la aplicación gráfica.
-2. Codex comprobaba solo el nombre registrado, no comando y argumentos.
-3. Rationale reconstruía el nombre derivado de Codebase Memory. El proveedor
-   colapsa separadores consecutivos; Rationale no.
-4. `resolve_target` reindexaba en cada consulta y elegía el primer símbolo por
-   nombre sin acotar por archivo.
-5. El cliente MCP no correlacionaba respuestas JSON-RPC por `id`.
+1. Cursor loaded the configuration but did not resolve the logical command
+   `rationale` from the graphical application.
+2. Codex checked only the registered name, not the command and arguments.
+3. Rationale reconstructed the name derived by Codebase Memory. The provider
+   collapses consecutive separators; Rationale did not.
+4. `resolve_target` re-indexed on every query and chose the first symbol by name
+   without narrowing by file.
+5. The MCP client did not correlate JSON-RPC responses by `id`.
 
-## Decisiones propuestas
+## Proposed decisions
 
-- ADR-0016 mueve el servidor a configuración global con ruta absoluta y deja
-  instrucciones/skills en el proyecto.
-- La identidad del índice se obtiene de `list_projects.root_path` o de la
-  respuesta pública de `index_repository`; nunca se reconstruye ni se lee
-  almacenamiento privado.
-- El handle público se guarda en
-  `.rationale-local/codebase-memory-project.json`, ligado a la `root_path`.
-  Un índice existente se consulta; durante la migración solo se indexa si un
-  proceso nuevo del proveedor no reporta la ruta ni existe aún ese vínculo.
-- La resolución de símbolos pasa también `file_pattern`.
+- ADR-0016 moves the server to global configuration with an absolute path and
+  leaves instructions/skills in the project.
+- The index identity comes from `list_projects.root_path` or from the public
+  response of `index_repository`; it is never reconstructed and private storage
+  is never read.
+- The public handle is stored in
+  `.rationale-local/codebase-memory-project.json`, tied to the `root_path`.
+  An existing index is queried; during the migration, indexing happens only if a
+  new provider process does not report the path and no such link exists yet.
+- Symbol resolution also passes `file_pattern`.
 
-## Reindexación, IDs y clones
+## Re-indexing, IDs, and clones
 
-- Rationale no persiste node IDs de Codebase Memory. Sus bindings canónicos
-  son rutas/símbolos propios y sobreviven a una nueva generación del grafo.
-- Reindexar puede reemplazar la base derivada y cambiar identificadores
-  internos. No debe romper el canon, pero crea un estado transitorio; por eso
-  se eliminó la reindexación automática por consulta.
-- Dos clones del mismo remoto en rutas diferentes son dos proyectos derivados
-  distintos. Rationale conserva un canon `.rationale/` por checkout.
+- Rationale does not persist Codebase Memory node IDs. Its canonical bindings are
+  its own paths/symbols and survive a new generation of the graph.
+- Re-indexing can replace the derived database and change internal identifiers.
+  It must not break the canon, but it creates a transient state; that is why the
+  automatic per-query re-indexing was removed.
+- Two clones of the same remote at different paths are two distinct derived
+  projects. Rationale keeps one `.rationale/` canon per checkout.
 
 ## Unknown
 
-La versión instalada imprime `0.8.1` en CLI mientras su handshake MCP anuncia
-`0.10.0`. Esa discrepancia pertenece al proveedor y no se resuelve leyendo su
-almacenamiento interno.
+The installed version prints `0.8.1` in the CLI while its MCP handshake announces
+`0.10.0`. That discrepancy belongs to the provider and is not resolved by reading
+its internal storage.
 
 ## Risk
 
-Una ruta extremadamente profunda hizo fallar al proveedor al volcar un índice
-con nombre derivado largo. Rationale debe degradar honestamente; no puede
-corregir un límite interno inventando otro algoritmo de nombres.
+An extremely deep path made the provider fail when dumping an index with a long
+derived name. Rationale must degrade honestly; it cannot fix an internal limit by
+inventing another naming algorithm.
 
 ## Next experiment
 
-Publicar el tag autorizado y verificar los artefactos cross-platform de CI
-antes de promover beta.3 como Release.
+Publish the authorized tag and verify the cross-platform CI artifacts before
+promoting beta.3 as a release.
 
-## Evidencia de validación local
+## Local validation evidence
 
-- Formatter y clippy estricto: pasan.
-- Suite completa: 273 tests pasan (unitarios, CLI, MCP, concurrencia,
-  schemas y cadena de dogfood).
-- Clean-room beta.2 → beta.3: Claude Code, Codex y Cursor convergen; tres
-  servidores ajenos permanecen; la segunda ejecución conserva hashes
-  byte-idénticos; la reversión global elimina solo Rationale.
-- Paquete macOS arm64: checksum verificado y contenido esperado.
-- Instalación real: `/Users/roor.osorio/.local/bin/rationale` reporta
-  `v0.1.0-beta.3`; `~/.claude.json`, `~/.cursor/mcp.json` y
-  `codex mcp get rationale` apuntan a esa ruta.
-- MCP stdio real: `initialize` reporta beta.3 y `tools/call health` devuelve
+- Formatter and strict Clippy: pass.
+- Full suite: 273 tests pass (unit, CLI, MCP, concurrency, schemas, and the
+  dogfood chain).
+- Clean room beta.2 → beta.3: Claude Code, Codex, and Cursor converge; three
+  foreign servers remain; the second run keeps byte-identical hashes; the global
+  reversal removes only Rationale.
+- macOS arm64 package: checksum verified and expected content.
+- Real installation: `/Users/roor.osorio/.local/bin/rationale` reports
+  `v0.1.0-beta.3`; `~/.claude.json`, `~/.cursor/mcp.json`, and
+  `codex mcp get rationale` point at that path.
+- Real stdio MCP: `initialize` reports beta.3 and `tools/call health` returns
   `provider_status=successful`, `provider_coverage=complete`.
-- `prepare src/agents.rs::install` resuelve
-  `Users-roor.osorio-Desktop-Rationale.src.agents.install`, no una
-  coincidencia documental.
-- El clon profundo usado por Cursor reporta health completo después de
-  guardar su handle público local; sus entradas `.mcp.json` heredadas fueron
-  retiradas y el registro global permanece.
-- Cursor recargado muestra `user-rationale` conectado (`ready`), expone
-  `prepare_change`, `explain_target`, `finalize_change` y `health`, y la
-  invocación real de `health` devuelve `provider_status=successful` y
+- `prepare src/agents.rs::install` resolves
+  `Users-roor.osorio-Desktop-Rationale.src.agents.install`, not a documentation
+  match.
+- The deep clone used by Cursor reports complete health after storing its local
+  public handle; its legacy `.mcp.json` entries were removed and the global
+  registration remains.
+- Cursor, reloaded, shows `user-rationale` connected (`ready`), exposes
+  `prepare_change`, `explain_target`, `finalize_change`, and `health`, and the
+  real `health` call returns `provider_status=successful` and
   `provider_coverage=complete`.

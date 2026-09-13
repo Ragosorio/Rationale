@@ -1,16 +1,16 @@
 ---
 name: Documentation
-about: Reportar documentación faltante, confusa u obsoleta
+about: Report missing, confusing, or outdated documentation
 title: "docs: "
 labels: documentation
 ---
 
-## Audiencia
+## Audience
 
-Usuario / contribuidor / operador / agente / otro:
+User / contributor / operator / agent / other:
 
-## Problema actual
+## Current problem
 
-## Cambio propuesto
+## Proposed change
 
-## Comando o enlace afectado
+## Affected command, page, or link

@@ -1,8 +1,8 @@
-# Registro de la revisión de Codebase Memory analizada.
+# Record of the Codebase Memory revision analyzed.
 # Rationale_Arquitectura_Conceptual_v0.1.md §6.1
 
 repository: DeusData/codebase-memory-mcp
-clone_path_local: "~/Desktop/codebase-memory-mcp"   # ruta local, no un path de máquina sensible
+clone_path_local: "~/Desktop/codebase-memory-mcp"   # local path, not a sensitive machine path
 branch: main
 commit: 97ce23f9827177fff3858831156e9795c6832b18
 commit_date: "2026-07-23T20:06:31+02:00"

@@ -2,31 +2,36 @@
 
 **Status:** proposed
 **Date:** 2026-07-26
-**Deciders:** dueño humano del proyecto + revisión cruzada
+**Deciders:** the project's human owner + cross-review
 
 ## Context
 
-La captura F8 produce propuestas pendientes y la aprobación inicial ya es
-humana. La alfa necesita operar también sobre Records aprobados: corregirlos,
-disputarlos, revocarlos, supersederlos, cambiar la autoridad y añadir
-evidencia, sin borrar la historia ni elevar el rol de un actor por accidente.
+F8 capture produces pending proposals, and the initial approval is already
+human. The alpha also needs to operate on approved Records: correct, dispute,
+revoke, and supersede them, change their authority, and add evidence, without
+erasing history or raising an actor's role by accident.
 
 ## Decision proposal
 
-- Cada mutación se registra como evento bajo `Record.lifecycle.events`.
-- `revoke` prevalece sobre aprobaciones históricas.
-- `supersede` establece `applicability_policy.superseded_by` y marca el
-  lifecycle como `superseded`.
-- Cambiar autoridad añade una aprobación auditable, pero solo para un actor y
-  rol presentes en `.rationale/config.yaml`.
-- Un actor no declarado no puede ejecutar lifecycle mutations ni autoelevarse.
-- `review_record` es CLI interactiva; MCP permanece read-only/prepare.
-- La escritura compara el contenido leído antes de sobrescribir, y aborta si
-  hubo drift.
+- Every mutation is recorded as an event under `Record.lifecycle.events`.
+- `revoke` prevails over historical approvals.
+- `supersede` sets `applicability_policy.superseded_by` and marks the lifecycle
+  as `superseded`.
+- Changing authority adds an auditable approval, but only for an actor and role
+  present in `.rationale/config.yaml`.
+- An undeclared actor cannot run lifecycle mutations or elevate itself.
+- `review_record` is an interactive CLI; MCP stays read-only/prepare.
+- Writing compares the content it read before overwriting, and aborts if it
+  drifted.
+
+Note added after 1.0: authority became `normal` or `pinned`. `rationale pin` and
+`rationale unpin` change it through the same declared-authority rules, and MCP
+captures agent-asserted Records through a gate but still never pins, unpins, or
+mutates a Record's lifecycle. See `docs/work-items/vnext-implementation-plan.md`.
 
 ## Evidence
 
 - `src/review.rs::mutate_record`
-- `src/storage.rs::is_revoked` y `superseded_by`
+- `src/storage.rs::is_revoked` and `superseded_by`
 - `src/assessment.rs`
-- tests de disputa, revocación, superseder, evidencia y autoelevación
+- tests for dispute, revocation, supersession, evidence, and self-elevation

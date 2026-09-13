@@ -1,42 +1,50 @@
 # Cache reset
 
-La capa derivada (ADR-0004/0005) vive en `~/.cache/rationale/projects/<ruta-sanitizada>/derived.sqlite3` — **nunca dentro del repo**, y **nunca la única copia de una decisión** (`Arquitectura §11.7`). Borrarla es siempre seguro: se reconstruye sola en la siguiente consulta.
+The derived layer (ADR-0004/0005) lives under `~/.cache/rationale/projects/` —
+**never inside the repository**, and **never the only copy of a decision**
+(`Arquitectura §11.7`). Deleting it is always safe: it rebuilds itself on the
+next query.
 
-## Encontrar el cache de un proyecto
-
-```bash
-rationale health --project-root /ruta/al/proyecto
-```
-
-O calcularlo a mano — la ruta sanitiza el path absoluto del proyecto reemplazando `/` por `-`:
+## Find a project's cache
 
 ```bash
-echo "$HOME/.cache/rationale/projects/$(realpath /ruta/al/proyecto | sed 's#^/##; s#/#-#g')"
+rationale health --project-root /path/to/project
 ```
 
-## Borrar el cache de un proyecto
+Or compute it by hand. The directory name sanitizes the project's absolute path
+by replacing `/` with `-`:
 
 ```bash
-rm -rf "$HOME/.cache/rationale/projects/<ruta-sanitizada>"
+echo "$HOME/.cache/rationale/projects/$(realpath /path/to/project | sed 's#^/##; s#/#-#g')"
 ```
 
-## Borrar todo el cache de Rationale (todos los proyectos)
+## Delete one project's cache
+
+```bash
+rm -rf "$HOME/.cache/rationale/projects/<sanitized-path>"
+```
+
+## Delete all of Rationale's cache (every project)
 
 ```bash
 rm -rf "$HOME/.cache/rationale"
 ```
 
-## Qué se pierde y qué no
+## What is lost and what is not
 
-| Se pierde (se recalcula solo) | Nunca se pierde (vive en `.rationale/`, versionado en Git) |
+| Lost (recomputed automatically) | Never lost (lives in `.rationale/`, versioned in Git) |
 |---|---|
-| Assessments cacheados | Records, Subjects y configuración |
-| Índice FTS5 de statements/títulos | Propuestas archivadas y anteriores a 1.0 |
+| Cached assessments | Records, Subjects, and configuration |
+| FTS5 index of statements and titles | Archived and pre-1.0 proposals |
 
-Verificado con test (`cache::tests::cache_rebuild_from_scratch_never_loses_canonical_data`): borrar el cache y reconstruirlo produce resultados idénticos a partir de los mismos Records reales.
+Verified by a test (`cache::tests::cache_rebuild_from_scratch_never_loses_canonical_data`):
+deleting the cache and rebuilding it produces identical results from the same
+real Records.
 
-## Cuándo hacerlo
+## When to do it
 
-- El cache quedó corrupto (muy raro; SQLite en modo WAL es robusto ante cierres abruptos).
-- Sospechas que un assessment quedó con datos obsoletos de una versión anterior del schema.
-- Estás depurando y quieres confirmar que un resultado no depende de estado cacheado.
+- The cache is corrupted (very rare; SQLite in WAL mode is robust against abrupt
+  shutdowns).
+- You suspect an assessment kept stale data from an earlier schema version.
+- You are debugging and want to confirm a result does not depend on cached
+  state.

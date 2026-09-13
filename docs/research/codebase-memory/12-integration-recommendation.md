@@ -1,81 +1,81 @@
 # 12 — Integration recommendation (CBM-012)
 
-Síntesis de `00` a `11`. Este documento no introduce evidencia nueva — consolida los hallazgos de la epic en una recomendación de frontera de adaptador, siguiendo el contrato `CodeIntelligenceProvider` de `Rationale_v0.5.md §21`.
+A synthesis of `00` to `11`. This document introduces no new evidence — it consolidates the epic's findings into an adapter-boundary recommendation, following the `CodeIntelligenceProvider` contract of `Rationale_v0.5.md §21`.
 
-## Resumen de hallazgos por severidad
+## Summary of findings by severity
 
-### Alto impacto arquitectónico
+### High architectural impact
 
-1. **Revisión y cobertura no son confiables desde el proveedor sin verificación independiente** (`05`). `detect_changes` devolvió resultados vacíos ante 200 archivos realmente modificados. **Decisión:** el Revision Coordinator de Rationale debe derivar su propia verdad de revisión desde Git directamente, tratando cualquier señal de revisión/cambio del proveedor como un dato adicional de baja confianza, nunca como fuente autoritativa. Esto no es una novedad conceptual (ya estaba en `v0.5 §4.16`) — esta epic lo convierte de principio preventivo en necesidad demostrada empíricamente. *(Nota: B1.3 sí resolvió que el campo de cobertura `parse_partial`/`skipped`/`not_indexed` funciona correctamente vía MCP en versiones posteriores a 0.8.1 — el problema de `detect_changes` es independiente y sigue sin explicación.)*
-2. **La resolución cross-package no puede asumirse — ni siquiera cuando el proveedor la soporta** (`08`, refinado en B1.2). Cero relaciones `IMPORTS` cruzan paquetes en un monorepo real de 8 paquetes npm, **pese a que `pass_pkgmap.c` está diseñado exactamente para resolver ese patrón** (`@repo/pkg`), fue introducido 3 meses antes de la indexación, y los manifiestos/imports reales del Monorepo cumplen las condiciones documentadas para que funcione. **Decisión:** el "camino de relevancia" cross-workspace que `v0.5 §19.3, §32.0` promete no puede construirse únicamente sobre edges del proveedor en la v1 — los bindings manuales/contractuales declarados por el equipo deben ser la vía primaria para relaciones cross-package, no un fallback de última instancia.
-3. **Latencia de CLI y de arranque de MCP incompatible con el fast path baseline** (`04`, `11`, medido formalmente en B1.1). CLI: 2.2s–6.8s por invocación. MCP: el handshake `initialize` cuesta ~6.8s (igual que la CLI fría — es el mismo costo de arranque, no un problema de transporte), pero **una vez completado, cada llamada subsecuente en la misma sesión cuesta 15-30ms**, dentro del presupuesto de `v0.5 §20.5.2`. **Decisión:** el fast path baseline nunca debe lanzar un proceso/sesión nuevo por operación; debe depender de bindings ya resueltos localmente. Para el modo intent-aware, una **sesión MCP persistente de larga duración** (un solo `initialize` por vida del proceso de Rationale) es viable y preferible a subprocesos CLI repetidos — a favor de ADR-0002.
+1. **Revision and coverage are not reliable from the provider without independent verification** (`05`). `detect_changes` returned empty results in the face of 200 really modified files. **Decision:** Rationale's Revision Coordinator must derive its own revision truth directly from Git, treating any revision/change signal from the provider as additional low-confidence data, never as an authoritative source. This is not conceptually new (it was already in `v0.5 §4.16`) — this epic turns it from a preventive principle into an empirically demonstrated necessity. *(Note: B1.3 did establish that the coverage fields `parse_partial`/`skipped`/`not_indexed` work correctly over MCP in versions after 0.8.1 — the `detect_changes` problem is independent and remains unexplained.)*
+2. **Cross-package resolution cannot be assumed — not even when the provider supports it** (`08`, refined in B1.2). Zero `IMPORTS` relationships cross packages in a real monorepo of 8 npm packages, **even though `pass_pkgmap.c` is designed exactly to resolve that pattern** (`@repo/pkg`), was introduced 3 months before the indexing, and the Monorepo's real manifests/imports meet the conditions documented for it to work. **Decision:** the cross-workspace "relevance path" that `v0.5 §19.3, §32.0` promises cannot be built only on provider edges in v1 — manual/contractual bindings declared by the team must be the primary path for cross-package relationships, not a last-resort fallback.
+3. **CLI and MCP startup latency incompatible with the baseline fast path** (`04`, `11`, measured formally in B1.1). CLI: 2.2 s–6.8 s per invocation. MCP: the `initialize` handshake costs ~6.8 s (the same as the cold CLI — it is the same startup cost, not a transport problem), but **once completed, each subsequent call in the same session costs 15–30 ms**, within the budget of `v0.5 §20.5.2`. **Decision:** the baseline fast path must never launch a new process/session per operation; it must depend on bindings already resolved locally. For the intent-aware mode, a **long-lived persistent MCP session** (a single `initialize` per life of Rationale's process) is viable and preferable to repeated CLI subprocesses — in favor of ADR-0002.
 
-### Impacto medio
+### Medium impact
 
-4. **Tres identificadores de versión inconsistentes entre sí** (`00`, `01`, `06`): `--version` (release vs `dev`), `git describe`, y el hash de `daemon status`. **Decisión:** negociación de capacidades explícita (`capabilities()`), nunca inferencia de compatibilidad a partir de parseo de versión.
-5. **El "ADR" de CBM es un documento único de arquitectura, no un log de decisiones** (`03`). **Decisión:** puede consumirse como evidencia (`stated`/`inferred`), nunca como equivalente de un Record aprobado con procedencia y autoridad.
-6. **El clustering estructural no revela límites de módulo/paquete reales** (`02`, `08` — el campo `packages` repite el nombre del proyecto en ambos casos, C plano y monorepo npm). **Decisión:** no usar `get_architecture` como fuente de identidad de workspace.
+4. **Three mutually inconsistent version identifiers** (`00`, `01`, `06`): `--version` (release versus `dev`), `git describe`, and the `daemon status` hash. **Decision:** explicit capability negotiation (`capabilities()`), never inferring compatibility from version parsing.
+5. **CBM's "ADR" is a single architecture document, not a decision log** (`03`). **Decision:** it can be consumed as evidence (`stated`/`inferred`), never as the equivalent of an approved Record with provenance and authority.
+6. **Structural clustering does not reveal real module/package boundaries** (`02`, `08` — the `packages` field repeats the project name in both cases, flat C and npm monorepo). **Decision:** do not use `get_architecture` as a source of workspace identity.
 
-### Impacto bajo / informativo
+### Low impact / informative
 
-7. Fuente completa de CBM es compilable en la máquina de referencia (`01`) — 2m49s, binario de 296MB.
-8. Patrón de hook no bloqueante ya validado en producción por CBM (`hook_augment.c`, `06`) — referencia de diseño valiosa para un futuro hook propio de Rationale.
-9. Almacenamiento derivado fuera del repo, con permisos restrictivos, sin secretos visibles (`07`) — patrón a replicar.
-10. Errores explícitos con sugerencias accionables en varios casos (símbolo no encontrado, proyecto no encontrado) son el estándar a igualar; errores silenciosos (revisión, cross-package) son el riesgo real (`10`).
+7. CBM's full source compiles on the reference machine (`01`) — 2m49s, a 296 MB binary.
+8. A non-blocking hook pattern already validated in production by CBM (`hook_augment.c`, `06`) — a valuable design reference for a future Rationale hook.
+9. Derived storage outside the repository, with restrictive permissions, and no visible secrets (`07`) — a pattern to replicate.
+10. Explicit errors with actionable suggestions in several cases (symbol not found, project not found) are the standard to match; silent errors (revision, cross-package) are the real risk (`10`).
 
-## Superficie recomendada a consumir
+## Recommended surface to consume
 
-De las 14 herramientas observadas (`03`, confirmadas también vía `--help` en `04`), el adaptador inicial de Rationale (Fase D/E) debería consumir, en este orden de prioridad:
-
-```text
-Imprescindibles:
-  list_projects        — identidad de proyecto
-  index_status          — señal básica de salud (con las limitaciones de 05)
-  get_code_snippet       — evidencia de código para Claims
-  search_graph           — recuperación de candidatos de binding (determinista antes de semántica, v0.5 §19.1)
-  trace_path             — evidencia de impacto/relaciones (risk_labels como señal, nunca como Decision)
-
-Útiles con matices:
-  get_architecture       — solo como señal exploratoria, nunca como fuente de identidad de workspace
-  query_graph            — para casos de investigación puntual (arqueología, v0.5 §17), no en el fast path
-  manage_adr             — solo lectura, como fuente de evidencia stated/inferred
-
-No usar todavía / requieren más investigación:
-  detect_changes         — no confiable según 05; Rationale debe implementar su propia detección vía Git
-  index_repository(persistence=true) — evitar el patrón de compartir índice binario en el repo (07)
-  ingest_traces           — no evaluado, fuera de alcance de esta epic
-```
-
-## Qué el adaptador nunca debe hacer
-
-Reafirmado con evidencia concreta de esta epic, no solo por principio (`Rationale_Arquitectura_Conceptual_v0.1.md §7.2`):
-
-- Leer directamente los archivos `.db` de `~/.cache/codebase-memory-mcp/` (`07`) — están fuera del contrato público y su formato puede cambiar sin aviso.
-- Parsear o comparar strings de versión para inferir capacidades (`00`, `06` — tres identificadores inconsistentes lo demuestran).
-- Tratar un resultado vacío de cualquier herramienta como confirmación negativa (`05`, `08`, `10`) — siempre `unknown`/`no encontrado dentro de la cobertura disponible`.
-- Reenviar mensajes de error crudos del proveedor al agente sin normalizar (`10`, caso 5).
-
-## Modos de fallo que el adaptador debe absorber
-
-Ver tabla completa en `10-failure-modes.md`. Resumen de la política de traducción requerida:
+Of the 14 tools observed (`03`, also confirmed through `--help` in `04`), Rationale's initial adapter (Phase D/E) should consume, in this order of priority:
 
 ```text
-Proveedor devuelve vacío silencioso  → adaptador reporta coverage: unknown, nunca "no existe"
-Proveedor devuelve error de parser   → adaptador normaliza a status: degraded, sin exponer el string crudo
-Proveedor no encuentra proyecto/símbolo → adaptador propaga el hint accionable, es un buen patrón a preservar
-Proveedor tarda more que el deadline  → fail open, degradar, nunca bloquear (ya en v0.5 §20.5.2)
+Essential:
+  list_projects        — project identity
+  index_status         — a basic health signal (with the limitations of 05)
+  get_code_snippet     — code evidence for Claims
+  search_graph         — retrieval of binding candidates (deterministic before semantic, v0.5 §19.1)
+  trace_path           — impact/relationship evidence (risk_labels as a signal, never as a Decision)
+
+Useful, with nuances:
+  get_architecture     — only as an exploratory signal, never as a source of workspace identity
+  query_graph          — for one-off investigation cases (archaeology, v0.5 §17), not in the fast path
+  manage_adr           — read-only, as a stated/inferred evidence source
+
+Do not use yet / require more research:
+  detect_changes       — not reliable according to 05; Rationale must implement its own detection through Git
+  index_repository(persistence=true) — avoid the pattern of sharing a binary index in the repository (07)
+  ingest_traces        — not evaluated, outside this epic's scope
 ```
 
-## Research items resueltos (B1, previos a Fase C)
+## What the adapter must never do
 
-Los tres pendientes que quedaron abiertos al cerrar esta epic ya se resolvieron con evidencia directa:
+Reaffirmed with concrete evidence from this epic, not only on principle (`Rationale_Arquitectura_Conceptual_v0.1.md §7.2`):
 
-1. **Latencia MCP formal (B1.1) — resuelto.** Cliente stdio propio contra el binario HEAD: `initialize` cuesta ~6.8s (una vez, igual que el costo de arranque de la CLI fría), pero cada `tools/call` subsecuente en la misma sesión cuesta 15-30ms. Ver `11-performance-observations.md`. **A favor de ADR-0002: sesión MCP persistente sobre subprocesos CLI repetidos.**
-2. **Lectura de `pass_pkgmap.c` (B1.2) — resuelto, con severidad revisada al alza.** El módulo sí resuelve exactamente el patrón `@org/pkg`, existe desde 3 meses antes de la indexación del Monorepo, y las condiciones para que funcione (manifiestos, imports reales) están presentes — y aun así no produjo ninguna relación cross-package. Ver `08-workspaces-and-monorepos.md`. **El gap no es "capability ausente" sino "capability presente que falla silenciosamente" — refuerza que los bindings manuales sean la vía primaria, no el fallback, para relaciones cross-package en la v1.**
-3. **Cobertura: ¿versión o transporte? (B1.3) — resuelto: es versión.** El mismo build HEAD, invocado vía MCP real (no CLI), devolvió los mismos campos de cobertura (`parse_partial`/`skipped`/`not_indexed`) vistos por CLI. El protocolo MCP no es el cuello de botella; el release 0.8.1 simplemente no los implementaba todavía. Ver `05-revision-and-coverage.md`.
+- Read the `.db` files in `~/.cache/codebase-memory-mcp/` directly (`07`) — they are outside the public contract and their format can change without notice.
+- Parse or compare version strings to infer capabilities (`00`, `06` — three inconsistent identifiers prove it).
+- Treat an empty result from any tool as a negative confirmation (`05`, `08`, `10`) — always `unknown`/`not found within the available coverage`.
+- Forward the provider's raw error messages to the agent without normalizing them (`10`, case 5).
 
-Ningún research item queda pendiente antes de proceder a Fase C (spike de lenguaje).
+## Failure modes the adapter must absorb
 
-## Conclusión
+See the full table in `10-failure-modes.md`. Summary of the required translation policy:
 
-Codebase Memory es un proveedor estructural real, con una superficie de herramientas rica, bien paginada, y con patrones de ingeniería sólidos en varios frentes (hooks no bloqueantes, instalación auditable, cache con permisos correctos). Pero **no puede tratarse como oráculo de revisión, cobertura, ni identidad de workspace** — los tres hallazgos de alto impacto de esta epic son evidencia directa y reproducible de exactamente los riesgos que `Rationale_v0.5.md §4.9, §20.6` ya anticipaban de forma conceptual. La integración correcta es la que el contrato conceptual ya exigía: consumir mediante interfaz pública versionada, con negociación de capacidades, y con Rationale como la capa que decide qué de todo esto sigue siendo confiable para una revisión concreta.
+```text
+Provider returns a silent empty result → adapter reports coverage: unknown, never "does not exist"
+Provider returns a parser error        → adapter normalizes to status: degraded, without exposing the raw string
+Provider cannot find a project/symbol  → adapter propagates the actionable hint; it is a good pattern to preserve
+Provider takes longer than the deadline → fail open, degrade, never block (already in v0.5 §20.5.2)
+```
+
+## Research items resolved (B1, before Phase C)
+
+The three items left open when this epic closed have been resolved with direct evidence:
+
+1. **Formal MCP latency (B1.1) — resolved.** Our own stdio client against the HEAD binary: `initialize` costs ~6.8 s (once, the same as the cold CLI startup cost), but each subsequent `tools/call` in the same session costs 15–30 ms. See `11-performance-observations.md`. **In favor of ADR-0002: a persistent MCP session over repeated CLI subprocesses.**
+2. **Reading `pass_pkgmap.c` (B1.2) — resolved, with severity revised upward.** The module does resolve exactly the `@org/pkg` pattern, has existed since 3 months before the Monorepo indexing, and the conditions for it to work (manifests, real imports) are present — and yet it produced no cross-package relationship. See `08-workspaces-and-monorepos.md`. **The gap is not "absent capability" but "present capability that fails silently" — reinforcing that manual bindings should be the primary path, not the fallback, for cross-package relationships in v1.**
+3. **Coverage: version or transport? (B1.3) — resolved: it is the version.** The same HEAD build, invoked over real MCP (not the CLI), returned the same coverage fields (`parse_partial`/`skipped`/`not_indexed`) seen through the CLI. The MCP protocol is not the bottleneck; the 0.8.1 release simply did not implement them yet. See `05-revision-and-coverage.md`.
+
+No research item remains pending before proceeding to Phase C (the language spike).
+
+## Conclusion
+
+Codebase Memory is a real structural provider, with a rich, well-paginated tool surface and solid engineering patterns on several fronts (non-blocking hooks, auditable installation, a cache with correct permissions). But **it cannot be treated as an oracle of revision, coverage, or workspace identity** — the epic's three high-impact findings are direct, reproducible evidence of exactly the risks that `Rationale_v0.5.md §4.9, §20.6` already anticipated conceptually. The right integration is the one the conceptual contract already required: consume it through a versioned public interface, with capability negotiation, and with Rationale as the layer that decides which of all this remains trustworthy for a specific revision.

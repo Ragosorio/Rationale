@@ -1,45 +1,45 @@
 # 09 — Installation and agents
 
-**Fuente de evidencia:** `install.sh` (leído, no re-ejecutado — ya estaba instalado en esta máquina), `--help` del binario compilado, y verificación de que el registro en `~/.claude.json` existe (sin volcar su contenido — es configuración personal del usuario, no evidencia que deba citarse textualmente).
+**Source of evidence:** `install.sh` (read, not re-run — it was already installed on this machine), the `--help` of the built binary, and a check that the registration in `~/.claude.json` exists (without dumping its content — it is the user's personal configuration, not evidence to quote verbatim).
 
 ## Observed
 
-- `install.sh` es un script wrapper: valida que la URL de descarga sea HTTPS (o loopback explícito para smoke tests locales, con redirects deshabilitados), descarga el binario desde `https://github.com/DeusData/codebase-memory-mcp/releases/latest/download`, lo coloca en `$HOME/.local/bin` (configurable con `--dir`), y luego **delega la configuración de agentes al propio binario** invocándolo con `install -y --force --dir=<path>`.
-- El binario expone `install [-y|-n] [--force] [--dry-run] [--dir=<path>] [--skip-config]` como subcomando propio — la lógica de detección/registro de clientes vive en el binario compilado, no en el script bash.
-- **Confirmado en esta máquina:** `~/.claude.json` contiene una entrada de registro para `codebase-memory-mcp` (verificado por coincidencia de patrón, sin volcar el archivo completo — es configuración personal, potencialmente con otras entradas no relacionadas con esta investigación).
-- `--help` declara soporte "automático/condicional" para **43 superficies de cliente** nombradas explícitamente (Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, VS Code, Zed, Aider, etc.) más un segundo grupo de "manual/UI MCP boundaries" (Qodo, Warp, JetBrains AI/ACP, Replit, GitHub cloud agents, Jules, CodeRabbit) donde la integración requiere pasos manuales.
-- El propio `--help` aclara: *"Conditional/explicit targets are changed only when their documented platform, marker, or explicit existing config path is present"* — es decir, no escribe configuración de un cliente que no detecta como presente en la máquina.
-- El subcomando `uninstall [-y|-n] [--dry-run]` existe como contraparte simétrica de `install`.
-- `--skip-config` en `install` permite instalar el binario sin tocar configuración de ningún agente — separación explícita entre "instalar el binario" e "instalar la integración".
+- `install.sh` is a wrapper script: it validates that the download URL is HTTPS (or explicit loopback for local smoke tests, with redirects disabled), downloads the binary from `https://github.com/DeusData/codebase-memory-mcp/releases/latest/download`, places it in `$HOME/.local/bin` (configurable with `--dir`), and then **delegates agent configuration to the binary itself** by invoking it with `install -y --force --dir=<path>`.
+- The binary exposes `install [-y|-n] [--force] [--dry-run] [--dir=<path>] [--skip-config]` as its own subcommand — the client detection/registration logic lives in the compiled binary, not in the bash script.
+- **Confirmed on this machine:** `~/.claude.json` contains a registration entry for `codebase-memory-mcp` (verified by pattern matching, without dumping the whole file — it is personal configuration, potentially with other entries unrelated to this research).
+- `--help` declares "automatic/conditional" support for **43 client surfaces** named explicitly (Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, VS Code, Zed, Aider, etc.) plus a second group of "manual/UI MCP boundaries" (Qodo, Warp, JetBrains AI/ACP, Replit, GitHub cloud agents, Jules, CodeRabbit) where the integration requires manual steps.
+- `--help` itself clarifies: *"Conditional/explicit targets are changed only when their documented platform, marker, or explicit existing config path is present"* — that is, it does not write configuration for a client it does not detect as present on the machine.
+- The `uninstall [-y|-n] [--dry-run]` subcommand exists as the symmetric counterpart of `install`.
+- `--skip-config` in `install` lets you install the binary without touching any agent's configuration — an explicit separation between "installing the binary" and "installing the integration".
 
 ## Claimed
 
-El uso de `--dry-run` en ambos `install` y `uninstall` sugiere una promesa implícita de auditabilidad (poder ver qué cambiaría antes de aplicarlo) — no se ejecutó `--dry-run` en esta sesión para no alterar una instalación ya funcional usada como evidencia en el resto de la epic.
+The presence of `--dry-run` in both `install` and `uninstall` suggests an implicit promise of auditability (being able to see what would change before applying it) — `--dry-run` was not run in this session, so as not to alter a working installation used as evidence in the rest of the epic.
 
 ## Verified
 
-- La cadena real de instalación (`install.sh` → descarga → binario `install`) es consistente con lo que efectivamente resultó en un registro funcional en `~/.claude.json` y un binario operativo en `~/.local/bin/codebase-memory-mcp` en esta misma máquina.
+- The real installation chain (`install.sh` → download → the binary's `install`) is consistent with what actually resulted in a working registration in `~/.claude.json` and an operational binary in `~/.local/bin/codebase-memory-mcp` on this same machine.
 
 ## Unknown
 
-- Contenido exacto de lo que `install` escribe en cada uno de los 43 clientes soportados — no se auditó cliente por cliente, solo se confirmó el caso de Claude Code (el cliente activo de esta sesión).
-- Comportamiento exacto de `uninstall`: si revierte limpiamente solo lo que `install` agregó, o si puede remover configuración preexistente no relacionada — no probado (ejecutar `uninstall` destruiría la instalación funcional usada como evidencia en toda la epic).
-- Si `--dry-run` realmente enumera cada archivo que tocaría, con el mismo nivel de detalle que exige `Rationale_Arquitectura_Conceptual_v0.1.md §24` ("El instalador debe registrar exactamente: binario, config, hooks, agent entries, skills, cache, PATH changes").
+- The exact content of what `install` writes into each of the 43 supported clients — not audited client by client; only the Claude Code case (the client active in this session) was confirmed.
+- The exact behavior of `uninstall`: whether it cleanly reverts only what `install` added, or whether it can remove pre-existing unrelated configuration — not tested (running `uninstall` would destroy the working installation used as evidence throughout the epic).
+- Whether `--dry-run` really enumerates every file it would touch, with the level of detail `Rationale_Arquitectura_Conceptual_v0.1.md §24` requires ("The installer must record exactly: binary, config, hooks, agent entries, skills, cache, PATH changes").
 
 ## Risk
 
-**Bajo para CBM, informativo para Rationale.** No se detectó comportamiento inseguro (descarga HTTPS forzada, opción de skip-config, dry-run disponible, uninstall simétrico). El riesgo relevante es de diseño futuro: replicar esta superficie de 43+ clientes es un esfuerzo de ingeniería no trivial que Rationale **no debe intentar igualar en la v1** (`Rationale_Arquitectura_Conceptual_v0.1.md §2`: "Compatibilidad perfecta con todos los agentes" está explícitamente fuera de alcance de la arquitectura 0.1).
+**Low for CBM, informative for Rationale.** No unsafe behavior was detected (forced HTTPS download, a skip-config option, dry-run available, a symmetric uninstall). The relevant risk is one of future design: replicating this surface of 43+ clients is a non-trivial engineering effort that Rationale **must not try to match in v1** (`Rationale_Arquitectura_Conceptual_v0.1.md §2`: "Perfect compatibility with every agent" is explicitly out of scope for architecture 0.1).
 
 ## Decision impact
 
-- Confirma que el patrón correcto de instalador para Rationale (Fase K, muy posterior) es: **binario primero, configuración de agente como paso separado y auditable (`--dry-run`), con `uninstall` simétrico** — igual que CBM. Este patrón es una referencia de diseño válida a futuro, no una prioridad actual.
-- El principio *"changed only when their documented platform, marker, or explicit existing config path is present"* es exactamente el tipo de detección conservadora que evita romper configuración de un cliente no instalado — aplicable al futuro `rationale install-agent` (`Rationale_Arquitectura_Conceptual_v0.1.md §24`).
-- No genera ningún cambio de decisión inmediata para Fase A/B de Rationale — este research queda registrado para cuando la Fase K (packaging/distribución) sea relevante, mucho más adelante en el roadmap.
+- It confirms that the right installer pattern for Rationale (Phase K, much later) is: **binary first, agent configuration as a separate, auditable step (`--dry-run`), with a symmetric `uninstall`** — the same as CBM. This pattern is a valid design reference for the future, not a current priority.
+- The principle *"changed only when their documented platform, marker, or explicit existing config path is present"* is exactly the kind of conservative detection that avoids breaking the configuration of a client that is not installed — applicable to the future `rationale install-agent` (`Rationale_Arquitectura_Conceptual_v0.1.md §24`).
+- It generates no immediate decision change for Rationale's Phase A/B — this research is recorded for when Phase K (packaging/distribution) becomes relevant, much later in the roadmap.
 
-## Reproducir
+## Reproduce
 
 ```bash
 cat ~/Desktop/codebase-memory-mcp/install.sh | head -30
 ./build/c/codebase-memory-mcp install --help 2>&1 || ./build/c/codebase-memory-mcp --help
-grep -c "codebase-memory-mcp" ~/.claude.json   # confirma registro sin volcar contenido
+grep -c "codebase-memory-mcp" ~/.claude.json   # confirms the registration without dumping content
 ```

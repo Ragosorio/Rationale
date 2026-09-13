@@ -1,41 +1,41 @@
 # Work item: <id>
 
-## Problema
+## Problem
 
-<Qué está mal o qué falta.>
+<What is wrong or missing.>
 
-## Objetivo
+## Goal
 
-<Qué se logra al terminar.>
+<What is achieved when it is done.>
 
 ## Non-goals
 
-<Qué explícitamente no se hace en este work item, para evitar scope creep.>
+<What this work item explicitly does not do, to avoid scope creep.>
 
 ## Base revision
 
-<Commit de partida.>
+<The starting commit.>
 
-## Evidencia
+## Evidence
 
-<Por qué este trabajo es necesario — enlaces a research notes, ADRs, issues.>
+<Why this work is needed — links to research notes, ADRs, issues.>
 
-## Riesgos
+## Risks
 
-<Qué podría salir mal.>
+<What could go wrong.>
 
 ## Plan
 
-<Pasos concretos.>
+<Concrete steps.>
 
 ## Tests
 
-<Qué se va a probar y cómo.>
+<What will be tested and how.>
 
 ## Docs
 
-<Qué documentación se actualiza al cerrar este item.>
+<Which documentation is updated when this item closes.>
 
-## Criterio de éxito
+## Success criterion
 
-<Cómo se sabe que esto está terminado — ver Definition of Done en `AGENTS.md`.>
+<How you know this is done — see the Definition of Done in `AGENTS.md`.>

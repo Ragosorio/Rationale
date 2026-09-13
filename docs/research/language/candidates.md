@@ -1,36 +1,36 @@
-# Candidatos del spike de lenguaje — notas
+# Language spike candidates — notes
 
-Implementaciones completas en `spikes/language/rust/` y `spikes/language/go/`, ambas ejecutando exactamente las 6 operaciones de `spike-protocol.md`, ambas con servidor MCP mínimo, file locking, subprocess con deadline/cancelación, y suite de tests. Mediciones crudas en `benchmark-results.json`.
+Complete implementations in `spikes/language/rust/` and `spikes/language/go/`, both running exactly the 6 operations of `spike-protocol.md`, both with a minimal MCP server, file locking, a subprocess with deadline/cancellation, and a test suite. Raw measurements in `benchmark-results.json`.
 
 ## Rust (`spikes/language/rust/`)
 
-**Dependencias:** `rusqlite` (con feature `bundled`, vendoriza su propio SQLite en C), `serde` + `serde_json`, `serde_yaml`.
+**Dependencies:** `rusqlite` (with the `bundled` feature, which vendors its own SQLite in C), `serde` + `serde_json`, `serde_yaml`.
 
-**Lo que salió bien al primer intento:**
-- Las 6 operaciones + MCP server + file lock + deadline funcionaron correctamente en la primera implementación, sin necesidad de corregir nada después de escribirlas.
-- La cancelación de subproceso (deadline de 500ms) se implementó con un poll manual (`try_wait()` en loop + `kill()` al expirar) que **nunca intenta leer stdout en el camino de timeout** — esto evitó naturalmente el problema del "nieto huérfano que sostiene el pipe abierto" que sí afectó a la primera versión de Go (ver abajo). No fue una decisión consciente de evitar el bug; fue una consecuencia del estilo de implementación manual, pero el resultado es relevante para el criterio de confiabilidad.
-- Binario más pequeño (2.2MB) y con memoria residente pico más baja (~3MB) que Go, consistente con un runtime mínimo sin garbage collector.
+**What went right on the first attempt:**
+- The 6 operations + MCP server + file lock + deadline worked correctly in the first implementation, with nothing to fix after writing them.
+- Subprocess cancellation (a 500 ms deadline) was implemented with a manual poll (`try_wait()` in a loop + `kill()` on expiry) that **never tries to read stdout on the timeout path** — this naturally avoided the "orphaned grandchild holding the pipe open" problem that did affect Go's first version (see below). It was not a conscious decision to avoid the bug; it was a consequence of the manual implementation style, but the result is relevant to the reliability criterion.
+- A smaller binary (2.2 MB) and lower peak resident memory (~3 MB) than Go, consistent with a minimal runtime without a garbage collector.
 
-**Fricciones:**
-- Tiempo de compilación en frío notablemente más largo (31.94s vs 9.59s de Go) — mayor costo por iteración durante desarrollo activo con agentes.
-- No existe fuzzing/property testing nativo en la std; se implementó un test manual de invariante monótona en vez de usar `proptest`/`cargo-fuzz`, para no introducir una dependencia extra que Go no necesitaría (mantener paridad de carga).
-- El file locking multiplataforma real (`std::fs::File::lock`, disponible desde Rust 1.89) no se usó en el spike — se usó una ruta POSIX-only vía FFI directo a `flock()` por simplicidad, dejando sin verificar la ruta que sí sería portable.
+**Friction:**
+- Noticeably longer cold compilation time (31.94 s versus Go's 9.59 s) — a higher cost per iteration during active development with agents.
+- There is no native fuzzing/property testing in `std`; a manual monotonic invariant test was implemented instead of using `proptest`/`cargo-fuzz`, to avoid introducing an extra dependency Go would not need (keeping workload parity).
+- Real cross-platform file locking (`std::fs::File::lock`, available since Rust 1.89) was not used in the spike — a POSIX-only path through direct FFI to `flock()` was used for simplicity, leaving the path that would be portable unverified.
 
 ## Go (`spikes/language/go/`)
 
-**Dependencias:** `modernc.org/sqlite` (pure-Go, sin cgo — elegido deliberadamente por su mejor historia de cross-compilation frente a `mattn/go-sqlite3`), `gopkg.in/yaml.v3`.
+**Dependencies:** `modernc.org/sqlite` (pure Go, without cgo — chosen deliberately for its better cross-compilation story compared with `mattn/go-sqlite3`), `gopkg.in/yaml.v3`.
 
-**Lo que salió bien:**
-- Compilación en frío 3.3× más rápida que Rust (9.59s vs 31.94s) — ventaja real para el ciclo de iteración de agentes.
-- Fuzzing nativo (`go test -fuzz`) sin ninguna dependencia externa: 384.496 ejecuciones en 10 segundos, cero fallos. Este es un diferenciador genuino del lenguaje, no del spike — Rust necesitaría un crate externo para lo mismo.
-- Servidor MCP y file locking (en la plataforma soportada) funcionaron correctamente.
+**What went right:**
+- Cold compilation 3.3× faster than Rust (9.59 s versus 31.94 s) — a real advantage for the agents' iteration cycle.
+- Native fuzzing (`go test -fuzz`) without any external dependency: 384,496 executions in 10 seconds, zero failures. This is a genuine differentiator of the language, not of the spike — Rust would need an external crate for the same.
+- The MCP server and file locking (on the supported platform) worked correctly.
 
-**Fricción real, no hipotética — requirió una corrección:**
-- La primera implementación del subproceso con deadline usó el patrón idiomático estándar de la librería (`exec.CommandContext` + `cmd.Output()`). Con un deadline de 500ms contra un proveedor mock que duerme 5s, **la cancelación tardó 5016ms, no ~500ms** — el contexto expiraba y el proceso hijo directo (el script `bash`) recibía la señal, pero el nieto (`sleep`, hijo de bash) heredaba el descriptor de escritura del pipe de stdout y seguía vivo; `cmd.Output()` bloquea leyendo hasta EOF, que no llega hasta que **todos** los tenedores del pipe cierran su copia — es decir, hasta que `sleep` termina por sí solo.
-- La corrección requirió abandonar la conveniencia de `cmd.Output()` y usar manualmente: `Setpgid: true` en `SysProcAttr`, capturar stdout en un `bytes.Buffer` (no un pipe leído tras `Wait()`, que tiene su propia carrera de cierre), y matar el **grupo de procesos completo** (`syscall.Kill(-pid, ...)`) en vez de solo el proceso hijo directo. Con esa corrección, la cancelación sí ocurre en ~503ms.
-- Esta es una diferencia real de ergonomía/confiabilidad bajo el criterio de "seguridad de memoria y confiabilidad" (20% del peso): el camino idiomático más simple en Go tenía un footgun conocido de Unix que produjo un resultado incorrecto silencioso (sin error, solo lento) hasta que se corrigió explícitamente.
-- File locking (`syscall.Flock`) es POSIX-only; Windows quedó fuera de alcance del spike y requeriría trabajo adicional (ver `compatibility-matrix.md`).
+**Real, not hypothetical, friction — it required a fix:**
+- The first implementation of the subprocess with a deadline used the library's standard idiomatic pattern (`exec.CommandContext` + `cmd.Output()`). With a 500 ms deadline against a mock provider sleeping 5 s, **cancellation took 5016 ms, not ~500 ms** — the context expired and the direct child process (the `bash` script) received the signal, but the grandchild (`sleep`, a child of bash) inherited the stdout pipe's write descriptor and stayed alive; `cmd.Output()` blocks reading until EOF, which does not arrive until **every** holder of the pipe closes its copy — that is, until `sleep` finishes on its own.
+- The fix required giving up the convenience of `cmd.Output()` and manually using `Setpgid: true` in `SysProcAttr`, capturing stdout in a `bytes.Buffer` (not a pipe read after `Wait()`, which has its own close race), and killing the **whole process group** (`syscall.Kill(-pid, ...)`) instead of only the direct child. With that fix, cancellation does happen in ~503 ms.
+- This is a real ergonomics/reliability difference under the "memory safety and reliability" criterion (20% of the weight): Go's simplest idiomatic path had a known Unix footgun that produced a silently wrong result (no error, just slow) until it was fixed explicitly.
+- File locking (`syscall.Flock`) is POSIX-only; Windows was out of the spike's scope and would require additional work (see `compatibility-matrix.md`).
 
-## Resumen para ADR-0001
+## Summary for ADR-0001
 
-Ningún candidato fue descartado por incapacidad — ambos completaron las 6 operaciones y las pruebas adicionales exigidas. La diferencia central no está en "qué se puede hacer" sino en **el camino idiomático por defecto**: Rust obligó a un diseño manual (poll loop) que resultó en corrección desde el primer intento; Go permitió una implementación más corta con una función de conveniencia (`cmd.Output()`) que ocultó un bug real de cancelación hasta la verificación empírica. Compensando en la otra dirección: Go compila 3.3× más rápido y tiene fuzzing nativo sin dependencias, dos ventajas reales para el ciclo de desarrollo con agentes.
+Neither candidate was discarded for inability — both completed the 6 operations and the additional required tests. The central difference is not in "what can be done" but in **the default idiomatic path**: Rust forced a manual design (a poll loop) that was correct from the first attempt; Go allowed a shorter implementation with a convenience function (`cmd.Output()`) that hid a real cancellation bug until empirical verification. Compensating in the other direction: Go compiles 3.3× faster and has native fuzzing without dependencies, two real advantages for the development cycle with agents.

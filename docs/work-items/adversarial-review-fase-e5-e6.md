@@ -1,223 +1,223 @@
-# Revisión adversarial: Fase E5/E6 (Context Compiler, superficie MCP)
+# Adversarial review: Phase E5/E6 (Context Compiler, MCP surface)
 
-**Rol:** Review Agent independiente (`Proceso §4.4` — "otra sesión" como revisor válido), sin contexto previo de la sesión que implementó Fase E.
-**Encargo:** intentar refutar el Context Compiler (`src/retrieval.rs`), la superficie MCP (`src/mcp/`, `src/pipeline.rs`, `src/providers/mod.rs`) y la afirmación de amortización real de Fase E5, sin autoaprobar nada.
-**Esta sesión no aprobó ni rechazó nada** — el veredicto queda para revisión humana, siguiendo el mismo patrón que `docs/work-items/adversarial-review-adr-0001-0002-0006.md`.
+**Role:** independent Review Agent (`Proceso §4.4` — "another session" as a valid reviewer), with no prior context from the session that implemented Phase E.
+**Assignment:** try to refute the Context Compiler (`src/retrieval.rs`), the MCP surface (`src/mcp/`, `src/pipeline.rs`, `src/providers/mod.rs`), and Phase E5's claim of real amortization, without self-approving anything.
+**This session approved or rejected nothing** — the verdict is left to human review, following the same pattern as `docs/work-items/adversarial-review-adr-0001-0002-0006.md`.
 
-Metodología: lectura completa del código de `src/retrieval.rs`, `src/mcp/server.rs`, `src/mcp/framing.rs`, `src/pipeline.rs`, `src/providers/mod.rs`, `src/providers/codebase_memory.rs`; `cargo test`/`cargo clippy --all-targets -- -D warnings`/`cargo fmt --check`; ataque empírico contra el binario compilado (`target/release/rationale serve`) con un cliente Python que habla el framing `Content-Length` directamente; un proyecto Rationale sintético (`.rationale/records/` con Records de control) para aislar `compile_packet` sin depender del contenido real del repo; un worktree del commit anterior al refactor de pipeline (`f774db7`) para verificar byte-identidad de forma independiente; y medición directa de latencia (CLI vs. servidor MCP vs. `codebase-memory-mcp` en crudo).
+Methodology: a full reading of the code in `src/retrieval.rs`, `src/mcp/server.rs`, `src/mcp/framing.rs`, `src/pipeline.rs`, `src/providers/mod.rs`, and `src/providers/codebase_memory.rs`; `cargo test`/`cargo clippy --all-targets -- -D warnings`/`cargo fmt --check`; an empirical attack against the compiled binary (`target/release/rationale serve`) with a Python client speaking the `Content-Length` framing directly; a synthetic Rationale project (`.rationale/records/` with control Records) to isolate `compile_packet` without depending on the repository's real content; a worktree of the commit before the pipeline refactor (`f774db7`) to verify byte-identity independently; and direct latency measurement (CLI versus MCP server versus raw `codebase-memory-mcp`).
 
-Commits revisados: `f774db7` (Context Compiler), `74a16b3` (superficie MCP), `b7d978a` (suite ampliada E6), `a6a78b4` (docs). `git status` estaba limpio al iniciar esta revisión; no se modificó ningún archivo de producción.
+Commits reviewed: `f774db7` (Context Compiler), `74a16b3` (MCP surface), `b7d978a` (expanded E6 suite), `a6a78b4` (docs). `git status` was clean at the start of this review; no production file was modified.
 
 ---
 
-## Resumen ejecutivo
+## Executive summary
 
-| Área | Hallazgos | Severidad más alta |
+| Area | Findings | Highest severity |
 |---|---|---|
-| `src/mcp/framing.rs` (framing sin runtime async) | 2 | **Crítico** — abort de proceso y crecimiento de memoria sin cota, ambos triviales de disparar, ninguno cubierto por tests |
-| Terminación silenciosa de sesión ante JSON inválido/anidado | 1 | **Alto** — contradice la premisa central de Fase E5 (sesión persistente amortizada) |
-| `compile_packet` — budget de tokens (`src/retrieval.rs`) | 1 | Medio |
-| `compile_packet` — `additional_history_available` (`src/retrieval.rs`) | 1 | Medio |
-| `detect_conflict` (`src/retrieval.rs`) | 1 | Medio |
-| `token_estimate` (`src/retrieval.rs`) | 1 | Menor |
-| Amortización real medida vs. narrativa de 6.8s | 1 (matiz, no bug) | — |
-| `catch_unwind` del servidor MCP | Sostiene | — |
-| Byte-identidad del refactor de pipeline | Sostiene | — |
-| `cargo test`/`clippy`/`fmt` | Sostiene | — |
-| `write_message` con `.expect()` fuera de `catch_unwind` | 1 | Menor/teórico |
+| `src/mcp/framing.rs` (framing without an async runtime) | 2 | **Critical** — process abort and unbounded memory growth, both trivial to trigger, neither covered by tests |
+| Silent session termination on invalid/nested JSON | 1 | **High** — contradicts Phase E5's central premise (an amortized persistent session) |
+| `compile_packet` — token budget (`src/retrieval.rs`) | 1 | Medium |
+| `compile_packet` — `additional_history_available` (`src/retrieval.rs`) | 1 | Medium |
+| `detect_conflict` (`src/retrieval.rs`) | 1 | Medium |
+| `token_estimate` (`src/retrieval.rs`) | 1 | Minor |
+| Measured real amortization versus the 6.8 s narrative | 1 (nuance, not a bug) | — |
+| The MCP server's `catch_unwind` | Holds | — |
+| Byte-identity of the pipeline refactor | Holds | — |
+| `cargo test`/`clippy`/`fmt` | Holds | — |
+| `write_message` with `.expect()` outside `catch_unwind` | 1 | Minor/theoretical |
 
-**9 hallazgos accionables** (2 críticos, 1 alto, 3 medios, 2 menores, 1 matiz sin severidad de bug) + **4 confirmaciones que sostienen**.
+**9 actionable findings** (2 critical, 1 high, 3 medium, 2 minor, 1 nuance without bug severity) + **4 confirmations that hold**.
 
 ---
 
-## Hallazgos completos
+## Full findings
 
-### A. `src/mcp/framing.rs` — el framing no tiene límites (Crítico)
+### A. `src/mcp/framing.rs` — the framing has no limits (Critical)
 
-El comentario del módulo dice: "nunca bloquea de forma indefinida por sí solo". Esto es cierto para el *bloqueo*, pero el framing no impone ningún límite de tamaño, ni al header ni al body, y ambos caminos son alcanzables por cualquier cliente (o bug de cliente) antes de que el pipeline o `catch_unwind` entren en juego — el framing corre en el bucle principal de `run()` (`src/mcp/server.rs:34`), fuera de cualquier `catch_unwind`.
+The module comment says: "it never blocks indefinitely on its own". That is true for *blocking*, but the framing imposes no size limit at all, neither on the header nor on the body, and both paths are reachable by any client (or client bug) before the pipeline or `catch_unwind` come into play — the framing runs in `run()`'s main loop (`src/mcp/server.rs:34`), outside any `catch_unwind`.
 
-**A1 — `Content-Length` extremo aborta el proceso (SIGABRT), no es un panic capturable.**
+**A1 — an extreme `Content-Length` aborts the process (SIGABRT); it is not a catchable panic.**
 
-`src/mcp/framing.rs:36`: `let mut body = vec![0u8; length];` — `length` viene directo del header, sin cota superior. Un valor que excede la memoria disponible dispara `handle_alloc_error`, que en Rust **aborta el proceso** (no es un `panic!` normal, `catch_unwind` no lo captura bajo ninguna circunstancia).
+`src/mcp/framing.rs:36`: `let mut body = vec![0u8; length];` — `length` comes straight from the header, with no upper bound. A value exceeding available memory triggers `handle_alloc_error`, which in Rust **aborts the process** (it is not a normal `panic!`; `catch_unwind` does not catch it under any circumstance).
 
-Evidencia reproducible:
+Reproducible evidence:
 ```
 $ python3 - <<'EOF'
-# (script completo en el reporte; envía tras 'initialize':)
+# (full script in the report; sends after 'initialize':)
 # Content-Length: 999999999999999999\r\n\r\n{}
 EOF
-huge_content_length: proceso murió con code=-6; stderr=memory allocation of 999999999999999999 bytes failed
+huge_content_length: process died with code=-6; stderr=memory allocation of 999999999999999999 bytes failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
-Código de salida -6 = `SIGABRT`. Un solo mensaje malformado de ~40 bytes tumba el proceso del servidor MCP por completo — exactamente lo que Fase E5 dice evitar ("un target inválido... nunca tumba la sesión completa"), pero para un vector distinto al que el test cubre.
+Exit code -6 = `SIGABRT`. A single malformed message of ~40 bytes brings the MCP server process down completely — exactly what Phase E5 says it avoids ("an invalid target... never brings down the whole session"), but for a vector different from the one the test covers.
 
-**A2 — sin terminador de header, el buffer crece sin cota (memoria sin límite).**
+**A2 — without a header terminator, the buffer grows without bound (unbounded memory).**
 
-`src/mcp/framing.rs:16-26`: el bucle que busca `\r\n\r\n` empuja bytes a un `Vec<u8>` indefinidamente si el terminador nunca llega. No hay límite de tamaño de header en el código de producción (el test de integración sí impone uno — `assert!(header.len() < 4096, ...)` en `tests/mcp_server.rs:66` — pero esa aserción vive solo en el *test*, no en `framing.rs`).
+`src/mcp/framing.rs:16-26`: the loop looking for `\r\n\r\n` pushes bytes into a `Vec<u8>` indefinitely if the terminator never arrives. There is no header size limit in the production code (the integration test does impose one — `assert!(header.len() < 4096, ...)` in `tests/mcp_server.rs:66` — but that assertion lives only in the *test*, not in `framing.rs`).
 
-Evidencia reproducible: enviar 150MB de bytes `X` sin nunca completar `\r\n\r\n`:
+Reproducible evidence: send 150 MB of `X` bytes without ever completing `\r\n\r\n`:
 ```
-RSS del proceso tras enviar 150MB sin terminador de header: 154.0 MB (pid=64175, vivo=True)
+Process RSS after sending 150MB without a header terminator: 154.0 MB (pid=64175, alive=True)
 ```
-El proceso queda vivo, consumiendo memoria proporcional a lo que el cliente decida enviar — sin cota, sin timeout, sin desconexión. Un cliente que se cuelga a mitad de un mensaje (conexión lenta, bug, o adversario) puede crecer la memoria del servidor indefinidamente.
+The process stays alive, consuming memory proportional to whatever the client decides to send — no bound, no timeout, no disconnection. A client that hangs mid-message (a slow connection, a bug, or an adversary) can grow the server's memory indefinitely.
 
-**Por qué esto es crítico y no un matiz:** ambos vectores están completamente fuera de `catch_unwind` (viven en `framing::read_message`, llamado antes de cualquier despacho a herramienta), ninguno está cubierto por `tests/mcp_server.rs` ni por ningún otro test del repo, y ambos se disparan con payloads triviales (40 bytes y 150MB respectivamente — ninguno requiere sofisticación). El comentario en `server.rs:10-13` promete que "stdout es EXCLUSIVAMENTE del protocolo" y que los panics de herramienta se capturan — pero un proceso abortado (A1) no deja ni eso: no hay stdout que corromper porque no hay proceso.
+**Why this is critical and not a nuance:** both vectors are completely outside `catch_unwind` (they live in `framing::read_message`, called before any tool dispatch), neither is covered by `tests/mcp_server.rs` or any other test in the repository, and both are triggered with trivial payloads (40 bytes and 150 MB respectively — neither requires sophistication). The comment in `server.rs:10-13` promises that "stdout is EXCLUSIVELY for the protocol" and that tool panics are caught — but an aborted process (A1) does not even leave that: there is no stdout to corrupt because there is no process.
 
-**Corrección sugerida (no aplicada — decisión del dueño humano):** imponer un límite superior explícito a `Content-Length` (p. ej. unos pocos MB, muy por encima de cualquier packet real observado — el mayor `token_estimate` medido en este reporte fue de unos cientos) y un límite de tamaño de header antes de intentar `vec![0u8; length]`; devolver `None` (o un error JSON-RPC) en vez de abortar.
+**Suggested fix (not applied — the human owner's decision):** impose an explicit upper limit on `Content-Length` (for example a few MB, far above any real packet observed — the largest `token_estimate` measured in this report was a few hundred) and a header size limit before attempting `vec![0u8; length]`; return `None` (or a JSON-RPC error) instead of aborting.
 
 ---
 
-### B. Un solo mensaje JSON inválido termina la sesión persistente completa, en silencio (Alto)
+### B. A single invalid JSON message ends the whole persistent session, silently (High)
 
-Fase E5 existe explícitamente para amortizar el costo de una sesión de larga duración (`src/mcp/server.rs:1-8`, `src/providers/mod.rs:62-69`). Si un mensaje entrante no parsea como JSON — ya sea por estar mal formado, truncado, o por exceder el **límite de recursión por defecto de `serde_json` (128 niveles, `de.rs:63`)** — `read_message` devuelve `None` (línea 38: `serde_json::from_slice(&body).ok()?`), indistinguible de EOF. El bucle principal `while let Some(msg) = framing::read_message(...)` (`server.rs:34`) termina, y `run()` retorna: el proceso sale limpiamente (`exit code 0`), sin escribir ningún mensaje de error al cliente y sin ningún diagnóstico en stderr.
+Phase E5 exists explicitly to amortize the cost of a long-lived session (`src/mcp/server.rs:1-8`, `src/providers/mod.rs:62-69`). If an incoming message does not parse as JSON — because it is malformed, truncated, or exceeds **`serde_json`'s default recursion limit (128 levels, `de.rs:63`)** — `read_message` returns `None` (line 38: `serde_json::from_slice(&body).ok()?`), indistinguishable from EOF. The main loop `while let Some(msg) = framing::read_message(...)` (`server.rs:34`) ends and `run()` returns: the process exits cleanly (`exit code 0`), without writing any error message to the client and without any diagnostic on stderr.
 
-Evidencia reproducible — un payload de **260 bytes**, JSON sintácticamente válido (130 niveles de arrays anidados, muy por debajo de cualquier "ataque" imaginable — podría ocurrir con una estructura de datos real anidada, como un AST o config profundamente anidada):
+Reproducible evidence — a **260-byte** payload, syntactically valid JSON (130 levels of nested arrays, far below any imaginable "attack" — it could occur with a real nested data structure, such as an AST or deeply nested config):
 ```python
 depth = 130
 body = ("[" * depth + "]" * depth).encode()  # 260 bytes
-# enviado tras initialize + notifications/initialized
+# sent after initialize + notifications/initialized
 ```
-Resultado:
+Result:
 ```
 returncode: 0
 stdout leftover: b''
 stderr: ''
 ```
-Confirmado también con JSON directamente malformado (`{not valid json!!!`) — mismo resultado: `returncode: 0`, sin stderr.
+Also confirmed with directly malformed JSON (`{not valid json!!!`) — the same result: `returncode: 0`, no stderr.
 
-**Por qué es alto, no solo un matiz:** esto no es un panic — `catch_unwind` nunca tiene oportunidad de actuar, porque el problema ocurre antes de que el mensaje llegue a `handle_tools_call`. La sesión completa (el activo que Fase E5 existe para amortizar) muere ante el primer mensaje que no logre parsear, sin ningún aviso — un cliente MCP real con un bug menor en su serialización (o que envíe una estructura de datos legítimamente anidada por encima de 128 niveles) pierde toda la sesión sin saber por qué, y debe reconectar pagando de nuevo el costo de arranque que se buscaba evitar. **Ningún test del repo (`tests/mcp_server.rs`) cubre este camino** — la suite de E6 solo prueba herramienta desconocida, target inexistente y `project_root` sin `.rationale/`, los tres casos que sí pasan por `catch_unwind` con éxito.
+**Why it is high, not just a nuance:** this is not a panic — `catch_unwind` never gets a chance to act, because the problem occurs before the message reaches `handle_tools_call`. The whole session (the asset Phase E5 exists to amortize) dies on the first message that fails to parse, without any warning — a real MCP client with a minor serialization bug (or one sending a legitimately nested data structure above 128 levels) loses the whole session without knowing why, and must reconnect, paying again the startup cost it was trying to avoid. **No test in the repository (`tests/mcp_server.rs`) covers this path** — the E6 suite only tests an unknown tool, a nonexistent target, and a `project_root` without `.rationale/`, the three cases that do go through `catch_unwind` successfully.
 
-**Corrección sugerida:** distinguir explícitamente EOF real (cierre del stdin del cliente) de "no se pudo parsear un mensaje" en `read_message` — devolver una variante de error en vez de `None` para el segundo caso, y responder con un error JSON-RPC (`-32700 Parse error`) sin terminar la sesión.
+**Suggested fix:** in `read_message`, explicitly distinguish real EOF (the client closing stdin) from "a message could not be parsed" — return an error variant instead of `None` for the second case, and answer with a JSON-RPC error (`-32700 Parse error`) without ending the session.
 
 ---
 
-### C. `compile_packet` puede exceder `max_tokens` en silencio (Medio)
+### C. `compile_packet` can exceed `max_tokens` silently (Medium)
 
-El bucle de recorte (`src/retrieval.rs:218-230`) solo puede reducir `affected_targets` y `known_risks` — nunca `protected_tokens` (niveles 0-3: constraints críticas, conflictos de intención, razón principal), por diseño explícito y correcto (v0.5 §30.1.7: nunca omitir una constraint crítica). Pero si `protected_tokens` por sí solo ya excede `budget.max_tokens`, el bucle vacía `affected_targets` y `known_risks` por completo y luego hace `break` — el packet final se sirve con `token_estimate > max_tokens`, y **no se añade ninguna advertencia a `warnings`** indicando que el budget no se respetó.
+The trimming loop (`src/retrieval.rs:218-230`) can only reduce `affected_targets` and `known_risks` — never `protected_tokens` (levels 0–3: critical constraints, intent conflicts, primary reason), by explicit and correct design (v0.5 §30.1.7: never omit a critical constraint). But if `protected_tokens` alone already exceeds `budget.max_tokens`, the loop empties `affected_targets` and `known_risks` completely and then `break`s — the final packet is served with `token_estimate > max_tokens`, and **no warning is added to `warnings`** saying the budget was not respected.
 
-Evidencia reproducible (proyecto de control con un Record cuyo `statement`+`rationale` sencillos suman más que el budget):
+Reproducible evidence (a control project with one Record whose simple `statement`+`rationale` add up to more than the budget):
 ```
-=== Caso D: max_tokens=1 ===
+=== Case D: max_tokens=1 ===
 critical_constraints count: 1
 known_risks: []
 affected_targets: []
-token_estimate: 39  (excede max_tokens=1: True)
+token_estimate: 39  (exceeds max_tokens=1: True)
 warnings: ['no se encontró el símbolo dentro de la cobertura disponible; no implica que no exista']
 ```
-El único warning presente es uno no relacionado (símbolo no encontrado); nada en `warnings` menciona que `token_estimate` (39) excede `max_tokens` (1). El test existente `tiny_budget_never_drops_critical_constraints` (`retrieval.rs:425`) verifica que las constraints críticas no se recortan — correcto — pero no verifica la ausencia de aviso de sobre-presupuesto, así que este comportamiento pasó sin detectarse.
+The only warning present is an unrelated one (symbol not found); nothing in `warnings` mentions that `token_estimate` (39) exceeds `max_tokens` (1). The existing test `tiny_budget_never_drops_critical_constraints` (`retrieval.rs:425`) verifies that critical constraints are not trimmed — correct — but does not check for the absence of an over-budget warning, so this behavior went undetected.
 
-**Por qué importa:** un caller (agente o herramienta downstream) que confía en `token_estimate` para decidir si el packet cabe en su ventana de contexto no tiene forma de saber, solo mirando el packet, que el budget solicitado no se cumplió — tendría que comparar `token_estimate` contra el `max_tokens` que él mismo pidió, un chequeo que el propio protocolo debería hacerle innecesario.
+**Why it matters:** a caller (an agent or downstream tool) that relies on `token_estimate` to decide whether the packet fits its context window has no way of knowing, just by looking at the packet, that the requested budget was not met — it would have to compare `token_estimate` against the `max_tokens` it requested itself, a check the protocol itself should make unnecessary.
 
-**Corrección sugerida:** si `token_estimate_total > budget.max_tokens` al final de `compile_packet`, añadir una entrada a `warnings` (p. ej. `"budget de tokens excedido: N > max_tokens M — el contenido protegido (niveles 0-3) no se recorta nunca"`).
+**Suggested fix:** if `token_estimate_total > budget.max_tokens` at the end of `compile_packet`, add an entry to `warnings` (for example `"token budget exceeded: N > max_tokens M — protected content (levels 0-3) is never trimmed"`).
 
 ---
 
-### D. `additional_history_available` subestima sistemáticamente lo que se recortó (Medio)
+### D. `additional_history_available` systematically underestimates what was trimmed (Medium)
 
-El contador (`src/retrieval.rs:198-239`) se compone de dos partes: (1) constraints críticas no incluidas por `max_critical_constraints` — esta parte es correcta y está bien testeada (`budget_caps_critical_constraints`); y (2) un **flag fijo de `+1`** si `known_risks.len()` terminó por debajo del mínimo entre el total de risks y `max_risks` — sin importar cuántos risks se recortaron realmente, y **sin considerar en absoluto cuántos `affected_targets` se recortaron por presupuesto**, porque el bucle de recorte (línea 218-230) pop-ea primero de `affected_targets` y solo después de `known_risks`.
+The counter (`src/retrieval.rs:198-239`) has two parts: (1) critical constraints not included because of `max_critical_constraints` — this part is correct and well tested (`budget_caps_critical_constraints`); and (2) a **fixed `+1` flag** if `known_risks.len()` ended below the minimum of the total risks and `max_risks` — regardless of how many risks were really trimmed, and **without considering at all how many `affected_targets` were trimmed by the budget**, because the trimming loop (lines 218–230) pops first from `affected_targets` and only then from `known_risks`.
 
-Evidencia reproducible (proyecto de control, un Record con 6 `binding_declarations` distintos y 5 `risks`, variando `max_tokens`):
+Reproducible evidence (a control project, one Record with 6 distinct `binding_declarations` and 5 `risks`, varying `max_tokens`):
 ```
 max_tokens=104: known_risks=5 affected_targets=5 additional_history_available=0
 max_tokens=100: known_risks=5 affected_targets=4 additional_history_available=0
 max_tokens=95:  known_risks=5 affected_targets=2 additional_history_available=0
-max_tokens=90:  known_risks=5 affected_targets=0 additional_history_available=0   <-- 6 targets eliminados, contador en 0
-max_tokens=85:  known_risks=4 affected_targets=0 additional_history_available=1   <-- 1 risk eliminado -> "+1"
-max_tokens=40:  known_risks=0 affected_targets=0 additional_history_available=1   <-- 5 risks + 6 targets eliminados -> sigue en "+1"
+max_tokens=90:  known_risks=5 affected_targets=0 additional_history_available=0   <-- 6 targets removed, counter at 0
+max_tokens=85:  known_risks=4 affected_targets=0 additional_history_available=1   <-- 1 risk removed -> "+1"
+max_tokens=40:  known_risks=0 affected_targets=0 additional_history_available=1   <-- 5 risks + 6 targets removed -> still "+1"
 ```
-En `max_tokens=90`, los 6 `affected_targets` (bindings estructurales reales hacia `src/one.rs`...`src/six.rs`) desaparecen del packet por completo, y el campo diseñado exactamente para señalar "hay más disponible, expande si lo necesitas" (v0.5 §18.2, progressive disclosure) reporta **0** — el caller no tiene ninguna señal de que algo se omitió. En `max_tokens=40`, se eliminaron 11 elementos en total (5 risks + 6 targets) y el contador solo llega a "1".
+At `max_tokens=90`, the 6 `affected_targets` (real structural bindings to `src/one.rs`...`src/six.rs`) disappear from the packet completely, and the field designed exactly to signal "more is available, expand if you need it" (v0.5 §18.2, progressive disclosure) reports **0** — the caller has no signal that anything was omitted. At `max_tokens=40`, 11 elements in total were removed (5 risks + 6 targets) and the counter only reaches "1".
 
-**Por qué importa:** esto rompe la garantía de "progressive disclosure" que el campo dice implementar — un agente que confía en `additional_history_available == 0` para decidir que vio todo el contexto relevante estaría equivocado en el caso más común de recorte por presupuesto (afectando `affected_targets`, que es precisamente donde vive la estructura de código impactada).
+**Why it matters:** it breaks the "progressive disclosure" guarantee the field claims to implement — an agent relying on `additional_history_available == 0` to decide it saw all the relevant context would be wrong in the most common trimming case (affecting `affected_targets`, which is precisely where the impacted code structure lives).
 
-**Corrección sugerida:** llevar dos contadores separados de "elementos recortados por presupuesto" (uno para `affected_targets`, otro para `known_risks`), sumando cuántos se eliminaron realmente en el bucle de recorte, no un flag booleano.
+**Suggested fix:** keep two separate counters of "elements trimmed by the budget" (one for `affected_targets`, one for `known_risks`), summing how many were really removed in the trimming loop, not a boolean flag.
 
 ---
 
-### E. `detect_conflict` produce falsos positivos y falsos negativos reales (Medio)
+### E. `detect_conflict` produces real false positives and false negatives (Medium)
 
-El código ya es honesto en el comentario ("deliberadamente crudo... nunca pretende comprensión semántica"), pero el packet no propaga ninguna calificación de confianza al string que sí suena definitivo: `"La intención puede entrar en conflicto con '{id}': {statement}"`.
+The code is already honest in its comment ("deliberately crude... never claims semantic understanding"), but the packet propagates no confidence qualification to the string that does sound definitive: `"La intención puede entrar en conflicto con '{id}': {statement}"` ("The intent may conflict with '{id}': {statement}").
 
-**Falso positivo confirmado** — dos temas sin relación real, solapamiento de vocabulario de dominio genérico ("checkout", "page"):
+**Confirmed false positive** — two unrelated topics, overlapping in generic domain vocabulary ("checkout", "page"):
 ```
 intent: "Update the login button color and add a loading spinner for the checkout page"
 constraint: "The checkout page must load a fraud-detection script before allowing payment."
 -> intent_conflicts: ["La intención puede entrar en conflicto con 'constraint.conflict-test': ..."]
 ```
-Cambiar el color de un botón de login no tiene relación real con un constraint de fraude en checkout; el solapamiento es accidental ("checkout" + "page", ambos de dominio, no de conflicto semántico).
+Changing the color of a login button has no real relationship to a fraud constraint on checkout; the overlap is accidental ("checkout" + "page", both domain words, not a semantic conflict).
 
-**Falso negativo confirmado** — el mismo concepto peligroso (fuga de secretos vía logs), vocabulario distinto:
+**Confirmed false negative** — the same dangerous concept (leaking secrets through logs), different vocabulary:
 ```
 intent: "I'm going to dump auth secrets into the debug console output for troubleshooting"
 constraint: "Passwords must never be written to the application log files for any reason."
--> intent_conflicts: []   (vacío — ningún conflicto detectado)
+-> intent_conflicts: []   (empty — no conflict detected)
 ```
-"Auth secrets"/"debug console output" no comparte ninguna palabra de más de 3 letras con "Passwords"/"log files" — el umbral de `overlap >= 2` (línea 125) nunca se activa pese a ser, en cualquier lectura razonable, exactamente el escenario que el constraint intenta prevenir.
+"Auth secrets"/"debug console output" share no word longer than 3 letters with "Passwords"/"log files" — the `overlap >= 2` threshold (line 125) never fires, even though this is, on any reasonable reading, exactly the scenario the constraint tries to prevent.
 
-**Por qué importa (medio, no crítico):** el mecanismo de nivel 2 es aditivo — nunca bloquea nada por sí mismo (correcto, v0.5 §19.1: recuperación determinista, sin heurísticas semánticas que decidan). El riesgo real es de **falsa confianza en ambas direcciones**: un agente podría descartar una advertencia de conflicto genuinamente irrelevante como "ruido" (entrenándose a ignorarlas), y en el caso simétrico, un intento real de violar el constraint pasaría sin ninguna señal. Ninguno de los dos casos está cubierto por los tests existentes (`intent_conflict_detected_by_word_overlap` solo prueba un solapamiento directo de vocabulario compartido, no adversarial).
+**Why it matters (medium, not critical):** the level-2 mechanism is additive — it never blocks anything on its own (correct, v0.5 §19.1: deterministic retrieval, no semantic heuristics that decide). The real risk is **false confidence in both directions**: an agent could dismiss a genuinely irrelevant conflict warning as "noise" (training itself to ignore them), and symmetrically, a real attempt to violate the constraint would pass without any signal. Neither case is covered by the existing tests (`intent_conflict_detected_by_word_overlap` only tests a direct overlap of shared vocabulary, not an adversarial one).
 
-**Corrección sugerida:** ninguna aquí es trivial sin introducir heurísticas semánticas (explícitamente fuera de alcance, §28.3) — la opción más barata es matizar el string servido (p. ej. `"posible solapamiento léxico, no verificado semánticamente"`) para que el consumidor sepa que es una señal de recall barato, no un veredicto.
+**Suggested fix:** nothing here is trivial without introducing semantic heuristics (explicitly out of scope, §28.3) — the cheapest option is to qualify the served string (for example `"possible lexical overlap, not verified semantically"`) so the consumer knows it is a cheap recall signal, not a verdict.
 
 ---
 
-### F. `token_estimate` (chars/4) no es un proxy estable — la dirección del error cambia según el contenido (Menor)
+### F. `token_estimate` (chars/4) is not a stable proxy — the direction of the error changes with the content (Minor)
 
-Medido contra `tiktoken` (`cl100k_base`, el mismo vocabulario de referencia usado ampliamente para modelos de esta familia) sobre muestras representativas del propio repo:
+Measured against `tiktoken` (`cl100k_base`, the same reference vocabulary widely used for models of this family) on representative samples from the repository itself:
 
-| Muestra | chars | tokens reales | estimado (chars/4) | error |
+| Sample | chars | real tokens | estimate (chars/4) | error |
 |---|---:|---:|---:|---:|
-| Prosa en inglés (statement real del repo) | 289 | 52 | 72 | **+38.5%** (sobreestima) |
-| Prosa en inglés corta | 82 | 12 | 20 | **+66.7%** (sobreestima) |
-| Equivalente en español | 90 | 25 | 22 | **-12.0%** (subestima) |
-| ID técnico (`constraint.no-provider-internal-access`) | 38 | 6 | 9 | **+50.0%** (sobreestima) |
-| Path + símbolo (`src/providers/....rs::Cliente::método`) | 70 | 14 | 17 | +21.4% (sobreestima) |
+| English prose (a real statement from the repository) | 289 | 52 | 72 | **+38.5%** (overestimates) |
+| Short English prose | 82 | 12 | 20 | **+66.7%** (overestimates) |
+| Spanish equivalent | 90 | 25 | 22 | **-12.0%** (underestimates) |
+| Technical ID (`constraint.no-provider-internal-access`) | 38 | 6 | 9 | **+50.0%** (overestimates) |
+| Path + symbol (`src/providers/....rs::Cliente::método`) | 70 | 14 | 17 | +21.4% (overestimates) |
 
-El comentario del código (`retrieval.rs:69-72`) ya es honesto — es un "proxy", no una medición exacta — pero la dirección del error **no es consistente**: para prosa en inglés e IDs técnicos con puntuación, chars/4 sobreestima considerablemente (hasta +66%); para texto en español, subestima (-12%). Esto contradice la hipótesis inicial de este encargo (que el español subestimaría *más* que el inglés por acentos) — el resultado real es más sutil: el inglés se sobreestima fuerte, el español se subestima moderadamente, ninguno es "cercano".
+The code comment (`retrieval.rs:69-72`) is already honest — it is a "proxy", not an exact measurement — but the direction of the error **is not consistent**: for English prose and technical IDs with punctuation, chars/4 overestimates considerably (up to +66%); for Spanish text, it underestimates (-12%). This contradicts this assignment's initial hypothesis (that Spanish would underestimate *more* than English because of accents) — the real result is subtler: English is overestimated strongly, Spanish is underestimated moderately, and neither is "close".
 
-**Por qué importa (menor por sí solo, pero compone con el hallazgo C):** dado que el hallazgo C ya muestra que exceder el budget no genera ninguna advertencia, un error de estimación del ±12-66% amplía el rango de posibles sobrepasos silenciosos de presupuesto real de tokens frente al que el packet reporta. Los Records actuales del propio repo están en inglés, así que el caso "español subestima" es hoy teórico para este proyecto en particular — pero el propio repo y su documentación están en español, así que no es descartable que Records futuros lo estén.
+**Why it matters (minor on its own, but it compounds with finding C):** since finding C already shows that exceeding the budget produces no warning, a ±12–66% estimation error widens the range of possible silent overruns of the real token budget compared with what the packet reports. The repository's current Records are in English, so the "Spanish underestimates" case is theoretical today for this particular project — but the repository itself and its documentation are in Spanish, so future Records in Spanish cannot be ruled out.
 
 ---
 
-### G. Amortización real: el "6.8s" documentado no se reproduce en este entorno (matiz, no bug de código)
+### G. Real amortization: the documented "6.8 s" does not reproduce in this environment (nuance, not a code bug)
 
-Medí directamente en este entorno (no solo leí el código):
+I measured directly in this environment (not only by reading the code):
 
-| Escenario | Tiempo medido |
+| Scenario | Measured time |
 |---|---:|
-| `rationale prepare` (CLI, proveedor real spawneado cada vez) | ~130–190ms (5 corridas) |
-| `rationale prepare` (CLI, proveedor forzado a `Unavailable` vía `PATH` sin `codebase-memory-mcp`) | ~30–40ms |
-| `rationale serve`, llamada `prepare_change` en caliente (sesión ya inicializada) | ~32–37ms (10 corridas) |
-| `initialize` directo y **fresco** contra `codebase-memory-mcp` 0.8.1 (proceso nuevo cada vez, sin pasar por Rationale) | **~15–20ms** (3 corridas independientes) |
+| `rationale prepare` (CLI, real provider spawned every time) | ~130–190 ms (5 runs) |
+| `rationale prepare` (CLI, provider forced to `Unavailable` through a `PATH` without `codebase-memory-mcp`) | ~30–40 ms |
+| `rationale serve`, a warm `prepare_change` call (session already initialized) | ~32–37 ms (10 runs) |
+| A direct, **fresh** `initialize` against `codebase-memory-mcp` 0.8.1 (a new process each time, without going through Rationale) | **~15–20 ms** (3 independent runs) |
 
-El último dato contradice directamente `docs/research/codebase-memory/11-performance-observations.md`, que documenta `initialize` en **6.79–6.86s** contra el mismo binario (versión no confirmada como distinta). En este entorno, el handshake `initialize` puro — el costo que Fase E5 dice amortizar — ya no cuesta 6.8s: cuesta ~15-20ms, sea cual sea la sesión.
+The last data point directly contradicts `docs/research/codebase-memory/11-performance-observations.md`, which documents `initialize` at **6.79–6.86 s** against the same binary (version not confirmed as different). In this environment, the pure `initialize` handshake — the cost Phase E5 claims to amortize — no longer costs 6.8 s: it costs ~15–20 ms, whatever the session.
 
-Esto **no invalida el mecanismo** de Fase E5 (la sesión persistente sigue siendo correcta y sí reduce el costo por-llamada de ~150ms a ~33ms, un factor ~4-5x real y medido) — pero la magnitud dramática (200x, "6.8s -> 33ms") que motiva el commit de Fase E5 y el hallazgo #1 de la revisión adversarial de ADR-0002 **no se reprodujo en esta sesión**. Verifiqué explícitamente que no es una ilusión de fallback silencioso: `provider_status` fue `"successful"` y `provider_coverage` `"complete"`/`"unknown"` en todas las llamadas — el proveedor real se está invocando y respondiendo, no cayendo a `Unavailable` sin que se note.
+This **does not invalidate the mechanism** of Phase E5 (the persistent session is still correct and does reduce the per-call cost from ~150 ms to ~33 ms, a real, measured ~4–5x factor) — but the dramatic magnitude (200x, "6.8 s -> 33 ms") that motivates the Phase E5 commit and finding #1 of the ADR-0002 adversarial review **did not reproduce in this session**. I explicitly checked that it is not an illusion of silent fallback: `provider_status` was `"successful"` and `provider_coverage` `"complete"`/`"unknown"` in every call — the real provider is being invoked and responding, not silently falling back to `Unavailable`.
 
-**Causa de la discrepancia: `Unknown`.** Candidatos no descartados: (a) cachés en disco ya calientes en `~/.cache/codebase-memory-mcp/*.db` (confirmé que existen, varias decenas de MB, acumuladas de sesiones previas contra este y otros repos) que evitarían el costo de indexación que el research original pudo estar midiendo bajo el nombre de "`initialize`"; (b) una versión o entorno de medición distinto al de `11-performance-observations.md`; (c) un cambio real de comportamiento en `codebase-memory-mcp` 0.8.1 entre la fecha de esa investigación y hoy. **Riesgo:** si la cifra de 6.8s era específica de un entorno con caché fría que ya no se reproduce en desarrollo, el beneficio dramático de Fase E5 podría estar sobrestimado en la documentación actual — sin que esto sea un defecto del código de Fase E5 en sí. **Próximo experimento sugerido:** medir `initialize` contra `codebase-memory-mcp` en un entorno con `~/.cache/codebase-memory-mcp/` vacío (contenedor limpio) para aislar la variable de caché.
-
----
-
-## Lo que sostiene bajo ataque
-
-1. **`catch_unwind` en `src/mcp/server.rs:142-163` captura correctamente los panics de herramienta que sí llegan a él** (`.expect("cargar configuración")`, `.expect("leer records")`, `.expect("no hay Records...")` en `src/pipeline.rs`). Verificado empíricamente con un `project_root` sin `.rationale/`: la llamada devuelve `isError: true` con el mensaje genérico esperado, y la sesión responde correctamente a una llamada `health` inmediatamente después. Esto sostiene exactamente como lo describe el commit `74a16b3` — **para los panics que ocurren dentro de la ejecución de la herramienta**. Los hallazgos A y B de este reporte muestran que existen panics/aborts/terminaciones que ocurren *antes* de esa frontera (en `framing::read_message`), fuera del alcance de esta garantía — el commit no lo declara falso, pero tampoco delimita el alcance real de la protección.
-
-2. **Byte-identidad del refactor de pipeline, verificada de forma independiente.** Compilé un worktree del commit inmediatamente anterior (`f774db7`, antes de `feat(mcp)`) y comparé `rationale health`, `rationale prepare src/main.rs --project-root . --repo-path .`, y la misma llamada con `--intent "test intent phrase"`, contra el binario actual (`a6a78b4`). `diff` vacío en stdout y stderr en los tres casos. La afirmación del commit `74a16b3` ("Verificado byte-idéntico contra el binario pre-refactor en CLI") se reproduce de forma independiente.
-
-3. **`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, y `cargo test` (50 tests: 40 unitarios + 2 de integración MCP + 8 de validación de schema) pasan limpio**, sin advertencias ni fallos, en este entorno.
-
-4. **La regla "stdout es exclusivamente del protocolo" se sostiene en el sentido estricto que el test verifica**: en ninguno de los casos que sí llegan a producir una respuesta (herramienta desconocida, target inválido, panic capturado) se corrompió el framing — cada mensaje que el proceso efectivamente emitió fue un `Content-Length` válido. Los hallazgos A/B no contradicen esto: en A1 el proceso aborta sin emitir nada más; en A2/B el proceso permanece silencioso o termina limpiamente, pero no emite bytes corruptos.
+**Cause of the discrepancy: `Unknown`.** Candidates not ruled out: (a) already-warm on-disk caches in `~/.cache/codebase-memory-mcp/*.db` (confirmed to exist, several tens of MB, accumulated from earlier sessions against this and other repositories) that would avoid the indexing cost the original research may have measured under the name "`initialize`"; (b) a version or measurement environment different from `11-performance-observations.md`'s; (c) a real behavior change in `codebase-memory-mcp` 0.8.1 between the date of that research and today. **Risk:** if the 6.8 s figure was specific to a cold-cache environment that no longer reproduces in development, Phase E5's dramatic benefit may be overstated in the current documentation — without this being a defect of Phase E5's code itself. **Suggested next experiment:** measure `initialize` against `codebase-memory-mcp` in an environment with an empty `~/.cache/codebase-memory-mcp/` (a clean container) to isolate the cache variable.
 
 ---
 
-## Resumen de severidades
+## What holds under attack
 
-| Severidad | Cantidad | Hallazgos |
+1. **The `catch_unwind` in `src/mcp/server.rs:142-163` correctly catches the tool panics that do reach it** (`.expect("cargar configuración")`, `.expect("leer records")`, `.expect("no hay Records...")` in `src/pipeline.rs`). Verified empirically with a `project_root` without `.rationale/`: the call returns `isError: true` with the expected generic message, and the session correctly answers a `health` call immediately afterwards. This holds exactly as commit `74a16b3` describes it — **for the panics that occur inside the tool's execution**. Findings A and B of this report show that there are panics/aborts/terminations that happen *before* that boundary (in `framing::read_message`), outside this guarantee's scope — the commit does not declare that false, but it does not delimit the real scope of the protection either.
+
+2. **Byte-identity of the pipeline refactor, verified independently.** I built a worktree of the immediately preceding commit (`f774db7`, before `feat(mcp)`) and compared `rationale health`, `rationale prepare src/main.rs --project-root . --repo-path .`, and the same call with `--intent "test intent phrase"`, against the current binary (`a6a78b4`). An empty `diff` on stdout and stderr in all three cases. Commit `74a16b3`'s claim ("Verified byte-identical against the pre-refactor binary in the CLI") reproduces independently.
+
+3. **`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` (50 tests: 40 unit + 2 MCP integration + 8 schema validation) pass cleanly**, with no warnings or failures, in this environment.
+
+4. **The rule "stdout is exclusively for the protocol" holds in the strict sense the test verifies**: in none of the cases that do produce a response (unknown tool, invalid target, caught panic) was the framing corrupted — every message the process actually emitted was a valid `Content-Length` message. Findings A/B do not contradict this: in A1 the process aborts without emitting anything else; in A2/B the process stays silent or exits cleanly, but emits no corrupt bytes.
+
+---
+
+## Severity summary
+
+| Severity | Count | Findings |
 |---|---:|---|
-| Crítico | 2 | A1 (Content-Length astronómico → SIGABRT), A2 (header sin terminador → memoria sin cota) |
-| Alto | 1 | B (JSON inválido/anidado mata la sesión persistente en silencio) |
-| Medio | 3 | C (budget excedido sin warning), D (`additional_history_available` subestima), E (`detect_conflict` falsos positivos/negativos) |
-| Menor | 2 | F (`token_estimate` no estable), `write_message` con `.expect()` fuera de `catch_unwind` (teórico, no se encontró forma práctica de disparar con los tipos actuales) |
-| Matiz (no bug) | 1 | G (narrativa de amortización de 6.8s no reproducida en este entorno; causa `Unknown`) |
+| Critical | 2 | A1 (astronomical Content-Length → SIGABRT), A2 (header without terminator → unbounded memory) |
+| High | 1 | B (invalid/nested JSON silently kills the persistent session) |
+| Medium | 3 | C (budget exceeded without a warning), D (`additional_history_available` underestimates), E (`detect_conflict` false positives/negatives) |
+| Minor | 2 | F (`token_estimate` not stable), `write_message` with `.expect()` outside `catch_unwind` (theoretical; no practical way to trigger it was found with the current types) |
+| Nuance (not a bug) | 1 | G (the 6.8 s amortization narrative not reproduced in this environment; cause `Unknown`) |
 
-**Recomendación sobre bloqueo:** a criterio de esta revisión, **`src/mcp/framing.rs` (hallazgos A1, A2) y el manejo de mensajes no parseables en `src/mcp/server.rs`/`src/mcp/framing.rs` (hallazgo B) deberían tratarse como bloqueantes antes de considerar cerrada Fase E**, porque contradicen directamente la garantía de robustez que la propia suite de tests de Fase E6 (`tests/mcp_server.rs`) afirma cubrir ("si un solo byte de stdout dejara de ser un mensaje Content-Length bien formado... esa es la aserción real") sin en realidad ejercitar los caminos donde el proceso completo muere o crece sin cota. Los hallazgos C, D y E son reales y deberían corregirse, pero no bloquean por sí solos: los niveles 0-3 del packet (la garantía más importante, v0.5 §30.1.7) nunca se vieron comprometidos en ningún experimento. El hallazgo G no es un defecto de código — es una discrepancia de evidencia entre el research histórico y el entorno actual que amerita una nota en `docs/research/codebase-memory/11-performance-observations.md` o un nuevo research item, no una corrección de código.
+**Recommendation on blocking:** in this review's judgment, **`src/mcp/framing.rs` (findings A1, A2) and the handling of unparseable messages in `src/mcp/server.rs`/`src/mcp/framing.rs` (finding B) should be treated as blocking before considering Phase E closed**, because they directly contradict the robustness guarantee that the Phase E6 test suite itself (`tests/mcp_server.rs`) claims to cover ("if a single byte of stdout stopped being a well-formed Content-Length message... that is the real assertion") without actually exercising the paths where the whole process dies or grows without bound. Findings C, D, and E are real and should be fixed, but they do not block on their own: levels 0–3 of the packet (the most important guarantee, v0.5 §30.1.7) were never compromised in any experiment. Finding G is not a code defect — it is an evidence discrepancy between the historical research and the current environment that merits a note in `docs/research/codebase-memory/11-performance-observations.md` or a new research item, not a code fix.
 
-La decisión sobre qué corregir, y si algún ADR o pieza de código pasa a `accepted`, queda enteramente para el dueño humano del proyecto (`evaluation.no-self-certification`).
+The decision on what to fix, and whether any ADR or piece of code moves to `accepted`, rests entirely with the project's human owner (`evaluation.no-self-certification`).

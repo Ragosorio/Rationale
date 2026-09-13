@@ -1,70 +1,70 @@
 # ADR-0001: Core language and toolchain
 
-**Status:** proposed — pendiente de revisión cruzada independiente (`AGENTS.md §Roles y revisión cruzada`) antes de `accepted`. Ningún agente debe autoaprobar esta decisión (`evaluation.no-self-certification`, `.rationale/subjects/`).
+**Status:** proposed — pending independent cross-review (`AGENTS.md §Roles and cross-review`) before `accepted`. No agent may self-approve this decision (`evaluation.no-self-certification`, `.rationale/subjects/`).
 **Date:** 2026-07-25
-**Deciders:** Claude Code (implementación del spike y propuesta); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno
+**Deciders:** Claude Code (spike implementation and proposal); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** none
 
 ## Context
 
-`Rationale_Arquitectura_Conceptual_v0.1.md §8` prohíbe elegir el lenguaje del núcleo por preferencia — exige un spike con carga idéntica entre candidatos reales, medido con evidencia, antes de escribir producción. `docs/research/language/spike-protocol.md` fijó el protocolo y los criterios ponderados **antes** de implementar nada, precisamente para evitar el sesgo de calibrar el criterio después de ver el resultado.
+`Rationale_Arquitectura_Conceptual_v0.1.md §8` forbids choosing the core language by preference — it requires a spike with an identical workload across real candidates, measured with evidence, before writing production code. `docs/research/language/spike-protocol.md` set the protocol and the weighted criteria **before** implementing anything, precisely to avoid the bias of calibrating the criteria after seeing the result.
 
-Los candidatos evaluados fueron Rust y Go (C y TypeScript/Node.js se descartaron por decisión explícita ya documentada en `spike-protocol.md §Candidatos`, no por evaluación).
+The candidates evaluated were Rust and Go (C and TypeScript/Node.js were discarded by an explicit decision already documented in `spike-protocol.md §Candidates`, not by evaluation).
 
 ## Decision
 
-**Rust** es el lenguaje del núcleo de Rationale, con evidencia del spike ejecutado en `spikes/language/rust/` y `spikes/language/go/`.
+**Rust** is Rationale's core language, with evidence from the spike run in `spikes/language/rust/` and `spikes/language/go/`.
 
 ## Evidence
 
-Implementaciones completas de las 6 operaciones obligatorias en ambos candidatos, con carga idéntica verificada (`docs/research/language/candidates.md`). Mediciones crudas en `docs/research/language/benchmark-results.json`.
+Complete implementations of the 6 mandatory operations in both candidates, with an identical, verified workload (`docs/research/language/candidates.md`). Raw measurements in `docs/research/language/benchmark-results.json`.
 
-### Puntuación ponderada (`Arquitectura_Conceptual_v0.1.md §8.2`)
+### Weighted score (`Arquitectura_Conceptual_v0.1.md §8.2`)
 
-| Criterio | Peso | Rust | Go | Base empírica |
+| Criterion | Weight | Rust | Go | Empirical basis |
 |---|---:|---:|---:|---|
-| Seguridad de memoria y confiabilidad | 20% | 9 | 6 | Rust correcto al primer intento en las 6 operaciones + demos. Go tuvo un **fallo real y medido**: la implementación idiomática de cancelación de subproceso (`exec.CommandContext` + `cmd.Output()`) tardó **5016ms en vez de ~500ms** por el problema Unix del nieto huérfano que sostiene el pipe de stdout abierto — requirió reescribirse con process groups (`Setpgid` + `kill(-pid)`) para cumplir el deadline. |
-| Distribución como binario | 15% | 9 | 7 | Binario Rust release: 2.216.304 bytes. Binario Go release (stripped): 7.072.994 bytes — 3.2× más grande. Ambos son ejecutables estáticos Mach-O arm64 sin runtime externo. |
-| Rendimiento y latencia | 15% | 9 | 7 | Memoria residente pico: Rust ~3.0MB, Go ~12.7-12.9MB (4.2× más). Latencia MCP (`initialize`/`tools call`): Rust 3.5ms/15.6ms, Go 8.4ms/9.0ms — ambos negligibles a esta escala, sin diferencia práctica. |
-| MCP y JSON-RPC | 10% | 8 | 8 | Ambos implementaron el mismo framing `Content-Length` (verificado contra el mismo protocolo usado por Codebase Memory, `docs/research/codebase-memory/11-performance-observations.md`) con esfuerzo equivalente en la std de cada lenguaje. Sin diferenciador real. |
-| SQLite y filesystem | 10% | 7 | 8 | Rust usó `rusqlite` con SQLite vendorizado en C (`bundled`); Go usó `modernc.org/sqlite`, pure-Go sin cgo — mejor historia de cross-compilation nativa para Go en este aspecto específico. |
-| Compatibilidad macOS/Linux/Windows | 10% | 7 | 5 | **Gap real encontrado, no solo teórico:** el file locking usado en el spike de Go (`syscall.Flock`) es POSIX-only y el propio código falla explícitamente en Windows; Rust usó una ruta también POSIX-only en el spike por simplicidad, pero tiene una alternativa portable sin ejercitar en la std (`std::fs::File::lock`, disponible desde Rust 1.89). Ver `docs/research/language/compatibility-matrix.md`. |
-| Mantenibilidad con agentes | 10% | 7 | 7 | Rust "falla más temprano y ruidoso" (errores de compilación); Go "falla más tarde y en silencio" (el bug de cancelación no lo atrapó el compilador ni un linter, solo la medición empírica). Empate cualitativo, con matiz a favor de Rust por alinearse con el principio general de este proyecto de preferir fallos explícitos sobre silenciosos (`docs/research/codebase-memory/10-failure-modes.md`). |
-| Tiempo de compilación y desarrollo | 5% | 5 | 9 | Build release limpio: Rust 31.94s, Go 9.59s — Go 3.3× más rápido. Ventaja real de Go para el ciclo de iteración con agentes. |
-| Interoperabilidad con procesos C | 5% | 8 | 5 | Rust usó FFI directo a `flock()` de forma natural; Go evitó deliberadamente cgo para SQLite, lo cual reduce fricción de cross-compilation pero también indica menor comodidad nativa con interop C si llegara a necesitarse. |
+| Memory safety and reliability | 20% | 9 | 6 | Rust was correct on the first attempt in all 6 operations and demos. Go had a **real, measured failure**: the idiomatic implementation of subprocess cancellation (`exec.CommandContext` + `cmd.Output()`) took **5016 ms instead of ~500 ms** because of the Unix orphaned-grandchild problem that keeps the stdout pipe open — it had to be rewritten with process groups (`Setpgid` + `kill(-pid)`) to meet the deadline. |
+| Distribution as a binary | 15% | 9 | 7 | Rust release binary: 2,216,304 bytes. Go release binary (stripped): 7,072,994 bytes — 3.2× larger. Both are static Mach-O arm64 executables with no external runtime. |
+| Performance and latency | 15% | 9 | 7 | Peak resident memory: Rust ~3.0 MB, Go ~12.7–12.9 MB (4.2× more). MCP latency (`initialize`/`tools call`): Rust 3.5 ms/15.6 ms, Go 8.4 ms/9.0 ms — both negligible at this scale, with no practical difference. |
+| MCP and JSON-RPC | 10% | 8 | 8 | Both implemented the same `Content-Length` framing (verified against the same protocol Codebase Memory uses, `docs/research/codebase-memory/11-performance-observations.md`) with equivalent effort in each language's standard library. No real differentiator. |
+| SQLite and filesystem | 10% | 7 | 8 | Rust used `rusqlite` with SQLite vendored in C (`bundled`); Go used `modernc.org/sqlite`, pure Go without cgo — a better native cross-compilation story for Go in this specific respect. |
+| macOS/Linux/Windows compatibility | 10% | 7 | 5 | **A real gap was found, not only a theoretical one:** the file locking used in the Go spike (`syscall.Flock`) is POSIX-only and the code itself fails explicitly on Windows; Rust also used a POSIX-only path in the spike for simplicity, but it has an unexercised portable alternative in `std` (`std::fs::File::lock`, available since Rust 1.89). See `docs/research/language/compatibility-matrix.md`. |
+| Maintainability with agents | 10% | 7 | 7 | Rust "fails earlier and louder" (compilation errors); Go "fails later and silently" (the cancellation bug was caught by neither the compiler nor a linter, only by empirical measurement). A qualitative tie, leaning toward Rust because it matches this project's general principle of preferring explicit failures over silent ones (`docs/research/codebase-memory/10-failure-modes.md`). |
+| Compilation and development time | 5% | 5 | 9 | Clean release build: Rust 31.94 s, Go 9.59 s — Go is 3.3× faster. A real advantage for Go in the iteration cycle with agents. |
+| Interoperability with C processes | 5% | 8 | 5 | Rust used direct FFI to `flock()` naturally; Go deliberately avoided cgo for SQLite, which reduces cross-compilation friction but also suggests less native comfort with C interop should it be needed. |
 
-**Total ponderado: Rust 8.05/10, Go 6.80/10.**
+**Weighted total: Rust 8.05/10, Go 6.80/10.**
 
-Esta puntuación es una síntesis explícita de evidencia, no una ley — los pesos y escalas están sujetos al mismo principio de sensibilidad y revisión que `Rationale_v0.5.md §30.1.3` exige para `context_utility_density`. Se documentan aquí precisamente para que puedan auditarse y disputarse con datos, no aceptarse por autoridad de quien las calculó.
+This score is an explicit synthesis of evidence, not a law — the weights and scales are subject to the same sensitivity and review principle that `Rationale_v0.5.md §30.1.3` requires for `context_utility_density`. They are documented here precisely so they can be audited and disputed with data, not accepted on the authority of whoever computed them.
 
 ## Alternatives considered
 
-- **Go**: descartado no por incapacidad (completó las 6 operaciones y las pruebas adicionales) sino por peor puntuación ponderada, dominada por el criterio de mayor peso (seguridad de memoria y confiabilidad, 20%) donde se encontró un fallo real y reproducible. Go retiene ventajas reales documentadas (compilación 3.3× más rápida, fuzzing nativo sin dependencias, SQLite pure-Go) que deben pesarse en el "Revisit trigger" si la evidencia cambia.
-- **C**: descartado sin evaluación, por decisión explícita anterior a este spike (`spike-protocol.md §Candidatos`) — preservar la frontera de protocolo/adaptador frente a Codebase Memory (escrito en C) en vez de compartir lenguaje o proceso.
-- **TypeScript/Node.js**: descartado sin evaluación, reservado para prototipos y tooling de evaluación, no para el núcleo distribuido (`Arquitectura_Conceptual_v0.1.md §8.1`).
+- **Go**: discarded not for inability (it completed the 6 operations and the additional tests) but for a lower weighted score, dominated by the highest-weight criterion (memory safety and reliability, 20%), where a real, reproducible failure was found. Go keeps real, documented advantages (3.3× faster compilation, native fuzzing without dependencies, pure-Go SQLite) that must be weighed in the "Revisit trigger" if the evidence changes.
+- **C**: discarded without evaluation, by an explicit decision made before this spike (`spike-protocol.md §Candidates`) — to preserve the protocol/adapter boundary with Codebase Memory (written in C) instead of sharing a language or process.
+- **TypeScript/Node.js**: discarded without evaluation, reserved for prototypes and evaluation tooling, not for the distributed core (`Arquitectura_Conceptual_v0.1.md §8.1`).
 
 ## Consequences
 
-- Se habilita continuar a Fase C5 (toolchain: formatter, linter, testing guide) y Fase D (vertical slice) en Rust.
-- El adaptador de Codebase Memory (`Rationale_v0.5.md §21`) se implementará en Rust, con FFI/subprocess hacia el binario de CBM (escrito en C) — la interoperabilidad C ya demostrada en el spike (`flock` vía FFI) es un precedente directo.
-- Se pierde la ventaja de compilación 3.3× más rápida de Go — mitigable parcialmente con `cargo check` incremental durante desarrollo activo, no medido en este spike.
-- El fuzzing/property testing en Rust requerirá una dependencia externa (`proptest` o `cargo-fuzz`) cuando se necesite — no está en el toolchain inicial de Fase C5 salvo que un caso concreto lo justifique.
-- El file locking en Fase D/E debe usar explícitamente la ruta portable de la std (`std::fs::File::lock`), no la ruta POSIX-only vía FFI usada en el spike por simplicidad — pendiente de verificar en Windows antes de Fase J (empaquetado).
+- It enables continuing to Phase C5 (toolchain: formatter, linter, testing guide) and Phase D (vertical slice) in Rust.
+- The Codebase Memory adapter (`Rationale_v0.5.md §21`) will be implemented in Rust, with FFI/subprocess toward the CBM binary (written in C) — the C interoperability already shown in the spike (`flock` through FFI) is a direct precedent.
+- Go's 3.3× faster compilation is lost — partially mitigable with incremental `cargo check` during active development, not measured in this spike.
+- Fuzzing/property testing in Rust will require an external dependency (`proptest` or `cargo-fuzz`) when needed — it is not in the initial Phase C5 toolchain unless a concrete case justifies it.
+- File locking in Phase D/E must explicitly use the portable `std` path (`std::fs::File::lock`), not the POSIX-only FFI path used in the spike for simplicity — to be verified on Windows before Phase J (packaging).
 
 ## Risks
 
-- El compilador de Rust y su ecosistema de crates pueden ser menos familiares para algunos agentes que Go — mitigación: `Proceso §9.3` ya exige crear style guide, testing guide y security guide específicos del lenguaje elegido (Fase C5).
-- La puntuación ponderada es una síntesis de un solo spike pequeño, no de un proyecto de producción — un hallazgo distinto en Fase D (vertical slice, alcance mayor) podría matizar esta decisión; ver Revisit trigger.
+- The Rust compiler and its crate ecosystem may be less familiar to some agents than Go — mitigation: `Proceso §9.3` already requires creating a style guide, testing guide, and security guide specific to the chosen language (Phase C5).
+- The weighted score is a synthesis of a single small spike, not of a production project — a different finding in Phase D (vertical slice, larger scope) could qualify this decision; see Revisit trigger.
 
 ## Validation
 
-Spike ejecutado completo en ambos candidatos, con las 6 operaciones obligatorias, servidor MCP, file locking, subprocess con deadline real, y suite de tests (6 tests unitarios en cada uno, más fuzzing nativo en Go). Reproducible: ver comandos en `spikes/language/rust/` y `spikes/language/go/`, y `docs/research/language/benchmark-results.json` para las mediciones crudas.
+The spike was run completely in both candidates, with the 6 mandatory operations, an MCP server, file locking, a subprocess with a real deadline, and a test suite (6 unit tests in each, plus native fuzzing in Go). Reproducible: see the commands in `spikes/language/rust/` and `spikes/language/go/`, and `docs/research/language/benchmark-results.json` for the raw measurements.
 
-**Este ADR está en estado `proposed`, no `accepted`.** Requiere revisión cruzada de otro agente (idealmente Codex, per `Proceso §13`) que intente falsificar la puntuación ponderada y las conclusiones antes de pasar a `accepted`, y aprobación humana explícita antes de comprometerse en Fase D.
+**This ADR is `proposed`, not `accepted`.** It requires cross-review by another agent (ideally Codex, per `Proceso §13`) that tries to falsify the weighted score and the conclusions before moving to `accepted`, and explicit human approval before committing to Phase D.
 
 ## Revisit trigger
 
-Reabrir este ADR si:
-- El adaptador de Codebase Memory (Fase E) revela una necesidad de interop C tan intensiva que la ventaja de Rust en ese criterio se vuelve dominante (reforzaría la decisión) o, inversamente, si aparece una limitación de Rust no anticipada aquí (debilitaría la decisión).
-- Fase D (vertical slice) descubre que el tiempo de compilación de Rust (31.94s en este spike pequeño) escala mal y afecta materialmente la velocidad de iteración de los agentes que construyen Rationale.
-- Se identifica un bug de seguridad de memoria en la propia implementación Rust del núcleo que contradiga la premisa central de esta decisión.
+Reopen this ADR if:
+- The Codebase Memory adapter (Phase E) reveals a need for C interop so intensive that Rust's advantage on that criterion becomes dominant (it would strengthen the decision) or, conversely, a Rust limitation not anticipated here appears (it would weaken the decision).
+- Phase D (vertical slice) discovers that Rust's compilation time (31.94 s in this small spike) scales badly and materially affects the iteration speed of the agents building Rationale.
+- A memory-safety bug is found in the core's own Rust implementation that contradicts the central premise of this decision.

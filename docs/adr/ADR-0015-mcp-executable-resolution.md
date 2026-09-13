@@ -1,193 +1,189 @@
 # ADR-0015: Executable resolution in per-project MCP configuration
 
-**Status:** proposed — pendiente de revisión cruzada independiente y aprobación humana antes de `accepted`.
+**Status:** proposed — pending independent cross-review and human approval before `accepted`.
 **Date:** 2026-07-28
-**Deciders:** Claude Code (análisis e implementación); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno. Complementa ADR-0014, que sacó la ruta del binario de `CLAUDE.md` y `AGENTS.md` y dejó explícitamente este problema fuera de su alcance.
+**Deciders:** Claude Code (analysis and implementation); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** none. It complements ADR-0014, which removed the binary path from `CLAUDE.md` and `AGENTS.md` and explicitly left this problem out of its scope.
 
 ## Context
 
-`install-agent` escribe el ejecutable de Rationale como **ruta absoluta** en los
-archivos de configuración MCP por proyecto:
+`install-agent` writes Rationale's executable as an **absolute path** into the
+per-project MCP configuration files:
 
 ```json
 { "mcpServers": { "rationale": {
   "command": "/Users/roor.osorio/.local/bin/rationale", "args": ["serve"] } } }
 ```
 
-Esos archivos —`.mcp.json` para Claude Code, `.cursor/mcp.json` para Cursor—
-son configuración **compartida y versionada del proyecto**. En los dos repos
-piloto, `.mcp.json` está comiteado y presente en `origin/main` con el `$HOME`
-de una persona concreta dentro. Cualquier otro integrante que clone obtiene un
-`command` que no existe en su máquina.
+Those files — `.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor — are
+**shared, versioned project configuration**. In both pilot repositories,
+`.mcp.json` is committed and present on `origin/main` with one specific
+person's `$HOME` inside. Any other member who clones gets a `command` that does
+not exist on their machine.
 
-La justificación que se venía dando para la ruta absoluta es que un cliente MCP
-lanzado como aplicación gráfica puede no heredar el `PATH` del shell, y que por
-tanto un `"command": "rationale"` pelado fallaría con «command not found». Esa
-premisa nunca se comprobó contra los clientes que Rationale realmente soporta.
-Este ADR la comprueba.
+The justification given for the absolute path was that an MCP client launched as
+a graphical application may not inherit the shell's `PATH`, and so a bare
+`"command": "rationale"` would fail with "command not found". That premise was
+never tested against the clients Rationale actually supports. This ADR tests it.
 
 ## Decision
 
-1. **`.mcp.json` (Claude Code) usa el comando lógico `"rationale"`, no una ruta
-   absoluta.** La premisa del `PATH` no se sostiene para este cliente: se
-   refutó empíricamente (ver Evidence). El archivo es compartido por diseño y
-   debe ser portable.
+1. **`.mcp.json` (Claude Code) uses the logical command `"rationale"`, not an
+   absolute path.** The `PATH` premise does not hold for this client: it was
+   refuted empirically (see Evidence). The file is shared by design and must be
+   portable.
 
-2. **`.cursor/mcp.json` (Cursor) usa también el comando lógico `"rationale"`**,
-   por consistencia y porque el archivo es igualmente compartido — pero **la
-   herencia de `PATH` en Cursor no está verificada** y queda como riesgo
-   declarado con `Revisit trigger` propio, no como supuesto silencioso.
+2. **`.cursor/mcp.json` (Cursor) also uses the logical command `"rationale"`**,
+   for consistency and because the file is equally shared — but **`PATH`
+   inheritance in Cursor is not verified** and remains a declared risk with its
+   own `Revisit trigger`, not a silent assumption.
 
-3. **La configuración MCP compartida no contiene nada dependiente de la
-   máquina.** Si en el futuro algún cliente exige una ruta absoluta
-   demostrada, esa configuración va a un archivo local no versionado, nunca al
-   compartido.
+3. **Shared MCP configuration contains nothing machine-dependent.** If a client
+   ever requires a demonstrated absolute path, that configuration goes to a local,
+   unversioned file, never to the shared one.
 
-4. **El fallo de resolución debe ser diagnosticable, no misterioso.**
-   `rationale doctor` es el lugar donde un `command not found` del cliente MCP
-   debe traducirse en «el binario no está en el `PATH` que ve tu cliente; está
-   en `<ruta>`». Un fallo silencioso de arranque de servidor MCP es
-   indistinguible de otras diez causas.
+4. **A resolution failure must be diagnosable, not mysterious.**
+   `rationale doctor` is where an MCP client's `command not found` should be
+   translated into "the binary is not on the `PATH` your client sees; it is at
+   `<path>`". A silent MCP server startup failure is indistinguishable from ten
+   other causes.
 
-5. **No se introduce ningún wrapper, script intermedio ni archivo
-   `.mcp.json.example`.** Ver Alternatives.
+5. **No wrapper, intermediate script, or `.mcp.json.example` file is
+   introduced.** See Alternatives.
 
 ## Evidence
 
-**La premisa del `PATH` se refutó sobre este mismo repositorio, en ejecución.**
-El `.mcp.json` de Rationale declara un comando **pelado**, sin ruta:
+**The `PATH` premise was refuted on this very repository, at runtime.**
+Rationale's `.mcp.json` declares a **bare** command, with no path:
 
 ```json
 { "command": "cargo", "args": ["run", "--quiet", "--release", "--", "serve"] }
 ```
 
-Claude Code arrancó el servidor con esa configuración y respondió a una llamada
-real de la herramienta `health` durante la sesión en que se escribió este ADR:
+Claude Code started the server with that configuration and answered a real call
+to the `health` tool during the session in which this ADR was written:
 
 ```json
 {"project_id":"rationale","provider_status":"successful",
  "git_revision":"0ecc5a275055ab1b7c7391cfb2a5625217614c76", ...}
 ```
 
-`cargo` vive en `~/.cargo/bin/cargo`, un directorio que **no** está en el `PATH`
-por defecto de macOS: lo añade `~/.profile` vía `. "$HOME/.cargo/env"`.
+`cargo` lives in `~/.cargo/bin/cargo`, a directory that is **not** on macOS's
+default `PATH`: `~/.profile` adds it through `. "$HOME/.cargo/env"`.
 
-**Alcance exacto de lo que esto prueba, y lo que no.** Prueba que Claude Code
-resuelve un comando pelado contra el `PATH` de su entorno, y que ese entorno
-incluía `~/.cargo/bin`. **No prueba que Claude Code procese `~/.profile`**: el
-mecanismo casi con certeza es que heredó el entorno del proceso que lo lanzó
-—un shell interactivo, que sí había cargado el perfil—. La distinción importa,
-porque un cliente lanzado desde Finder o Spotlight recibiría el entorno de
-`launchd`, sin ninguna extensión de perfil, y ahí un comando pelado fallaría.
+**The exact scope of what this proves, and what it does not.** It proves that
+Claude Code resolves a bare command against its environment's `PATH`, and that
+this environment included `~/.cargo/bin`. **It does not prove that Claude Code
+processes `~/.profile`**: the mechanism was almost certainly that it inherited
+the environment of the process that launched it — an interactive shell, which
+had loaded the profile. The distinction matters, because a client launched from
+Finder or Spotlight would receive `launchd`'s environment, with no profile
+extension, and there a bare command would fail.
 
-Tampoco prueba el directorio que importa: el binario de Rationale vive en
-`~/.local/bin`, no en `~/.cargo/bin`. Que ambos estén en el `PATH` observado en
-esta máquina, y que los añada el mismo mecanismo de perfil, hace la inferencia
-razonable pero **no es comprobación directa**.
+Nor does it prove the directory that matters: Rationale's binary lives in
+`~/.local/bin`, not `~/.cargo/bin`. That both are on the `PATH` observed on this
+machine, added by the same profile mechanism, makes the inference reasonable but
+**is not direct verification**.
 
-Dicho de forma exacta: la evidencia **refuta que la ruta absoluta sea
-necesaria** en el modo de lanzamiento que se probó, y no más que eso. Las
-validaciones #1 y #2 cierran ambos huecos.
+Put exactly: the evidence **refutes that the absolute path is necessary** in the
+launch mode that was tested, and no more than that. Validations #1 and #2 close
+both gaps.
 
-**El daño de la alternativa actual sí está medido**, no supuesto: `.mcp.json`
-comiteado con `/Users/roor.osorio/.local/bin/rationale` en Monorepo y BoostAPI,
-ambos en `origin/main`. Y reinstalar con un binario distinto lo reescribe:
-durante esta investigación pasó a `/Users/roor.osorio/Desktop/Rationale/target/
-release/rationale`, produciendo churn en un archivo versionado por máquina *y*
-por binario.
+**The harm of the current alternative is measured**, not assumed: `.mcp.json`
+committed with `/Users/roor.osorio/.local/bin/rationale` in Monorepo and
+BoostAPI, both on `origin/main`. And reinstalling with a different binary
+rewrites it: during this investigation it changed to
+`/Users/roor.osorio/Desktop/Rationale/target/release/rationale`, producing churn
+in a versioned file per machine *and* per binary.
 
-**Claude Desktop no es un consumidor de este archivo.** Usa
-`claude_desktop_config.json`, no `.mcp.json`. El escenario de app gráfica que
-motivaba la ruta absoluta no aplica al archivo que Rationale escribe para
+**Claude Desktop is not a consumer of this file.** It uses
+`claude_desktop_config.json`, not `.mcp.json`. The graphical-app scenario that
+motivated the absolute path does not apply to the file Rationale writes for
 Claude Code.
 
 ## Alternatives considered
 
-- **Ruta absoluta versionada (statu quo).** Descartado: garantiza el fallo para
-  todo el que no sea quien instaló, mete el `$HOME` de una persona en un
-  archivo compartido, y produce churn por máquina y por binario. El único
-  beneficio alegado —inmunidad al `PATH`— se refutó para Claude Code.
+- **A versioned absolute path (status quo).** Discarded: it guarantees failure
+  for everyone except whoever installed, puts one person's `$HOME` in a shared
+  file, and produces churn per machine and per binary. Its only claimed benefit —
+  immunity to `PATH` — was refuted for Claude Code.
 
-- **Wrapper estable (`./scripts/rationale` comiteado que resuelve el binario).**
-  Descartado: Rationale añadiría un archivo ejecutable al repositorio del
-  usuario para resolver un problema suyo. Es más invasivo que el problema, y
-  traslada la resolución de `PATH` a un script que tiene exactamente la misma
-  dificultad.
+- **A stable wrapper (a committed `./scripts/rationale` that resolves the
+  binary).** Discarded: Rationale would add an executable file to the user's
+  repository to solve its own problem. It is more invasive than the problem, and
+  it moves `PATH` resolution into a script with exactly the same difficulty.
 
-- **`.mcp.json` local no versionado + `.mcp.json.example` compartido.**
-  Descartado por ahora: `.mcp.json` es el mecanismo que Claude Code define
-  *como* configuración de proyecto compartida; sacarlo de Git rompe el «clonas
-  y funciona» para el equipo, y obliga a cada integrante a correr
-  `install-agent` antes de tener herramientas. Con la Decision #1 el archivo
-  ya es portable y el problema que motivaba sacarlo desaparece. Reconsiderar
-  solo si aparece un cliente que exija una ruta absoluta demostrada — ahí la
-  parte dependiente de máquina va a un archivo local, no se ignora todo el
-  compartido.
+- **A local, unversioned `.mcp.json` + a shared `.mcp.json.example`.** Discarded
+  for now: `.mcp.json` is the mechanism Claude Code defines *as* shared project
+  configuration; taking it out of Git breaks "clone and it works" for the team,
+  and forces every member to run `install-agent` before having tools. With
+  Decision #1 the file is already portable and the problem that motivated
+  removing it disappears. Reconsider only if a client appears that requires a
+  demonstrated absolute path — then the machine-dependent part goes to a local
+  file; the whole shared file is not ignored.
 
-- **Configuración compartida + override local por integrante.** Descartado como
-  diseño base: es la solución correcta para un problema que, tras la Decision
-  #1, ya no existe. Añadir dos archivos y una precedencia entre ellos para un
-  caso hipotético es complejidad sin evidencia que la pida.
+- **Shared configuration + a local override per member.** Discarded as the base
+  design: it is the right solution for a problem that, after Decision #1, no
+  longer exists. Adding two files and a precedence between them for a
+  hypothetical case is complexity without evidence asking for it.
 
-- **Detección específica por cliente (absoluta para unos, lógica para otros).**
-  Descartado: produce dos comportamientos que mantener y documentar, y el
-  cliente donde la premisa se refutó es justamente el mayoritario. Si Cursor
-  resulta necesitar otra cosa, se decide entonces con evidencia — el
-  `Revisit trigger` lo cubre.
+- **Client-specific detection (absolute for some, logical for others).**
+  Discarded: it produces two behaviors to maintain and document, and the client
+  where the premise was refuted is precisely the majority one. If Cursor turns
+  out to need something else, it is decided then, with evidence — the
+  `Revisit trigger` covers it.
 
 ## Consequences
 
-- Un integrante que clone cualquiera de los pilotos obtiene un `.mcp.json`
-  funcional en cuanto tenga `rationale` instalado, sin correr nada.
-- `.mcp.json` deja de producir diffs al cambiar de máquina o de binario. Deja
-  de ser un archivo que ensucia el árbol de trabajo del equipo.
-- El repositorio de Rationale conserva `cargo run --quiet --release -- serve`
-  en su propio `.mcp.json`: aquí el servidor se construye desde el fuente, no
-  se instala. `install-agent` lo reescribirá a `"rationale"` si se corre en
-  este repo, y hay que revertirlo — la misma fricción que ya existe y que este
-  ADR no resuelve.
-- Si el binario no está en el `PATH` del cliente, el servidor no arranca. La
-  Decision #4 existe para que eso sea diagnosticable en vez de silencioso.
+- A member who clones either pilot gets a working `.mcp.json` as soon as they
+  have `rationale` installed, without running anything.
+- `.mcp.json` stops producing diffs when the machine or binary changes. It stops
+  being a file that dirties the team's working tree.
+- Rationale's repository keeps `cargo run --quiet --release -- serve` in its own
+  `.mcp.json`: here the server is built from source, not installed.
+  `install-agent` will rewrite it to `"rationale"` if run in this repository,
+  and it has to be reverted — the same friction that already exists and that
+  this ADR does not solve.
+- If the binary is not on the client's `PATH`, the server does not start.
+  Decision #4 exists so that is diagnosable instead of silent.
 
 ## Risks
 
-- **Cursor podría no heredar el `PATH`.** Es una app Electron y su
-  comportamiento no se verificó. Mitigación: la Decision #2 lo declara como
-  riesgo abierto, no como supuesto; la validación #2 lo cierra. Si falla, la
-  corrección es acotada — un solo `AgentTarget`.
+- **Cursor might not inherit the `PATH`.** It is an Electron app and its
+  behavior was not verified. Mitigation: Decision #2 declares it an open risk,
+  not an assumption; validation #2 closes it. If it fails, the fix is contained —
+  a single `AgentTarget`.
 
-- **Un usuario con Rationale fuera del `PATH`.** Instalación manual en una ruta
-  no estándar, o `~/.local/bin` sin exportar. Antes «funcionaba» porque la ruta
-  absoluta lo tapaba; ahora falla. Mitigación: Decision #4, y el instalador ya
-  avisa cuando el directorio de instalación no está en el `PATH`.
+- **A user with Rationale outside the `PATH`.** A manual installation in a
+  non-standard path, or `~/.local/bin` not exported. It used to "work" because the
+  absolute path covered it up; now it fails. Mitigation: Decision #4, and the
+  installer already warns when the installation directory is not on the `PATH`.
 
-- **Un cliente podría recibir un `PATH` sin el directorio de instalación.**
-  Riesgo residual real y **abierto**. La validación #1 lo cierra únicamente
-  para Claude Code en la máquina y modalidad de lanzamiento probadas; como el
-  mecanismo por el que ese cliente obtuvo su `PATH` no se determinó, el
-  resultado no puede extrapolarse a otros clientes, otras máquinas ni otras
-  formas de arranque. Cursor sigue sin probar (validación #2).
+- **A client could receive a `PATH` without the installation directory.** A real,
+  **open** residual risk. Validation #1 closes it only for Claude Code on the
+  machine and launch mode tested; since the mechanism by which that client got
+  its `PATH` was not determined, the result cannot be extrapolated to other
+  clients, machines, or startup modes. Cursor remains untested (validation #2).
 
-  **Se acepta a sabiendas, no por descuido**, porque la comparación es
-  asimétrica: la ruta absoluta falla para *todo* integrante que no sea quien
-  instaló —con certeza, ya medido en dos pilotos— mientras que el comando
-  lógico falla solo en los modos de lanzamiento donde el `PATH` no se hereda, y
-  falla de forma diagnosticable (Decision #4). Cambiar un fallo seguro y
-  silencioso por uno condicional y diagnosticable es una mejora aunque el
-  segundo no sea cero. Las validaciones #1 y #2 acotan cuánto vale ese «solo».
+  **It is accepted knowingly, not by oversight**, because the comparison is
+  asymmetric: the absolute path fails for *every* member who is not the one who
+  installed — with certainty, already measured in two pilots — while the logical
+  command fails only in launch modes where the `PATH` is not inherited, and it
+  fails diagnosably (Decision #4). Trading a certain, silent failure for a
+  conditional, diagnosable one is an improvement even if the second is not zero.
+  Validations #1 and #2 bound how much that "only" is worth.
 
-- **Regresión silenciosa al reinstalar en el repo de Rationale.** Ver
-  Consequences. Riesgo aceptado y documentado; el arreglo real sería que
-  `install-agent` detecte que el proyecto *es* Rationale, y eso no justifica
-  código de producción hoy.
+- **Silent regression when reinstalling in Rationale's repository.** See
+  Consequences. An accepted, documented risk; the real fix would be for
+  `install-agent` to detect that the project *is* Rationale, which does not
+  justify production code today.
 
 ## Validation
 
-Pendiente de implementación. Exigida antes de `accepted`:
+Pending implementation. Required before `accepted`:
 
-**Binario bajo prueba**, para que la evidencia quede atada a un ejecutable
-concreto y no a «alguna instalación»:
+**The binary under test**, so the evidence is tied to a concrete executable and
+not to "some installation":
 
 ```
 command -v rationale  → /Users/roor.osorio/.local/bin/rationale
@@ -195,93 +191,93 @@ rationale --version   → rationale v0.1.0-alpha.7
 shasum -a 256         → 1933981a5dafdf020fcb4f2060c5bf0acd61678b2cd953ab4a643517b4f063fe
 ```
 
-**Confundidor ya eliminado.** Se verificó que ese binario habla MCP
-correctamente al invocarse directamente: `initialize` devuelve
-`{"name":"rationale","version":"v0.1.0-alpha.7"}` y `tools/call health`
-responde, sobre el banco `~/Desktop/rationale-path-test`, usando el transporte
-stdio de un objeto JSON por línea (`src/mcp/framing.rs` — *no*
-`Content-Length`, que es el codec de Codebase Memory). El binario de `main`
-hace lo mismo. Por tanto, un fallo en las pruebas de cliente aísla a la
-resolución del `PATH` y a nada más.
+**A confounder already removed.** It was verified that this binary speaks MCP
+correctly when invoked directly: `initialize` returns
+`{"name":"rationale","version":"v0.1.0-alpha.7"}` and `tools/call health`
+answers, on the test bench `~/Desktop/rationale-path-test`, using the stdio
+transport of one JSON object per line (`src/mcp/framing.rs` — *not*
+`Content-Length`, which is Codebase Memory's codec). The `main` binary does the
+same. Therefore a failure in the client tests isolates `PATH` resolution and
+nothing else.
 
-1. **Comprobación directa con `~/.local/bin` en Claude Code — ✅ PASÓ
-   (2026-07-28).** Banco `~/Desktop/rationale-path-test` con `.mcp.json`
-   conteniendo `"command": "rationale"`, tras cerrar y reabrir el cliente.
+1. **Direct check with `~/.local/bin` in Claude Code — ✅ PASSED
+   (2026-07-28).** Test bench `~/Desktop/rationale-path-test` with a `.mcp.json`
+   containing `"command": "rationale"`, after closing and reopening the client.
 
-   La comprobación no se hizo llamando a `health` desde el chat —el cliente no
-   completaba la generación, por causas ajenas a Rationale— sino **inspeccionando
-   el proceso que el cliente había lanzado**, que es evidencia más directa:
+   The check was not made by calling `health` from the chat — the client did not
+   complete the generation, for reasons unrelated to Rationale — but **by
+   inspecting the process the client had launched**, which is more direct
+   evidence:
 
    ```
-   PID 52676   rationale serve          ← comando pelado, tal como en .mcp.json
+   PID 52676   rationale serve          ← bare command, as in .mcp.json
    cwd         ~/Desktop/rationale-path-test
    txt         /Users/roor.osorio/.local/bin/rationale
    PATH        …:/Users/roor.osorio/.local/bin:…
    ```
 
-   El descriptor `txt` es el ejecutable que el kernel cargó: prueba que el
-   cliente resolvió `rationale` **a `~/.local/bin`**, el directorio que la
-   Evidence no cubría. Cierra ese hueco.
+   The `txt` descriptor is the executable the kernel loaded: it proves the client
+   resolved `rationale` **to `~/.local/bin`**, the directory the Evidence did not
+   cover. It closes that gap.
 
-   **Qué se observó exactamente sobre el `PATH`:** el proceso recibió un
-   `PATH` que contenía `~/.local/bin` (aparecía dos veces). **El mecanismo por
-   el cual el cliente obtuvo ese `PATH` no se determinó.** Podría ser
-   resolución del perfil del usuario, herencia del entorno de un proceso
-   ancestro, o configuración propia del cliente; nada de lo medido distingue
-   entre esas hipótesis, y la duplicación por sí sola no prueba ninguna.
+   **What was observed exactly about the `PATH`:** the process received a `PATH`
+   that contained `~/.local/bin` (it appeared twice). **The mechanism by which
+   the client obtained that `PATH` was not determined.** It could be resolution of
+   the user's profile, inheritance from an ancestor process's environment, or the
+   client's own configuration; nothing measured distinguishes among those
+   hypotheses, and the duplication alone proves none of them.
 
-   **Alcance de lo que esta validación cierra:** el riesgo de resolución de
-   `PATH` queda cerrado **para Claude Code, en esta máquina y en esta
-   modalidad de lanzamiento**, y nada más. No se cierra para Cursor
-   (validación #2, pendiente), ni para otras modalidades de lanzamiento de
-   este mismo cliente, ni para clientes MCP no probados. El riesgo declarado
-   en §Risks se mantiene abierto para todos ellos.
+   **The scope of what this validation closes:** the `PATH` resolution risk is
+   closed **for Claude Code, on this machine, and in this launch mode**, and
+   nothing more. It is not closed for Cursor (validation #2, pending), for other
+   launch modes of this same client, or for untested MCP clients. The risk
+   declared in §Risks remains open for all of them.
 
-2. **Resolución en runtime en Cursor — ⏳ `pending validation`.** No ejecutada:
-   `cursor-agent` no está en el `PATH` de la máquina de prueba. Se declara
-   pendiente, **no** comprobada, y ADR-0015 no puede pasar a `accepted` sin
-   ella o sin una decisión explícita de aceptar el riesgo para Cursor.
+2. **Runtime resolution in Cursor — ⏳ `pending validation`.** Not run:
+   `cursor-agent` is not on the test machine's `PATH`. It is declared pending,
+   **not** verified, and ADR-0015 cannot move to `accepted` without it or without
+   an explicit decision to accept the risk for Cursor.
 
-   Banco con `.cursor/mcp.json` escrito
-   **a mano** con el mismo comando pelado, tras cerrar y reabrir Cursor.
+   A test bench with `.cursor/mcp.json` written
+   **by hand** with the same bare command, after closing and reopening Cursor.
 
-   **Alcance exacto de esta prueba:** demuestra únicamente que Cursor resuelve
-   y ejecuta el comando lógico desde `~/.local/bin`. **No** demuestra que
-   `install-agent` detecte Cursor ni que genere ese archivo — en la máquina de
-   prueba `cursor-agent` no está en el `PATH`, así que la detección no se
-   ejercitó. Esa segunda propiedad queda cubierta por
-   `no_target_writes_an_absolute_command_into_shared_mcp_config`, que recorre
-   `TARGETS` incluyendo Cursor, y por `only_claude_code_declares_a_skills_directory`.
-   Registrar la prueba manual como si también hubiera comprobado la detección
-   sería exactamente el tipo de generalización que invalidó ADR-0012.
+   **The exact scope of this test:** it shows only that Cursor resolves and runs
+   the logical command from `~/.local/bin`. It does **not** show that
+   `install-agent` detects Cursor or generates that file — on the test machine
+   `cursor-agent` is not on the `PATH`, so detection was not exercised. That
+   second property is covered by
+   `no_target_writes_an_absolute_command_into_shared_mcp_config`, which walks
+   `TARGETS` including Cursor, and by `only_claude_code_declares_a_skills_directory`.
+   Recording the manual test as if it had also verified detection would be
+   exactly the kind of generalization that invalidated ADR-0012.
 
-   Si no hay Cursor funcional disponible, esta validación queda como
-   **`pending validation`** explícito — nunca como comprobada.
-3. **Test de regresión** que falle si `upsert_mcp_json` escribe una ruta
-   absoluta en cualquier `mcp_config_file` de `TARGETS`.
-4. **Instalación en dos rutas distintas del mismo proyecto** (copiado), para
-   confirmar que el `.mcp.json` resultante es byte-idéntico — hoy no lo es.
+   If no working Cursor is available, this validation stays an explicit
+   **`pending validation`** — never verified.
+3. **A regression test** that fails if `upsert_mcp_json` writes an absolute path
+   into any `mcp_config_file` of `TARGETS`.
+4. **Installing the same project at two different paths** (copied), to confirm
+   the resulting `.mcp.json` is byte-identical — today it is not.
 
-**La validación no puede ser inspección del archivo generado.** Que el JSON
-«se vea bien» no prueba que el cliente arranque el servidor; solo una llamada
-real a una herramienta MCP lo prueba.
+**Validation cannot be an inspection of the generated file.** A JSON that "looks
+right" does not prove the client starts the server; only a real call to an MCP
+tool proves it.
 
 ## Revisit trigger
 
-Reabrir si: (a) la validación #2 muestra que Cursor no resuelve comandos por
-`PATH`; (b) se añade a `TARGETS` un cliente lanzado como app gráfica que
-consuma un archivo versionado; o (c) aparece un informe real de «command not
-found» al arrancar el servidor MCP en una instalación estándar.
+Reopen if: (a) validation #2 shows that Cursor does not resolve commands through
+`PATH`; (b) a client launched as a graphical app that consumes a versioned file
+is added to `TARGETS`; or (c) a real "command not found" report appears when
+starting the MCP server in a standard installation.
 
 ## Validation update — 2026-07-29
 
-**La validación #2 falló y activó el Revisit trigger.** Cursor cargó
-`.cursor/mcp.json` con `"command": "rationale"`, pero mostró el servidor como
-desconectado y no expuso sus herramientas. El CLI local sí respondía. En el
-entorno de una aplicación gráfica, `~/.local/bin` no estaba disponible por el
-`PATH` observado.
+**Validation #2 failed and triggered the Revisit trigger.** Cursor loaded
+`.cursor/mcp.json` with `"command": "rationale"`, but showed the server as
+disconnected and did not expose its tools. The local CLI did respond. In a
+graphical application's environment, `~/.local/bin` was not available through
+the observed `PATH`.
 
-Por tanto, la Decision #2 de este ADR no sostuvo el dogfood. ADR-0016 propone
-reemplazar la configuración MCP por proyecto con registro global por usuario y
-ruta absoluta. Como ambos ADRs siguen `proposed`, este documento no se marca
-`superseded` hasta que exista revisión independiente y aprobación humana.
+Therefore this ADR's Decision #2 did not survive the dogfood. ADR-0016 proposes
+replacing the per-project MCP configuration with per-user global registration and
+an absolute path. Since both ADRs remain `proposed`, this document is not marked
+`superseded` until there is independent review and human approval.

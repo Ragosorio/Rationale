@@ -1,16 +1,16 @@
 ---
 name: Feature request
-about: Proponer una mejora con contexto y trade-offs
+about: Propose an improvement with context and trade-offs
 title: "feat: "
 labels: enhancement
 ---
 
-## Problema
+## Problem
 
-## Resultado deseado
+## Desired outcome
 
-## Alternativas consideradas
+## Alternatives considered
 
-## Impacto en arquitectura, seguridad o autoridad
+## Impact on architecture, security, or authority
 
-## Evidencia o experimento propuesto
+## Evidence or proposed experiment

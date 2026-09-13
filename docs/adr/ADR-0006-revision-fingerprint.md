@@ -1,50 +1,50 @@
 # ADR-0006: Revision fingerprint
 
-**Status:** proposed — pendiente de revisión cruzada independiente antes de `accepted`.
+**Status:** proposed — pending independent cross-review before `accepted`.
 **Date:** 2026-07-25
-**Deciders:** Claude Code (análisis e implementación); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno
+**Deciders:** Claude Code (analysis and implementation); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** none
 
 ## Context
 
-`Rationale_v0.5.md §4.8` exige que cada paquete de contexto declare una revisión coherente entre Git, el proveedor estructural y las evaluaciones de Rationale, y que la herramienta degrade o rechace una respuesta en vez de servir contexto plausible pero incorrecto. `Rationale_Arquitectura_Conceptual_v0.1.md §11.4` define el Revision Coordinator como el módulo responsable de esta comparación, pero no fijaba de dónde debía obtenerse la revisión "de verdad".
+`Rationale_v0.5.md §4.8` requires every context package to declare a revision that is consistent across Git, the structural provider, and Rationale's assessments, and requires the tool to degrade or refuse a response rather than serve plausible but incorrect context. `Rationale_Arquitectura_Conceptual_v0.1.md §11.4` defines the Revision Coordinator as the module responsible for this comparison, but did not settle where the "true" revision must come from.
 
-`docs/research/codebase-memory/05-revision-and-coverage.md` (CBM-008) produjo evidencia empírica directa y reproducible: `detect_changes` de Codebase Memory devolvió `{"changed_files": [], "changed_count": 0}` en tres formatos distintos de `since` (`HEAD~5`, un SHA explícito, una fecha), pese a que `git diff --stat` sobre el mismo rango mostraba **200 archivos modificados, 90.964 inserciones, 3.533 eliminaciones**. Este es exactamente el escenario que `Rationale_v0.5.md §4.9` advertía en abstracto ("no se encontró una relación" ≠ "se comprobó que la relación no existe") — ahora demostrado con datos concretos.
+`docs/research/codebase-memory/05-revision-and-coverage.md` (CBM-008) produced direct, reproducible empirical evidence: Codebase Memory's `detect_changes` returned `{"changed_files": [], "changed_count": 0}` for three different `since` formats (`HEAD~5`, an explicit SHA, a date), even though `git diff --stat` over the same range showed **200 modified files, 90,964 insertions, and 3,533 deletions**. This is exactly the scenario `Rationale_v0.5.md §4.9` warned about in the abstract ("no relationship was found" ≠ "the relationship was shown not to exist") — now demonstrated with concrete data.
 
 ## Decision
 
-El **revision fingerprint** de Rationale se calcula **exclusivamente a partir de Git** (`git rev-parse HEAD`, estado del working tree, hash de contenido cuando aplique) del lado de Rationale. Cualquier señal de revisión, cobertura o cambio reportada por Codebase Memory (u otro proveedor estructural futuro) se trata como un **dato adicional de baja confianza**, nunca como la fuente autoritativa de si el código cambió.
+Rationale's **revision fingerprint** is computed **exclusively from Git** (`git rev-parse HEAD`, working-tree state, content hashes where applicable) on Rationale's side. Any revision, coverage, or change signal reported by Codebase Memory (or any future structural provider) is treated as **additional low-confidence data**, never as the authoritative source of whether the code changed.
 
 ## Evidence
 
-- `05-revision-and-coverage.md`: `detect_changes` falló en los tres formatos de `since` probados, con 200 archivos de diferencia real no detectados.
-- `08-workspaces-and-monorepos.md` (B1.2): un hallazgo independiente de la misma naturaleza — una capability de resolución de paquetes (`pass_pkgmap.c`) que existe, está activa, y aun así no produjo ninguna relación cross-package real en un monorepo genuino. Refuerza el patrón: **el proveedor puede fallar en silencio incluso cuando la capability está presente y activa**, no solo cuando está ausente.
-- `12-integration-recommendation.md`: consolida ambos hallazgos como la razón de más peso para no delegar en el proveedor ninguna afirmación de "esto cambió" o "esto no cambió".
+- `05-revision-and-coverage.md`: `detect_changes` failed with all three `since` formats tested, missing 200 files of real difference.
+- `08-workspaces-and-monorepos.md` (B1.2): an independent finding of the same nature — a package-resolution capability (`pass_pkgmap.c`) that exists and is active still produced no real cross-package relationship in a genuine monorepo. It reinforces the pattern: **the provider can fail silently even when the capability is present and active**, not only when it is absent.
+- `12-integration-recommendation.md`: consolidates both findings as the weightiest reason not to delegate any "this changed" or "this did not change" claim to the provider.
 
 ## Alternatives considered
 
-- **Usar `detect_changes` de Codebase Memory como fuente primaria de cambios**: descartado — la evidencia de `05` demuestra que puede devolver silenciosamente cero cambios cuando existen cientos de archivos modificados reales, sin ningún error ni advertencia en la respuesta.
-- **Usar la revisión indexada que reporta el proveedor (`index_status`) como snapshot de referencia**: descartado como única fuente — `index_status` ni siquiera expone una revisión de Git en la versión probada (0.8.1); cuando sí la expone (build HEAD, `04-cli-contracts.md`), sigue sin resolver el problema de `detect_changes`, que es independiente.
-- **Confiar en el string de versión del binario para inferir si sus datos de revisión son confiables**: descartado — `00-source-lock.md` y `06-daemon-and-watcher.md` documentan **tres identificadores de versión inconsistentes entre sí** (`--version`, `git describe` del clon, hash de `daemon status`), ninguno utilizable para esa inferencia.
+- **Using Codebase Memory's `detect_changes` as the primary source of changes**: discarded — the evidence in `05` shows it can silently return zero changes when hundreds of real modified files exist, with no error or warning in the response.
+- **Using the indexed revision the provider reports (`index_status`) as the reference snapshot**: discarded as the sole source — `index_status` does not even expose a Git revision in the tested version (0.8.1); where it does (the HEAD build, `04-cli-contracts.md`), it still does not solve the `detect_changes` problem, which is independent.
+- **Trusting the binary's version string to infer whether its revision data is reliable**: discarded — `00-source-lock.md` and `06-daemon-and-watcher.md` document **three mutually inconsistent version identifiers** (`--version`, the clone's `git describe`, the `daemon status` hash), none usable for that inference.
 
 ## Consequences
 
-- El Revision Coordinator de Rationale (`Arquitectura_Conceptual_v0.1.md §11.4`) queda completamente desacoplado de la fiabilidad del proveedor estructural para su función más crítica (saber si el código cambió) — esto es una ventaja de robustez, no una limitación aceptada a regañadientes.
-- Codebase Memory sigue siendo consultado para su función correcta: estructura, símbolos, relaciones, impacto — nunca para "¿qué cambió desde la última revisión?".
-- El adaptador debe registrar la revisión/generación que el proveedor reporta (cuando la reporte) únicamente como metadato de diagnóstico (`provider_generation`, `Rationale_v0.5.md §21.1`), nunca como entrada de una decisión de invalidación.
-- Cualquier `Assessment` de Rationale queda `stale` o `unknown` en cuanto el fingerprint de Git (calculado por Rationale) difiere del fingerprint registrado en el `Assessment`, independientemente de lo que el proveedor diga.
+- Rationale's Revision Coordinator (`Arquitectura_Conceptual_v0.1.md §11.4`) is fully decoupled from the structural provider's reliability for its most critical function (knowing whether the code changed) — a robustness advantage, not a grudgingly accepted limitation.
+- Codebase Memory is still consulted for its proper function: structure, symbols, relationships, impact — never for "what changed since the last revision?".
+- The adapter must record the revision/generation the provider reports (when it does) only as diagnostic metadata (`provider_generation`, `Rationale_v0.5.md §21.1`), never as an input to an invalidation decision.
+- Any Rationale `Assessment` becomes `stale` or `unknown` as soon as the Git fingerprint (computed by Rationale) differs from the fingerprint recorded in the `Assessment`, regardless of what the provider says.
 
 ## Risks
 
-- Calcular el fingerprint solo desde Git no captura cambios en archivos no versionados (ej. generados, ignorados) — aceptable, porque el modelo conceptual de Rationale ya limita su alcance a lo versionado en Git (`Rationale_v0.5.md §4.19`).
-- El costo de calcular el estado del working tree (no solo `HEAD`) puede no ser trivial en repos muy grandes — pendiente de medir en Fase D con la vertical slice real, no bloqueante para esta decisión.
+- Computing the fingerprint only from Git does not capture changes in unversioned files (generated or ignored ones) — acceptable, because Rationale's conceptual model already limits its scope to what is versioned in Git (`Rationale_v0.5.md §4.19`).
+- The cost of computing the working-tree state (not only `HEAD`) may not be trivial in very large repositories — to be measured in Phase D with the real vertical slice; not blocking for this decision.
 
 ## Validation
 
-Evidencia reproducible en `docs/research/codebase-memory/05-revision-and-coverage.md §Reproducir` y `08-workspaces-and-monorepos.md §Reproducir`. La vertical slice de Fase D debe incluir un test explícito: mover `HEAD` sin reindexar el proveedor y confirmar que Rationale degrada el `Assessment` a `stale`/`unknown` usando únicamente su propio cálculo de Git, sin depender de ninguna señal del proveedor (ver plan de verificación de Fase D).
+Reproducible evidence in `docs/research/codebase-memory/05-revision-and-coverage.md §Reproduce` and `08-workspaces-and-monorepos.md §Reproduce`. The Phase D vertical slice must include an explicit test: move `HEAD` without re-indexing the provider and confirm that Rationale degrades the `Assessment` to `stale`/`unknown` using only its own Git computation, without depending on any provider signal (see the Phase D verification plan).
 
-**Este ADR está en estado `proposed`**, pendiente de revisión cruzada y aprobación humana.
+**This ADR is `proposed`**, pending cross-review and human approval.
 
 ## Revisit trigger
 
-Reabrir si una versión futura de Codebase Memory demuestra, con la misma metodología empírica de `05-revision-and-coverage.md` repetida, que `detect_changes` deja de fallar en el mismo escenario — eso no invalidaría la arquitectura (Git seguiría siendo la fuente primaria por robustez), pero permitiría reconsiderar si vale la pena usar la señal del proveedor como aceleración opcional, nunca como reemplazo.
+Reopen if a future Codebase Memory version shows, with the same empirical methodology from `05-revision-and-coverage.md` repeated, that `detect_changes` stops failing in the same scenario — that would not invalidate the architecture (Git would remain the primary source for robustness), but it would allow reconsidering whether the provider's signal is worth using as an optional acceleration, never as a replacement.

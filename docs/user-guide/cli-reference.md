@@ -1,62 +1,63 @@
-# Referencia de la CLI
+# CLI reference
 
-La ayuda del binario es la referencia ejecutable:
+The binary's help is the executable reference:
 
 ```bash
 rationale --help
-rationale <comando> --help
+rationale <command> --help
 ```
 
-## Configuración
+## Setup
 
-| Comando | Uso |
+| Command | Purpose |
 |---|---|
-| `init [--skip-agent-config]` | Crea `.rationale/` y configura los agentes detectados. |
-| `install-agent [--dry-run] [--refresh-skills] [--global-only]` | Registra el servidor MCP por usuario y escribe protocolo y skills en el proyecto. Idempotente. |
-| `uninstall-agent [--global-only]` | Revierte solamente lo escrito por `install-agent`. |
-| `update` | Instala la última Release del canal mediante el helper local. |
+| `init [--skip-agent-config]` | Creates `.rationale/` and configures the detected agents. |
+| `install-agent [--dry-run] [--refresh-skills] [--global-only]` | Registers the MCP server per user and writes the protocol, the `rationale` skill, and the shortcuts into the project. Idempotent. |
+| `uninstall-agent [--global-only]` | Reverts only what `install-agent` wrote. |
+| `update` | Installs the latest release of the channel through the local helper. |
 
-## Contexto
+## Context
 
-| Comando | Uso |
+| Command | Purpose |
 |---|---|
-| `health` | Proyecto, revisión Git, working tree, estado y cobertura del proveedor. |
-| `prepare <target> [--intent "…"] [--repo-path <path>]` | Compila el packet de contexto para un path o símbolo. |
-| `serve [--client <claude-code\|codex\|cursor>]` | Servidor MCP persistente por stdio. |
-| `ui [--port <n>] [--no-open]` | Control Room de solo lectura en `127.0.0.1`. |
+| `health` | Project, Git revision, working tree, provider status and coverage. |
+| `prepare <target> [--intent "…"] [--repo-path <path>]` | Compiles the context packet for a path or symbol. |
+| `serve [--client <claude-code\|codex\|cursor>]` | Persistent MCP server over stdio. |
+| `ui [--port <n>] [--no-open]` | Read-only Control Room on `127.0.0.1`. |
 
-## Autoridad humana
+## Human authority
 
-| Comando | Uso |
+| Command | Purpose |
 |---|---|
-| `pin <record-id> [--reason "…"]` | Fija un Record: los agentes lo usan pero no pueden reemplazarlo. |
-| `unpin <record-id> [--reason "…"]` | Devuelve un Record fijado a autoridad normal. |
-| `conflicts [--json]` | Lista conflictos pendientes con reglas fijadas. |
-| `resolve <conflict-id> <keep-pinned\|adopt-new>` | Decide un conflicto. |
-| `review-record <record-id>` | Lifecycle de un Record: corregir, disputar, revocar, reemplazar, autoridad, evidencia. |
+| `pin <record-id> [--reason "…"]` | Pins a Record: agents use it but cannot replace it. |
+| `unpin <record-id> [--reason "…"]` | Returns a pinned Record to normal authority. |
+| `conflicts [--json]` | Lists pending conflicts with pinned rules. |
+| `resolve <conflict-id> <keep-pinned\|adopt-new>` | Decides a conflict. |
+| `review-record <record-id>` | A Record's lifecycle: correct, dispute, revoke, supersede, authority, evidence. |
 
-`pin` y `unpin` exigen terminal interactiva, un actor declarado en
-`.rationale/config.yaml` y confirmar escribiendo el id. `resolve` exige terminal
-interactiva; `adopt-new` además exige actor declarado.
+`pin` and `unpin` require an interactive terminal, an actor declared in
+`.rationale/config.yaml`, and confirmation by typing the id. `resolve` requires
+an interactive terminal; `adopt-new` also requires a declared actor.
 
-## Migración y mantenimiento
+## Migration and maintenance
 
-| Comando | Uso |
+| Command | Purpose |
 |---|---|
-| `migrate [--dry-run] [--json]` | Pasa propuestas anteriores a 1.0 por el gate de captura. Nunca borra nada. |
-| `review` | Legado: confirma propuestas anteriores a 1.0 una a una. |
-| `doctor [--check] [--repair] [--json]` | Integridad del canon. `--check` sale con 1 si hay hallazgos; `--repair` pregunta por cada uno. |
+| `migrate [--dry-run] [--json]` | Passes pre-1.0 proposals through the capture gate. Never deletes anything. |
+| `review` | Legacy: confirms pre-1.0 proposals one by one. |
+| `doctor [--check] [--repair] [--json]` | Canon integrity. `--check` exits 1 when there are findings; `--repair` asks about each one. |
 
-## Opciones frecuentes
+## Common options
 
 ```bash
-rationale health --project-root /ruta/proyecto
-rationale prepare "src/lib.rs::funcion" --intent "qué quiero cambiar"
-rationale install-agent --project-root /ruta/proyecto --dry-run
+rationale health --project-root /path/to/project
+rationale prepare "src/lib.rs::function" --intent "what I want to change"
+rationale install-agent --project-root /path/to/project --dry-run
 rationale ui --port 9800 --no-open
 ```
 
-`--no-mascot` o `RATIONALE_NO_MASCOT=1` silencian a Chestie. La CLI no ofrece una
-vía para que un agente fije Records ni decida conflictos. Si una versión
-publicada muestra comandos distintos, reporta el desvío antes de actualizar la
-documentación.
+`--no-mascot` or `RATIONALE_NO_MASCOT=1` silences Chestie, the mascot. The CLI
+offers no way for an agent to pin Records or decide conflicts. Command output is
+currently written in Spanish; the flags, JSON fields, and exit codes documented
+here are the stable contract. If a published version shows different commands,
+report the drift before updating the documentation.

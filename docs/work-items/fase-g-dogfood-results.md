@@ -1,12 +1,12 @@
-# Evidencia de dogfood interno — Fase G
+# Internal dogfood evidence — Phase G
 
-Fecha: 2026-07-26. Binario: commit `fabeb92400b485080278276105bd60b0a3e295c5`.
-Repositorio: Rationale. Modo: `rationale prepare`, sin escribir Records ni
-propuestas.
+Date: 2026-07-26. Binary: commit `fabeb92400b485080278276105bd60b0a3e295c5`.
+Repository: Rationale. Mode: `rationale prepare`, without writing Records or
+proposals.
 
-## Casos ejecutados
+## Cases run
 
-| # | Target | Proveedor | Cobertura | Warnings | tokens |
+| # | Target | Provider | Coverage | Warnings | Tokens |
 |---:|---|---|---|---:|---:|
 | 1 | `src/review.rs::approve` | successful | complete | 0 | 207 |
 | 2 | `src/review.rs::mutate_record` | successful | complete | 0 | 209 |
@@ -19,29 +19,31 @@ propuestas.
 | 9 | `src/retrieval.rs::compile_packet` | successful | complete | 0 | 231 |
 | 10 | `Cargo.toml` | successful | unknown | 1 | 194 |
 
-Consistencia observada: `working-tree-ahead` en todos los casos, reportada
-honestamente porque la rama contiene documentación, packaging y artefactos de
-esta misma ejecución. No se presentó como revisión exacta.
+Observed consistency: `working-tree-ahead` in every case, reported honestly
+because the branch contains documentation, packaging, and artifacts from this
+same run. It was not presented as an exact revision.
 
-## Resultado
+## Result
 
-- 10/10 procesos terminaron con código 0.
-- 10/10 produjeron un ContextPacket.
-- 8/10 tuvieron cobertura estructural completa; los dos `unknown` corresponden
-  a un método que el proveedor no expuso y a un manifiesto no simbólico.
-- 8/10 no tuvieron warnings; los 2 warnings fueron explícitos y no se
-  convirtieron en un falso "no existe".
-- Mediana del proxy de tokens: 210; máximo: 247.
-- Los logs locales muestran latencias recientes de 48–80 ms con caché/provider
-  disponibles (`.rationale-local/runs/vertical-slice.ndjson`).
+- 10/10 processes exited with code 0.
+- 10/10 produced a ContextPacket.
+- 8/10 had full structural coverage; the two `unknown` ones correspond to a
+  method the provider did not expose and to a non-symbolic manifest.
+- 8/10 had no warnings; the 2 warnings were explicit and did not become a false
+  "does not exist".
+- Median token proxy: 210; maximum: 247.
+- The local logs show recent latencies of 48–80 ms with the cache and provider
+  available (`.rationale-local/runs/vertical-slice.ndjson`).
 
-La primera pasada dentro del sandbox produjo warnings de SQLite por una ruta de
-caché no escribible. Se repitió fuera del sandbox, como entorno local real, y
-la caché derivada abrió correctamente; ese incidente no se cuenta como defecto
-del producto, pero queda como requisito de smoke test de instalación.
+The first pass inside the sandbox produced SQLite warnings because of an
+unwritable cache path. It was repeated outside the sandbox, as a real local
+environment, and the derived cache opened correctly; that incident is not
+counted as a product defect, but it remains a requirement for the installation
+smoke test.
 
 ## Gate
 
-El dogfood interno sostiene el núcleo para el tag dogfood. No demuestra todavía
-valor comparativo frente a Codebase Memory ni autoriza captura asistida sobre
-repositorios laborales. Eso queda para [`fase-h-piloto.md`](fase-h-piloto.md).
+The internal dogfood supports the core for the dogfood tag. It does not yet
+demonstrate comparative value against Codebase Memory, nor does it authorize
+assisted capture on work repositories. That is left to
+[`fase-h-piloto.md`](fase-h-piloto.md).

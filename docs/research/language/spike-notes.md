@@ -1,26 +1,26 @@
-# Spike notes — observaciones cualitativas
+# Spike notes — qualitative observations
 
-Notas del agente que implementó ambos candidatos en la misma sesión, con el mismo nivel de esfuerzo declarado (`Proceso §9.2`).
+Notes from the agent that implemented both candidates in the same session, with the same declared level of effort (`Proceso §9.2`).
 
-## Mantenibilidad con agentes
+## Maintainability with agents
 
-- **Rust** exige resolver el modelo de propiedad/borrowing incluso en un programa pequeño (ej. `child.stdout.take()`, manejo explícito de `Option`/`Result` en cada paso). Esto produjo código más verboso pero cuyos errores de tipo aparecen en tiempo de compilación — el compilador rechazó cualquier intento de usar un valor después de moverlo, antes de llegar a ejecutar nada. Para un agente que itera rápido, esto significa más ciclos de "corregir error de compilación" pero también mayor confianza en que, si compila, cierto tipo de error de lógica (usar un valor movido, olvidar un `Result`) ya está descartado.
-- **Go** permitió escribir la primera versión más rápido y con menos fricción sintáctica. El costo apareció después: el bug de cancelación de subproceso (`candidates.md`) no lo detectó el compilador ni el linter — lo detectó únicamente la medición empírica de tiempo. Es decir, Go movió el costo de "atrapar el error" de tiempo de compilación a tiempo de prueba/medición.
-- Para un flujo de trabajo con agentes que se apoya fuertemente en `cargo test`/`go test` y en medición automatizada (exactamente el patrón que este proyecto ya sigue, `Proceso §12`), ambos lenguajes son viables, pero **Rust falla más temprano y de forma más ruidosa; Go falla más tarde y en silencio** salvo que exista instrumentación deliberada como la de este spike.
+- **Rust** requires resolving the ownership/borrowing model even in a small program (for example `child.stdout.take()`, explicit handling of `Option`/`Result` at every step). This produced more verbose code whose type errors appear at compile time — the compiler rejected any attempt to use a value after moving it, before anything ran. For an agent iterating quickly, this means more "fix the compile error" cycles but also more confidence that, if it compiles, a certain class of logic error (using a moved value, forgetting a `Result`) is already ruled out.
+- **Go** allowed writing the first version faster and with less syntactic friction. The cost appeared later: the subprocess cancellation bug (`candidates.md`) was caught by neither the compiler nor the linter — only by empirical timing measurement. That is, Go moved the cost of "catching the error" from compile time to test/measurement time.
+- For an agent workflow that relies heavily on `cargo test`/`go test` and automated measurement (exactly the pattern this project already follows, `Proceso §12`), both languages are viable, but **Rust fails earlier and louder; Go fails later and silently** unless there is deliberate instrumentation like this spike's.
 
-## Ergonomía
+## Ergonomics
 
-- La biblioteca estándar de Go para JSON (`encoding/json`) y subprocess (`os/exec`) es más directa de usar que el ecosistema de crates en Rust (`serde_json` + manejo manual de `Command`), a costa de menos garantías en tiempo de compilación.
-- El manejo de errores de Rust (`Result<T, E>` obligatorio en cada punto de fallo) hizo más incómodo escribir rápido, pero también hizo imposible ignorar silenciosamente un fallo de I/O — en Go, un error ignorado (`_`) compila sin advertencia a menos que se use un linter externo (`errcheck`, no incluido en este spike por paridad de dependencias).
-- El framing MCP (`Content-Length` + JSON-RPC) se implementó de forma casi idéntica en ambos lenguajes — no fue un diferenciador real; ambos tienen soporte suficiente en la std (`std::io`/`io.Reader` con lectura byte a byte y parsing manual de headers).
+- Go's standard library for JSON (`encoding/json`) and subprocesses (`os/exec`) is more direct to use than Rust's crate ecosystem (`serde_json` + manual `Command` handling), at the cost of fewer compile-time guarantees.
+- Rust's error handling (`Result<T, E>` mandatory at every failure point) made writing fast more uncomfortable, but also made it impossible to silently ignore an I/O failure — in Go, an ignored error (`_`) compiles without warning unless an external linter is used (`errcheck`, not included in this spike for dependency parity).
+- MCP framing (`Content-Length` + JSON-RPC) was implemented almost identically in both languages — it was not a real differentiator; both have sufficient support in their standard libraries (`std::io`/`io.Reader` with byte-by-byte reading and manual header parsing).
 
-## Lo que este spike NO evalúa
+## What this spike does NOT evaluate
 
-- Mantenibilidad a largo plazo en un proyecto de decenas de miles de líneas (este spike es deliberadamente pequeño, `spike-protocol.md`).
-- Disponibilidad y calidad de skills/documentación específica para agentes en cada lenguaje — evaluación pendiente para después de elegir (`Proceso §9.3`).
-- Comportamiento real en Linux/Windows (`compatibility-matrix.md`) — solo evaluado por diseño, no verificado en ejecución.
-- Empaquetado y distribución real (Fase J, muy posterior).
+- Long-term maintainability in a project of tens of thousands of lines (this spike is deliberately small, `spike-protocol.md`).
+- The availability and quality of agent-specific skills/documentation for each language — an assessment pending until after choosing (`Proceso §9.3`).
+- Real behavior on Linux/Windows (`compatibility-matrix.md`) — assessed only by design, not verified in execution.
+- Real packaging and distribution (Phase J, much later).
 
-## Impresión general
+## Overall impression
 
-Ninguno de los dos candidatos mostró una limitación que lo descarte. La decisión en ADR-0001 debe ponderar explícitamente: seguridad de memoria/confiabilidad demostrada empíricamente en este spike (a favor de Rust, por el hallazgo de cancelación), contra velocidad de iteración y fuzzing nativo (a favor de Go) — exactamente la tensión que los criterios ponderados de `Arquitectura_Conceptual_v0.1.md §8.2` ya anticipaban al ponderar "seguridad de memoria y confiabilidad" con el peso más alto (20%).
+Neither candidate showed a limitation that rules it out. The decision in ADR-0001 must explicitly weigh memory safety/reliability demonstrated empirically in this spike (in Rust's favor, because of the cancellation finding) against iteration speed and native fuzzing (in Go's favor) — exactly the tension that the weighted criteria in `Arquitectura_Conceptual_v0.1.md §8.2` already anticipated by giving "memory safety and reliability" the highest weight (20%).

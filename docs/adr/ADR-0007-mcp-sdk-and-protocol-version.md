@@ -1,50 +1,50 @@
 # ADR-0007: MCP SDK and protocol version
 
-**Status:** proposed — pendiente de revisión cruzada independiente antes de `accepted`.
+**Status:** proposed — pending independent cross-review before `accepted`.
 **Date:** 2026-07-25
-**Deciders:** Claude Code (análisis e implementación); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno
+**Deciders:** Claude Code (analysis and implementation); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** none
 
 ## Context
 
-Fase E5 convierte a Rationale en servidor MCP (`prepare_change`, `explain_target`, `health`), además de cliente (ya implementado en `src/providers/codebase_memory.rs` desde Fase D). Hace falta decidir si usar un SDK externo o continuar con codecs manuales separados para cada frontera.
+Phase E5 turns Rationale into an MCP server (`prepare_change`, `explain_target`, `health`) in addition to a client (already implemented in `src/providers/codebase_memory.rs` since Phase D). It remains to decide whether to use an external SDK or keep separate manual codecs for each boundary.
 
 ## Decision
 
-1. **Mantener codecs manuales separados por frontera**: JSON por línea para el servidor MCP stdio de Rationale y `Content-Length` únicamente para el cliente hacia Codebase Memory, cuyo contrato histórico se conserva.
-2. **Protocolo `2024-11-05`** — la misma versión que el cliente ya declara y que Codebase Memory ya acepta en producción real.
-3. **`rmcp` (SDK oficial) queda como candidato documentado para una migración futura**, no para Fase E5.
+1. **Keep separate manual codecs per boundary**: line-delimited JSON for Rationale's stdio MCP server, and `Content-Length` only for the client toward Codebase Memory, whose historical contract is preserved.
+2. **Protocol `2024-11-05`** — the same version the client already declares and Codebase Memory already accepts in real production.
+3. **`rmcp` (the official SDK) remains a documented candidate for a future migration**, not for Phase E5.
 
 ## Evidence
 
-- **La implementación manual ya está probada dos veces contra un servidor MCP real** (Codebase Memory): una vez en el spike de lenguaje (`spikes/language/rust/src/main.rs`, con cliente Python de prueba) y otra vez en el cliente real de producción (`src/providers/codebase_memory.rs`, Fase D, con `initialize`/`tools/call` funcionando end-to-end, latencia de 15-30ms medida en sesión cálida). Cero incidencias de framing en ninguna de las dos pruebas.
-- **`rmcp` (`github.com/modelcontextprotocol/rust-sdk`) es el SDK oficial** de la organización que define el protocolo — se verificó que compila limpiamente en este entorno (`cargo build` exitoso, 26.5s).
-- **Pero `rmcp` arrastra una dependencia sustancial**: al compilarlo se observaron ~15 crates transitivos nuevos, incluyendo `tokio` (runtime async completo, feature `full`), `futures`, `async-trait`, `schemars`, `chrono`, `darling`, `tracing` — un cambio de naturaleza, no solo de tamaño, frente al enfoque síncrono actual de Rationale (hoy solo `serde`/`serde_json`/`serde_yaml`, sin runtime async en ningún módulo).
-- **`rmcp` está en beta** (`3.0.0-beta.2`) — su superficie de API todavía puede cambiar antes de una release estable.
+- **The manual implementation has already been tested twice against a real MCP server** (Codebase Memory): once in the language spike (`spikes/language/rust/src/main.rs`, with a Python test client) and again in the real production client (`src/providers/codebase_memory.rs`, Phase D, with `initialize`/`tools/call` working end to end and a measured latency of 15–30 ms in a warm session). Zero framing incidents in either test.
+- **`rmcp` (`github.com/modelcontextprotocol/rust-sdk`) is the official SDK** of the organization that defines the protocol — it was verified to build cleanly in this environment (successful `cargo build`, 26.5 s).
+- **But `rmcp` pulls in a substantial dependency tree**: building it brought ~15 new transitive crates, including `tokio` (a full async runtime, feature `full`), `futures`, `async-trait`, `schemars`, `chrono`, `darling`, and `tracing` — a change in nature, not only in size, compared with Rationale's current synchronous approach (today only `serde`/`serde_json`/`serde_yaml`, with no async runtime in any module).
+- **`rmcp` is in beta** (`3.0.0-beta.2`) — its API surface may still change before a stable release.
 
 ## Alternatives considered
 
-- **Adoptar `rmcp` ahora**: descartado para Fase E5. Requeriría convertir `main.rs`, `providers/codebase_memory.rs` y todo el flujo síncrono actual a `async`/`await` con un runtime Tokio — un cambio arquitectónico transversal, no una decisión aislada de "qué SDK usar para el servidor", justo cuando Fase E ya introduce cambios grandes en el store canónico y la capa derivada. Acumular ambos riesgos en la misma fase viola el principio de cambios pequeños y verificables (`Proceso §6.4`).
-- **Otro SDK de terceros** (`rust-mcp-sdk`, `mcp-attr`, `tower-mcp`): no evaluados con la misma profundidad — ninguno tiene el respaldo de ser el SDK de la organización que define el protocolo, y adoptar cualquiera de ellos tendría el mismo costo de conversión a async sin la ventaja de ser "oficial".
-- **Seguir sin servidor MCP** (solo CLI): descartado — es exactamente el límite que este plan (Fase E) busca resolver; sin superficie MCP, ningún agente puede consumir Rationale.
+- **Adopting `rmcp` now**: discarded for Phase E5. It would require converting `main.rs`, `providers/codebase_memory.rs`, and the entire current synchronous flow to `async`/`await` on a Tokio runtime — a cross-cutting architectural change, not an isolated "which SDK for the server" decision, right when Phase E already introduces large changes in the canonical store and the derived layer. Stacking both risks in the same phase violates the principle of small, verifiable changes (`Proceso §6.4`).
+- **Another third-party SDK** (`rust-mcp-sdk`, `mcp-attr`, `tower-mcp`): not evaluated in the same depth — none is backed by being the SDK of the organization that defines the protocol, and adopting any of them would carry the same async conversion cost without the advantage of being "official".
+- **Staying without an MCP server** (CLI only): discarded — it is exactly the limit this plan (Phase E) aims to remove; without an MCP surface, no agent can consume Rationale.
 
 ## Consequences
 
-- El servidor MCP de Fase E5 implementa el transporte stdio estándar: leer una línea JSON, despachar por `method`, escribir una línea JSON — todo síncrono, sin runtime async. El codec `Content-Length` queda encapsulado en el cliente hacia Codebase Memory y no se reutiliza para Codex.
-- **Regla operativa crítica heredada de `Arquitectura §11.1`**: stdout queda reservado exclusivamente para el protocolo MCP; todo log va a stderr o archivo. Se verifica con un test explícito en Fase E6.
-- Si Rationale necesita en el futuro atender múltiples sesiones/agentes concurrentes de forma no bloqueante, la migración a `rmcp` (o a un runtime async propio) se vuelve más atractiva — pero no es una necesidad actual, es una capacidad hipotética.
+- The Phase E5 MCP server implements the standard stdio transport: read a JSON line, dispatch by `method`, write a JSON line — all synchronous, with no async runtime. The `Content-Length` codec stays encapsulated in the client toward Codebase Memory and is not reused for Codex.
+- **A critical operating rule inherited from `Arquitectura §11.1`**: stdout is reserved exclusively for the MCP protocol; every log goes to stderr or a file. It is verified by an explicit test in Phase E6.
+- If Rationale ever needs to serve multiple concurrent sessions/agents without blocking, migrating to `rmcp` (or to its own async runtime) becomes more attractive — but that is a hypothetical capability, not a current need.
 
 ## Risks
 
-- Mantener el framing a mano significa que Rationale es responsable de seguir cualquier evolución futura del protocolo MCP manualmente, sin las garantías de compatibilidad que un SDK oficial mantenido ofrecería. Mitigación: la superficie de Fase E5 es pequeña (3 herramientas, sin streaming, sin cancelación de requests en curso) — el riesgo de divergencia del protocolo es bajo para este alcance.
-- Retrasar la adopción de `rmcp` significa que, si se decide migrar más adelante, el costo de conversión a async sigue pendiente — no desaparece, solo se pospone a un momento con menos cambios simultáneos.
+- Keeping the framing by hand means Rationale is responsible for following any future evolution of the MCP protocol manually, without the compatibility guarantees a maintained official SDK would offer. Mitigation: the Phase E5 surface is small (3 tools, no streaming, no cancellation of in-flight requests) — the risk of protocol divergence is low for this scope.
+- Delaying `rmcp` means that, if a migration is decided later, the async conversion cost is still pending — it does not disappear; it is postponed to a moment with fewer simultaneous changes.
 
 ## Validation
 
-Framing verificado dos veces contra Codebase Memory real (Fase C y D). La extensión a modo servidor se valida en Fase E5/E6 con un cliente de prueba (mismo patrón Python usado en `docs/research/codebase-memory/11-performance-observations.md`) que llama `prepare_change`/`explain_target`/`health` contra el binario real de Rationale.
+Framing verified twice against the real Codebase Memory (Phases C and D). The extension to server mode is validated in Phase E5/E6 with a test client (the same Python pattern used in `docs/research/codebase-memory/11-performance-observations.md`) that calls `prepare_change`/`explain_target`/`health` against the real Rationale binary.
 
-**Este ADR está en estado `proposed`**, pendiente de revisión cruzada y aprobación humana. La evidencia cleanroom de Codex reabrió la decisión original de compartir `Content-Length` entre ambas fronteras.
+**This ADR is `proposed`**, pending cross-review and human approval. Codex's cleanroom evidence reopened the original decision to share `Content-Length` between both boundaries.
 
 ## Revisit trigger
 
-Reabrir cuando: (a) `rmcp` alcance una release estable (no beta) Y exista una necesidad real de concurrencia/async no cubierta por el enfoque síncrono; o (b) el protocolo MCP introduzca una capacidad (streaming, cancelación) que el framing manual no pueda soportar razonablemente.
+Reopen when: (a) `rmcp` reaches a stable (not beta) release AND there is a real need for concurrency/async not covered by the synchronous approach; or (b) the MCP protocol introduces a capability (streaming, cancellation) that manual framing cannot reasonably support.

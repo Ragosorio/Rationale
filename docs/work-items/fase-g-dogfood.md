@@ -1,88 +1,85 @@
-# Fase G — dogfood formal en Rationale
+# Phase G — formal dogfood on Rationale
 
-Fecha de ejecución: 2026-07-26. Este work item registra evidencia reproducible
-del dogfood de Fase G y separa lo que el binario ya demostró de lo que todavía
-requiere una acción humana o una sesión nueva del agente.
+Run date: 2026-07-26. This work item records reproducible evidence from the
+Phase G dogfood and separates what the binary already demonstrated from what
+still requires a human action or a new agent session.
 
-## G1 — conexión MCP
+## G1 — MCP connection
 
-`.mcp.json` está versionado y apunta al servidor real `cargo run --quiet
---release -- serve`. La sesión de Codex que ejecutó F8 ya estaba abierta antes
-de que este servidor se añadiera al contexto, por lo que las herramientas MCP
-nativas de Rationale no aparecen en esta sesión; cargar `.mcp.json` requiere
-reiniciar la sesión del agente. Como evidencia no sustitutiva, se ejecutó el
-binario real `target/release/rationale serve` con framing `Content-Length` y un
-cliente de transporte efímero, no un mock:
+`.mcp.json` is versioned and points at the real server `cargo run --quiet
+--release -- serve`. The Codex session that ran F8 was already open before this
+server was added to the context, so Rationale's native MCP tools do not appear
+in that session; loading `.mcp.json` requires restarting the agent session. As
+non-substitutive evidence, the real binary `target/release/rationale serve` was
+run with `Content-Length` framing and an ephemeral transport client, not a mock:
 
-- `initialize` confirmó `2024-11-05`.
-- `tools/list` devolvió exactamente `prepare_change`, `explain_target`,
-  `health` y `finalize_change`.
-- `health` devolvió `provider_status=successful`, `provider_coverage=complete`
-  y `working_tree_dirty=true` con el caché local disponible.
+- `initialize` confirmed `2024-11-05`.
+- `tools/list` returned exactly `prepare_change`, `explain_target`,
+  `health`, and `finalize_change`.
+- `health` returned `provider_status=successful`, `provider_coverage=complete`,
+  and `working_tree_dirty=true` with the local cache available.
 
-El transporte efímero valida el servidor, pero no se presenta como evidencia
-de que la sesión de Codex ya haya cargado la integración nativa. Esa parte queda
-pendiente de reiniciar la sesión.
+The ephemeral transport validates the server, but it is not presented as
+evidence that the Codex session already loaded the native integration. That
+part remains pending a session restart.
 
-## G2 — `prepare_change` antes de cambiar
+## G2 — `prepare_change` before changing
 
-Antes de cerrar F8 se ejecutó `prepare_change` sobre `src/review.rs`, tanto por
-CLI como por el servidor MCP real, con la intención de verificar la revisión
-humana y el claim atómico. El packet entregó:
+Before closing F8, `prepare_change` was run on `src/review.rs`, both through the
+CLI and through the real MCP server, with the intent of verifying human review
+and the atomic claim. The packet delivered:
 
-- `consistency=working-tree-ahead`, consistente con cambios locales no
-  confirmados;
-- proveedor `successful`, pero cobertura `unknown` para el símbolo solicitado;
-- el Subject y el Record de frontera del proveedor, con autoridad
-  `unreviewed`;
-- una advertencia explícita de que el símbolo no estaba en la cobertura
-  disponible.
+- `consistency=working-tree-ahead`, consistent with uncommitted local changes;
+- provider `successful`, but coverage `unknown` for the requested symbol;
+- the provider-boundary Subject and Record, with authority `unreviewed`;
+- an explicit warning that the symbol was not within the available coverage.
 
-La degradación es honesta: el contexto fue útil para confirmar la frontera del
-proveedor y sus riesgos, pero no fingió cobertura estructural completa del
-target.
+The degradation is honest: the context was useful to confirm the provider
+boundary and its risks, but it did not pretend to have full structural coverage
+of the target.
 
-## G3 — captura de decisiones reales
+## G3 — capturing real decisions
 
-Se ejecutaron tres llamadas `finalize_change` reales contra este repositorio,
-usando como `base_revision` el commit previo a F8:
+Three real `finalize_change` calls were run against this repository, using the
+commit before F8 as `base_revision`:
 
-| Record pendiente | Decisión capturada | Resultado |
+| Pending Record | Captured decision | Result |
 |---|---|---|
-| `constraint.f8-roundtrip-fidelity` | fidelidad de round-trip del Record canónico | propuesta escrita |
-| `constraint.f8-atomic-proposal-claim` | claim atómico de una propuesta | propuesta escrita |
-| `constraint.f8-project-authority` | autoridad declarada por el proyecto | propuesta escrita |
+| `constraint.f8-roundtrip-fidelity` | round-trip fidelity of the canonical Record | proposal written |
+| `constraint.f8-atomic-proposal-claim` | atomic claim of a proposal | proposal written |
+| `constraint.f8-project-authority` | authority declared by the project | proposal written |
 
-Las tres propuestas viven en `.rationale/proposals/`, tienen `status: pending`
-y no tienen aprobaciones. La segunda ejecución de `rationale review` mostró las
-tres una por pantalla, resolvió al actor Git como
-`user:ragosorio <ragosorio777@gmail.com>` y mostró `architecture-owner` desde
-`.rationale/config.yaml`. Se introdujo `skip` para las tres: ninguna decisión
-se convirtió en Record aprobado.
+The three proposals live in `.rationale/proposals/`, have `status: pending`, and
+have no approvals. The second run of `rationale review` showed the three one per
+screen, resolved the Git actor as
+`user:ragosorio <ragosorio777@gmail.com>`, and showed `architecture-owner` from
+`.rationale/config.yaml`. `skip` was entered for all three: no decision became
+an approved Record.
 
-Esto satisface la captura mecánica de G3 sin violar G4. La aprobación humana de
-estas decisiones, y especialmente de los nueve Subjects fundacionales y los
-doce ADRs que siguen `unreviewed`/`proposed` (con ADR-0011 parcialmente
-aceptado pero aún abierto), queda deliberadamente pendiente.
+This satisfies G3's mechanical capture without violating G4. Human approval of
+these decisions — and especially of the nine foundational Subjects and the
+twelve ADRs that remain `unreviewed`/`proposed` (with ADR-0011 partially
+accepted but still open) — is deliberately left pending.
 
-## G5 — medición honesta y límites
+## G5 — honest measurement and limits
 
-- El packet fue accionable para la frontera del proveedor y el estado de
-  revisión, pero la cobertura de `src/review.rs` fue `unknown`; no se cuenta
-  como cobertura completa.
-- El entorno sandbox no permite abrir siempre el SQLite derivado; con acceso al
-  caché local autorizado, `health` se mantuvo `successful/complete`.
-- CI para Linux y macOS está versionado en `.github/workflows/ci.yml`, pero su
-  ejecución remota aún requiere GitHub.
-- No se autoaprobaron Records. El lifecycle `review_record` ya está implementado
-  por CLI interactiva y cubierto por tests; embeddings, calibración de Jaccard,
-  Windows y el piloto de monorepo permanecen como gates posteriores.
+- The packet was actionable for the provider boundary and the revision state,
+  but the coverage of `src/review.rs` was `unknown`; it is not counted as full
+  coverage.
+- The sandbox environment does not always allow opening the derived SQLite
+  database; with authorized access to the local cache, `health` stayed
+  `successful/complete`.
+- CI for Linux and macOS is versioned in `.github/workflows/ci.yml`, but its
+  remote execution still requires GitHub.
+- No Records were self-approved. The `review_record` lifecycle is already
+  implemented through the interactive CLI and covered by tests; embeddings,
+  Jaccard calibration, Windows, and the monorepo pilot remain later gates.
 
-## Verificación del grafo
+## Graph verification
 
-Después de los cambios se reindexó Codebase Memory en modo `fast`. El estado
-quedó `indexed` con 2.440 nodos y 4.448 aristas; búsquedas posteriores
-encontraron `src/review.rs::claim_proposal`, `src/review.rs::mutate_record` y
-`src/configuration.rs::ResolvedConfig.authority_for_actor`. La cobertura del
-índice es parcial por diseño del modo rápido y no sustituye la revisión directa
-del código fuente; `docs/`, `scripts/` y artefactos locales están excluidos.
+After the changes, Codebase Memory was re-indexed in `fast` mode. The state
+became `indexed` with 2,440 nodes and 4,448 edges; later searches found
+`src/review.rs::claim_proposal`, `src/review.rs::mutate_record`, and
+`src/configuration.rs::ResolvedConfig.authority_for_actor`. The index coverage is
+partial by design of the fast mode and does not replace reviewing the source code
+directly; `docs/`, `scripts/`, and local artifacts are excluded.

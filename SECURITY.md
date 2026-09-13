@@ -1,37 +1,49 @@
-# Seguridad
+# Security
 
-## Alcance
+## Scope
 
-Rationale es local-first, pero procesa decisiones, paths, evidencia y metadata
-de proveedores que pueden ser sensibles. No incluyas secretos, tokens, llaves,
-`.env`, dumps o datos personales en issues, Records de ejemplo o PRs.
+Rationale is local-first, but it processes decisions, paths, evidence, and
+provider metadata that can be sensitive. Do not include secrets, tokens, keys,
+`.env` files, dumps, or personal data in issues, example Records, or pull
+requests.
 
-## Reportar una vulnerabilidad
+## Reporting a vulnerability
 
-No publiques una vulnerabilidad sin corregir en un issue público. Usa GitHub
-Security Advisories del repositorio o el canal privado indicado por el
-mantenedor. Si el repositorio aún no tiene habilitado ese canal, abre un issue
-neutral solicitando contacto privado sin incluir detalles explotables.
+Do not disclose an unfixed vulnerability in a public issue. Use the
+repository's GitHub Security Advisories or the private channel the maintainer
+provides. If that channel is not enabled yet, open a neutral issue asking for
+private contact, without exploitable details.
 
-Incluye, si es seguro hacerlo:
+Include, when it is safe to do so:
 
-- versión, commit o Release afectada;
-- plataforma y configuración mínima;
-- pasos de reproducción sin datos reales;
-- impacto y condiciones de explotación;
-- mitigación temporal conocida.
+- the affected version, commit, or release;
+- platform and minimal configuration;
+- reproduction steps without real data;
+- impact and exploitation conditions;
+- any known temporary mitigation.
 
-No pruebes contra proyectos de terceros ni extraigas datos reales durante la
-investigación.
+Do not test against third-party projects or extract real data during your
+investigation.
 
-## Propiedades esperadas
+## Expected properties
 
-- El texto del repositorio se trata como dato, no como instrucción.
-- Los paths se canonicalizan y se rechaza traversal.
-- Las escrituras canónicas son atómicas.
-- La revisión humana requiere confirmación explícita y actor declarado.
-- MCP no tiene operaciones de aprobación ni lifecycle mutation.
-- `.rationale/` no se borra al desinstalar el binario.
-- Los artefactos de Release tienen checksum y attestation.
+- Repository text is treated as data, not as instructions.
+- Paths are canonicalized and traversal is rejected.
+- Canonical writes are atomic.
+- Human review requires explicit confirmation and a declared actor.
+- MCP has no approval or lifecycle-mutation operations.
+- `.rationale/` is never deleted when the binary is uninstalled.
+- Release artifacts carry checksums and attestations.
 
-El baseline técnico completo está en [`docs/security/baseline.md`](docs/security/baseline.md).
+## Skills
+
+An Agent Skill is instructions plus code that an agent may run with your
+permissions. Review a skill before installing it, including its scripts. The
+`rationale` skill in `skills/rationale/` contains one script,
+`scripts/check_candidates.py`: it reads JSON input and the repository's
+`.rationale/records/`, uses only the Python standard library (PyYAML when it is
+already present), writes nothing, and makes no network calls.
+`rationale install-agent` writes the skill only inside the project, records a
+hash for every file, and never overwrites a file you edited.
+
+The full technical baseline is in [`docs/security/baseline.md`](docs/security/baseline.md).

@@ -1,64 +1,64 @@
 # 02 — Module map (CBM-005)
 
-**Fuente de evidencia:** mezcla explícita de dos fuentes distinguidas — (a) grafo indexado del **binario 0.8.1** vía MCP (`get_architecture`), y (b) lectura directa del **código fuente en HEAD `97ce23f9`**. Cada hallazgo indica su fuente.
+**Source of evidence:** an explicit mix of two distinguished sources — (a) the indexed graph of the **0.8.1 binary** through MCP (`get_architecture`), and (b) direct reading of the **source code at HEAD `97ce23f9`**. Each finding states its source.
 
 ## Observed
 
-### Vía código fuente (HEAD)
+### From the source code (HEAD)
 
-`src/` tiene 17 módulos de primer nivel más `internal/cbm/` (extracción y gramáticas). Tamaño aproximado por líneas de `.c`/`.cpp`:
+`src/` has 17 top-level modules plus `internal/cbm/` (extraction and grammars). Approximate size by lines of `.c`/`.cpp`:
 
-| Módulo | Líneas | Rol aparente |
+| Module | Lines | Apparent role |
 |---|---:|---|
-| `cli/` | 33.015 | El módulo más grande del proyecto. CLI, instalación, activación transaccional, estado de lanzador Windows |
-| `pipeline/` | 23.973 | Núcleo de extracción: `pass_definitions`, `pass_calls`, `pass_usages`, `pass_semantic`, `pass_tests`, `pass_githistory`, `pass_gitdiff`, `pass_configures`, `pass_route_nodes`, `pass_cross_repo`, `pass_pkgmap`, `pass_k8s`, `pass_complexity`, entre otros |
-| `daemon/` | 18.439 | Ciclo de vida del daemon, coordinación entre sesiones, IPC, "version cohort" |
-| `mcp/` | 12.318 | Servidor MCP, supervisor de indexado, salida compacta |
-| `foundation/` | 9.936 | Primitivas: arena, hash table, string interning, logging, plataforma, locks |
-| `store/` | 7.799 | Persistencia (SQLite + writer propio) |
-| `ui/` | 4.165 | Servidor HTTP embebido, visualización 3D del grafo |
-| `cypher/` | 4.803 | Motor de consultas Cypher (usado por `query_graph`) |
-| `discover/` | 3.218 | Descubrimiento de lenguaje, `.gitignore`, configuración de usuario |
-| `semantic/` | 2.243 | Perfil de AST, análisis semántico |
-| `graph_buffer/` | 1.843 | Buffer del grafo en memoria |
-| `launcher/` | 1.684 | Lanzador (relevante para Windows) |
-| `watcher/` | 1.440 | File watching |
-| `simhash/` | 538 | MinHash / similitud |
-| `git/` | 421 | Integración con Git — sorprendentemente pequeño dado que `pipeline/` ya contiene `pass_gitdiff.c` y `pass_githistory.c`; la lógica de Git parece repartida entre este módulo delgado y esos passes, no concentrada aquí |
-| `traces/` | 142 | Trazas |
+| `cli/` | 33,015 | The largest module in the project. CLI, installation, transactional activation, Windows launcher state |
+| `pipeline/` | 23,973 | Extraction core: `pass_definitions`, `pass_calls`, `pass_usages`, `pass_semantic`, `pass_tests`, `pass_githistory`, `pass_gitdiff`, `pass_configures`, `pass_route_nodes`, `pass_cross_repo`, `pass_pkgmap`, `pass_k8s`, `pass_complexity`, among others |
+| `daemon/` | 18,439 | Daemon lifecycle, coordination between sessions, IPC, "version cohort" |
+| `mcp/` | 12,318 | MCP server, indexing supervisor, compact output |
+| `foundation/` | 9,936 | Primitives: arena, hash table, string interning, logging, platform, locks |
+| `store/` | 7,799 | Persistence (SQLite + its own writer) |
+| `ui/` | 4,165 | Embedded HTTP server, 3D graph visualization |
+| `cypher/` | 4,803 | Cypher query engine (used by `query_graph`) |
+| `discover/` | 3,218 | Language discovery, `.gitignore`, user configuration |
+| `semantic/` | 2,243 | AST profile, semantic analysis |
+| `graph_buffer/` | 1,843 | In-memory graph buffer |
+| `launcher/` | 1,684 | Launcher (relevant for Windows) |
+| `watcher/` | 1,440 | File watching |
+| `simhash/` | 538 | MinHash / similarity |
+| `git/` | 421 | Git integration — surprisingly small given that `pipeline/` already contains `pass_gitdiff.c` and `pass_githistory.c`; the Git logic seems spread between this thin module and those passes rather than concentrated here |
+| `traces/` | 142 | Traces |
 
-`internal/cbm/` contiene la capa de extracción multi-lenguaje: ~180 archivos `grammar_<lenguaje>.c` (uno por lenguaje soportado vía tree-sitter) más `extract_*.c` (definitions, calls, imports, usages, semantic, type_refs, env_accesses, k8s, channels) y el runtime de tree-sitter.
+`internal/cbm/` contains the multi-language extraction layer: ~180 `grammar_<language>.c` files (one per language supported through tree-sitter) plus `extract_*.c` (definitions, calls, imports, usages, semantic, type_refs, env_accesses, k8s, channels) and the tree-sitter runtime.
 
-### Vía grafo indexado (binario 0.8.1, vía `get_architecture(aspects=["clusters"])`)
+### From the indexed graph (0.8.1 binary, through `get_architecture(aspects=["clusters"])`)
 
-- Detección de comunidades (Leiden) sobre el grafo de llamadas produjo **13 clusters**, con cohesión entre 0.58 y 1.0.
-- Los clusters de mayor tamaño (36-38 miembros) tienen como `top_nodes` funciones como `run`, `main`, `require`, `check`, `SmokeFailure`, `probe_future_generation_rendezvous` — consistente con clusters centrados en **infraestructura de testing/smoke**, no en el dominio del producto.
-- **Hallazgo relevante:** el campo `packages` de cada cluster devuelve siempre el mismo valor (`osorio-Desktop-codebase-memory-mcp`, el nombre del proyecto), para los 13 clusters. No hay identificación de sub-paquetes o módulos internos vía este campo — es decir, **para un proyecto C sin manifiestos de paquete (no npm/cargo/go.mod), `get_architecture` no distingue módulos internos como paquetes separados**, solo agrupa por comunidad de llamadas.
+- Community detection (Leiden) on the call graph produced **13 clusters**, with cohesion between 0.58 and 1.0.
+- The largest clusters (36–38 members) have `top_nodes` such as `run`, `main`, `require`, `check`, `SmokeFailure`, `probe_future_generation_rendezvous` — consistent with clusters centered on **testing/smoke infrastructure**, not on the product domain.
+- **Relevant finding:** every cluster's `packages` field always returns the same value (`osorio-Desktop-codebase-memory-mcp`, the project name), for all 13 clusters. Sub-packages or internal modules are not identified through this field — that is, **for a C project without package manifests (no npm/cargo/go.mod), `get_architecture` does not distinguish internal modules as separate packages**; it only groups by call community.
 
 ## Claimed
 
-Ninguna documentación en la superficie analizada promete que `packages` distinga módulos internos de un proyecto de un solo lenguaje sin manifiestos — esto es una observación, no una promesa incumplida.
+No documentation in the analyzed surface promises that `packages` distinguishes internal modules of a single-language project without manifests — this is an observation, not a broken promise.
 
 ## Verified
 
-- El tamaño relativo de módulos (CLI y pipeline como los más grandes) es consistente con el propio historial de commits observado en `00-source-lock.md` (dominado por hardening de Windows, daemon, y test infra).
-- Los 13 clusters y su cohesión son reproducibles con la misma llamada.
+- The relative size of modules (CLI and pipeline as the largest) is consistent with the project's own commit history observed in `00-source-lock.md` (dominated by Windows hardening, the daemon, and test infrastructure).
+- The 13 clusters and their cohesion are reproducible with the same call.
 
 ## Unknown
 
-- Qué tan preciso es el clustering de Leiden para separar módulos de **producto** (pipeline, store, mcp) de módulos de **test infrastructure** — los `top_nodes` de los clusters más grandes sugieren que gran parte de la "arquitectura observada" vía clustering describe el andamiaje de pruebas, no el dominio funcional.
-- Si `get_architecture(aspects=["all"])` (no probado, solo `overview` y `clusters`) expone una vista jerárquica más útil por módulo/carpeta en vez de por cluster de llamadas.
+- How accurately Leiden clustering separates **product** modules (pipeline, store, mcp) from **test infrastructure** modules — the `top_nodes` of the largest clusters suggest that much of the "observed architecture" from clustering describes the test scaffolding, not the functional domain.
+- Whether `get_architecture(aspects=["all"])` (not tested; only `overview` and `clusters` were) exposes a more useful hierarchical view by module/folder instead of by call cluster.
 
 ## Risk
 
-**Bajo-medio.** No invalida el uso de Codebase Memory, pero confirma que **la vista arquitectónica automática no sustituye la lectura de la estructura real de carpetas** para entender los límites de módulo de un proyecto — relevante para el propio adaptador de Rationale, que deberá basar su comprensión de "módulo" en convenciones del proveedor (manifiestos, carpetas) más que asumir que el clustering estructural siempre refleja límites de dominio.
+**Low to medium.** It does not invalidate using Codebase Memory, but it confirms that **the automatic architectural view does not replace reading the real folder structure** to understand a project's module boundaries — relevant for Rationale's own adapter, which should base its understanding of "module" on provider conventions (manifests, folders) rather than assume structural clustering always reflects domain boundaries.
 
 ## Decision impact
 
-- Confirma el Subject `architecture.provider-boundary`: Rationale debe tratar la salida de clustering/arquitectura de Codebase Memory como una señal más, no como la fuente de verdad sobre módulos o paquetes — especialmente en proyectos sin manifiestos de paquete claros.
-- Relevante para CBM-010 (workspaces/monorepos): si el campo `packages` no distingue módulos en un repo C plano, hay que verificar específicamente en el fixture de Monorepo (`~/Desktop/Monorepo`, que sí tiene manifiestos npm/similar) si `packages` se puebla correctamente allí — ver `08-workspaces-and-monorepos.md`.
+- It confirms the Subject `architecture.provider-boundary`: Rationale must treat Codebase Memory's clustering/architecture output as one more signal, not as the source of truth about modules or packages — especially in projects without clear package manifests.
+- Relevant for CBM-010 (workspaces/monorepos): if the `packages` field does not distinguish modules in a flat C repository, it must be checked specifically on the Monorepo fixture (`~/Desktop/Monorepo`, which does have npm/similar manifests) whether `packages` is populated correctly there — see `08-workspaces-and-monorepos.md`.
 
-## Reproducir
+## Reproduce
 
 ```text
 get_architecture(project="Users-roor.osorio-Desktop-codebase-memory-mcp", aspects=["clusters"])

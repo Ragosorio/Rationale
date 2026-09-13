@@ -2,36 +2,41 @@
 
 **Status:** proposed
 **Date:** 2026-07-26
-**Deciders:** dueño humano del proyecto + revisión cruzada
+**Deciders:** the project's human owner + cross-review
 
 ## Context
 
-Rationale tiene dos fronteras distintas: el agente necesita consultar y
-preparar contexto, mientras que las decisiones canónicas requieren un humano.
-Una sola interfaz que mezclara ambas cosas permitiría que una llamada MCP
-mutara autoridad sin una confirmación visible.
+Rationale has two different boundaries: the agent needs to query and prepare
+context, while canonical decisions require a human. A single interface mixing
+both would let an MCP call mutate authority without visible confirmation.
 
 ## Decision
 
-- MCP expone `health`, `prepare_change`, `explain_target` y
+- MCP exposes `health`, `prepare_change`, `explain_target`, and
   `finalize_change`.
-- MCP nunca aprueba, revoca, supersede ni cambia autoridad.
-- La CLI interactiva expone `review` para propuestas y `review-record` para el
-  lifecycle de Records.
-- Las mutaciones escriben únicamente bajo `.rationale/` y verifican que el
-  YAML no cambió mientras el humano decidía.
+- MCP never approves, revokes, supersedes, or changes authority.
+- The interactive CLI exposes `review` for proposals and `review-record` for the
+  lifecycle of Records.
+- Mutations write only under `.rationale/` and verify that the YAML did not
+  change while the human was deciding.
+
+Note added after 1.0: release 1.0 replaced the proposal queue with autonomous
+capture. `finalize_change` now writes agent-asserted Records through a gate, and
+MCP gained `resolve_conflict`, which applies only a human's literal answer on a
+conflict with a pinned Record. Pinning, unpinning, and the Record lifecycle stay
+in the interactive CLI. See `docs/work-items/vnext-implementation-plan.md`.
 
 ## Consequences
 
-- La automatización puede preparar contexto sin convertirse en autoridad.
-- Los agentes necesitan una sesión MCP y los humanos necesitan el binario CLI.
-- El lifecycle requiere un terminal interactivo durante la alfa.
-- Un futuro modo no interactivo necesitará otro ADR y una autorización
-  explícita; no se infiere desde esta decisión.
+- Automation can prepare context without becoming authority.
+- Agents need an MCP session and humans need the CLI binary.
+- The lifecycle requires an interactive terminal during the alpha.
+- A future non-interactive mode will need another ADR and explicit
+  authorization; it is not inferred from this decision.
 
 ## Evidence
 
 - `src/mcp/server.rs`
-- `src/main.rs::cmd_review` y `cmd_review_record`
+- `src/main.rs::cmd_review` and `cmd_review_record`
 - `src/review.rs::mutate_record`
-- `tests/mcp_server.rs` y tests de lifecycle en `src/review.rs`
+- `tests/mcp_server.rs` and the lifecycle tests in `src/review.rs`

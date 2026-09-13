@@ -18,14 +18,14 @@
     "deadline_target_ms": 500,
     "test_suite_count": 6,
     "test_suite_time_s_warm": 0.178,
-    "fuzzing_or_property_tests": "manual property-style test (monotonic invariant), sin dependencia externa; fuzzing real requeriría proptest o cargo-fuzz (crates externos)",
-    "file_locking": "std library, portable (cfg(unix) usado en el spike por simplicidad, pero std::fs::File::lock existe cross-platform desde Rust 1.89)",
-    "subprocess_cancellation_approach": "poll manual con try_wait() + kill() + wait(); nunca bloquea leyendo stdout en el camino de timeout, evita naturalmente el problema del huérfano que sostiene el pipe",
-    "notable_finding": "ninguna correccion post-hoc fue necesaria; la implementación inicial fue correcta en el primer intento"
+    "fuzzing_or_property_tests": "manual property-style test (monotonic invariant), with no external dependency; real fuzzing would require proptest or cargo-fuzz (external crates)",
+    "file_locking": "standard library, portable (cfg(unix) used in the spike for simplicity, but std::fs::File::lock exists cross-platform since Rust 1.89)",
+    "subprocess_cancellation_approach": "manual poll with try_wait() + kill() + wait(); never blocks reading stdout on the timeout path, which naturally avoids the orphan holding the pipe open",
+    "notable_finding": "no post-hoc fix was needed; the initial implementation was correct on the first attempt"
   },
   "go": {
     "toolchain": "go version go1.26.5 darwin/arm64 (via Homebrew)",
-    "dependencies": ["modernc.org/sqlite 1.54.0 (pure Go, sin cgo)", "gopkg.in/yaml.v3 3.0.1"],
+    "dependencies": ["modernc.org/sqlite 1.54.0 (pure Go, without cgo)", "gopkg.in/yaml.v3 3.0.1"],
     "clean_release_build_time_s": 9.587,
     "clean_release_build_user_cpu_s": 32.09,
     "release_binary_size_bytes": 7072994,
@@ -41,17 +41,17 @@
     "test_suite_count": 6,
     "test_suite_time_s_warm_cached": 0.144,
     "test_suite_time_s_cold_compile": 3.734,
-    "fuzzing_or_property_tests": "fuzzing nativo real (go test -fuzz), sin dependencia externa; 384496 ejecuciones en 10s (~38000/s), 0 fallos",
-    "file_locking": "syscall.Flock, POSIX-only (macOS/Linux); requeriría implementación separada (LockFileEx) para Windows",
-    "subprocess_cancellation_approach": "hallazgo real: la forma idiomática (exec.CommandContext + cmd.Output()) NO cancela a tiempo por el problema del nieto huérfano (sleep hijo de bash mantiene el pipe de stdout abierto tras matar solo al proceso directo). Corregido usando Setpgid + kill(-pid) sobre el grupo de procesos completo.",
-    "notable_finding": "requirió una correccion: la primera implementación (idiomática, con cmd.Output()) tardó 5016ms en cancelar un timeout de 500ms; la version corregida con process groups sí cumple el deadline"
+    "fuzzing_or_property_tests": "real native fuzzing (go test -fuzz), with no external dependency; 384496 executions in 10s (~38000/s), 0 failures",
+    "file_locking": "syscall.Flock, POSIX-only (macOS/Linux); would require a separate implementation (LockFileEx) for Windows",
+    "subprocess_cancellation_approach": "real finding: the idiomatic form (exec.CommandContext + cmd.Output()) does NOT cancel in time because of the orphaned-grandchild problem (sleep, a child of bash, keeps the stdout pipe open after only the direct process is killed). Fixed by using Setpgid + kill(-pid) on the whole process group.",
+    "notable_finding": "it required a fix: the first implementation (idiomatic, with cmd.Output()) took 5016ms to cancel a 500ms timeout; the version fixed with process groups does meet the deadline"
   },
   "comparison_summary": {
     "binary_size_ratio_go_over_rust": 3.19,
     "peak_rss_ratio_go_over_rust": 4.19,
     "clean_build_time_ratio_rust_over_go": 3.33,
-    "mcp_latency": "comparable, ambos de un solo digito o bajos dos digitos de milisegundos",
-    "cancellation_correctness": "Rust correcto al primer intento; Go requirio una correccion tras un hallazgo real de un footgun idiomatico conocido de la stdlib",
-    "fuzzing_ergonomics": "Go: nativo en la stdlib. Rust: requeriria dependencia externa (proptest/cargo-fuzz), no probado en este spike por mantener paridad de dependencias"
+    "mcp_latency": "comparable, both in single-digit or low double-digit milliseconds",
+    "cancellation_correctness": "Rust correct on the first attempt; Go required a fix after a real finding of a known idiomatic footgun in the standard library",
+    "fuzzing_ergonomics": "Go: native in the standard library. Rust: would require an external dependency (proptest/cargo-fuzz), not tested in this spike to keep dependency parity"
   }
 }

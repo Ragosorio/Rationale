@@ -1,455 +1,497 @@
 # Changelog
 
-Los cambios importantes se registran aquí por Release. El detalle técnico de
-cada cambio vive en commits, ADRs y work items enlazados.
+Notable changes are recorded here by release. The technical detail of each
+change lives in the linked commits, ADRs, and work items.
 
-## Sin publicar
+## Unreleased
 
-Cambios en `main` posteriores a la Release v1.0.0. Los binarios y el instalador
-publicados siguen siendo v1.0.0 (`releases/latest`).
+Changes on `main` after release v1.0.0. The published binaries and installer
+are still v1.0.0 (`releases/latest`).
 
-- El cliente estructural anuncia la versión real del artefacto en
-  `initialize.clientInfo.version` en vez del placeholder `0.0.0` de
+**The `rationale` Agent Skill.** A complete, portable skill in
+`skills/rationale/`, following the Agent Skills format and the published
+guidance from Anthropic and OpenAI on writing skills: a short `SKILL.md` that
+routes to one playbook per operation (preflight, explain, capture, conflicts,
+health, adopt, maintain), references loaded on demand, a guide to writing
+Records the capture gate keeps, report templates, Codex metadata in
+`agents/openai.yaml`, a candidate validator (`scripts/check_candidates.py`)
+that mirrors the gate, and trigger and behavior evals for maintainers. The
+binary embeds it through `src/skill_bundle.rs`, and `install-agent` writes it
+to `.claude/skills/rationale/` (Claude Code) and `.agents/skills/rationale/`
+(Codex) with a hash per file: edited files are kept, and a skill directory that
+is a symbolic link created by another tool is left alone. It can also be
+installed from GitHub with `npx skills add Ragosorio/Rationale`. Tests keep the
+bundle identical to the directory, enforce the specification's limits and
+one-level references, and fail when the validator drifts from the gate.
+
+**Agent-facing text in English, replies in the user's language.** The pre-made
+actions, the master prompt, the MCP tool descriptions, the retired-prompt
+message, and the instruction block header and marker are written in English and
+tell the agent to reply in the language the user writes in, keeping
+identifiers verbatim. Instruction blocks and Cursor rules written with the
+earlier Spanish marker and preamble are still recognized, replaced on
+reinstall, and removed on uninstall.
+
+**One entry point for automatic selection.** The Claude Code shortcuts
+(`/rationale-preflight`, `/rationale-explain`, `/rationale-capture`,
+`/rationale-conflicts`, `/rationale-health`) are now invoked by people only;
+the model selects the `rationale` skill instead of choosing among near-identical
+descriptions. The `/rationale-protocol` skill is retired in favor of
+`/rationale` and removed by `install-agent` while it keeps its recorded hash;
+the `protocol` MCP prompt remains.
+
+**`finalize_change` documents `relationships`.** The MCP input schema now
+describes the `relationships` a candidate can explain, which the gate already
+accepted.
+
+**Documentation.** All documentation in the repository is written in English
+and updated to the current state, with a new guide to the skill
+(`docs/user-guide/skills.md`). The founding documents
+(`Rationale_v0.5.md`, the conceptual architecture, and the agent build process)
+are translated with their section numbers intact, so existing `§` citations
+still resolve. The Spanish copy of the master prompt was removed: the website's
+Spanish page presents the installed English protocol and explains why it is in
+English, and `scripts/check-docs.sh` rejects a translated copy.
+
+**Website.** The landing page gains a step-by-step *Get started* section right
+after the loop and a section on the `rationale` skill (operations, how to
+install and invoke it, the validator, and the language rule); the Claude Code
+card lists `/rationale` and the five shortcuts instead of `/rationale-protocol`.
+The documentation adds a page for the skill in English and Spanish and updates
+the quickstart, agents, master prompt, MCP reference, versioning,
+troubleshooting, limits, architecture, and evidence pages. Availability notes
+say which parts ship with the release after v1.0.0.
+
+**Earlier unreleased changes.**
+
+- The structural client announces the artifact's real version in
+  `initialize.clientInfo.version` instead of the `0.0.0` placeholder from
   `Cargo.toml`.
-- El workflow de Release valida el tag, formato, Clippy, tests en perfil
-  release, auditoría de dependencias, documentación, Control Room y sitio antes
-  de permitir el empaquetado.
-- El baseline de seguridad y el estado operativo describen la serie 1.0 en vez
-  de la alfa y la Fase G.
-- La landing y la documentación dejan los patrones de UI generada: IBM Plex
-  autoalojada, la marca R/ del favicon en todo el sitio y diagramas SVG
-  derivados del grafo de llamadas real del repositorio.
+- The release workflow validates the tag, formatting, Clippy, release-profile
+  tests, dependency audit, documentation, Control Room, and website before
+  allowing packaging.
+- The security baseline and operating status describe the 1.0 series instead
+  of the alpha and Phase G.
+- The landing page and documentation drop generated-UI patterns: self-hosted
+  IBM Plex, the favicon's R/ mark across the site, and SVG diagrams derived from
+  the repository's real call graph.
 
 ## v1.0.0
 
-Primera Release estable. Rationale pasa de ser un sistema de propuestas que una
-persona aprobaba una a una a una **memoria causal autónoma con autoridad
-humana**: los agentes reciben el contexto que gobierna el código antes de
-cambiarlo y escriben el conocimiento durable después, y las personas conservan
-la autoridad sobre las reglas que fijan. La decisión es del owner del proyecto
-(`user:ragosorio`, `architecture-owner`); el razonamiento y la evidencia están
-en `docs/work-items/vnext-implementation-plan.md`.
+First stable release. Rationale moves from a proposal system that a person
+approved one by one to **autonomous causal memory with human authority**:
+agents receive the context that governs code before changing it and write
+durable knowledge afterwards, and people keep authority over the rules they
+pin. The decision belongs to the project owner (`user:ragosorio`,
+`architecture-owner`); the reasoning and evidence are in
+`docs/work-items/vnext-implementation-plan.md`.
 
-**Captura autónoma.** `finalize_change` recibe `candidates` y los escribe como
-Records canónicos en la misma llamada. Un gate descarta —siempre con motivo—
-candidatos mal formados, transitorios, sin rationale o con uno que repite el
-statement, ruido mecánico, duplicados y los que no tienen un binding
-significativo. Cada Record declara su procedencia (`agent_asserted`,
-`human_stated`, `migrated`) y su autoridad (`normal`, `pinned`). Sin candidatos
-no se escribe memoria.
+**Autonomous capture.** `finalize_change` receives `candidates` and writes them
+as canonical Records in the same call. A gate discards — always with a reason —
+malformed candidates, transient ones, those without a rationale or with one
+that repeats the statement, mechanical noise, duplicates, and those without a
+meaningful binding. Every Record declares its provenance (`agent_asserted`,
+`human_stated`, `migrated`) and its authority (`normal`, `pinned`). Without
+candidates, no memory is written.
 
-**Autoridad humana.** `rationale pin` / `unpin` fijan reglas; un candidato que
-intenta reemplazar un Record fijado no se escribe y se vuelve un conflicto que
-solo una persona decide con `rationale conflicts` / `resolve` o, transmitiendo su
-respuesta literal, con la nueva herramienta MCP `resolve_conflict`. Fijar y
-adoptar un reemplazo exigen un actor declarado en `.rationale/config.yaml`.
+**Human authority.** `rationale pin` / `unpin` pin rules; a candidate that tries
+to replace a pinned Record is not written and becomes a conflict that only a
+person decides with `rationale conflicts` / `resolve` or, relaying their literal
+answer, with the new MCP tool `resolve_conflict`. Pinning and adopting a
+replacement require an actor declared in `.rationale/config.yaml`.
 
-**Compilador de contexto.** `prepare_change` abre una operación
-(`operation_id`) y devuelve constraints y decisiones gobernantes con autoridad y
-procedencia, las relaciones explicadas por el canon con su estado estructural
-(`observed`, `indirect`, `orphaned`, `unknown`), una vecindad estructural
-acotada y el código del target. El presupuesto de tokens es un techo: el
-conocimiento gobernante nunca se recorta, y cuando no cabe el packet lo declara
-en `budget_overflow`. Se corrigió el relleno de constraints que no gobernaban el
-target.
+**Context compiler.** `prepare_change` opens an operation (`operation_id`) and
+returns the governing constraints and decisions with authority and provenance,
+the relationships explained by the canon with their structural state
+(`observed`, `indirect`, `orphaned`, `unknown`), a bounded structural
+neighborhood, and the target's code. The token budget is a ceiling: governing
+knowledge is never trimmed, and when it does not fit the packet says so in
+`budget_overflow`. Padding with constraints that did not govern the target was
+fixed.
 
-**Control Room.** `rationale ui` sirve en `127.0.0.1` una interfaz de solo
-lectura embebida en el binario: el subgrafo de trabajo en 3D con overlay causal,
-la actividad de cada sesión en vivo por SSE, el navegador de memoria y el estado
-del sistema. La actividad local es un NDJSON por sesión con identificadores y
-una intención de una línea (ADR-0017); `RATIONALE_ACTIVITY=off` la desactiva.
+**Control Room.** `rationale ui` serves a read-only interface embedded in the
+binary on `127.0.0.1`: the working subgraph in 3D with a causal overlay, each
+session's activity live over SSE, the memory browser, and system status. Local
+activity is one NDJSON file per session with identifiers and a one-line intent
+(ADR-0017); `RATIONALE_ACTIVITY=off` disables it.
 
-**Agentes.** El registro MCP de Claude Code, Codex y Cursor pasa a
-`serve --client <agente>` y migra el registro anterior del mismo binario. El
-protocolo maestro y las acciones enseñan el contrato nuevo; la acción `review`
-se retira por `conflicts` (solo humana), su skill se retira sola si nadie la
-editó y el prompt MCP `review` responde con su reemplazo.
+**Agents.** MCP registration for Claude Code, Codex, and Cursor moves to
+`serve --client <agent>` and migrates the earlier registration of the same
+binary. The master prompt and the actions teach the new contract; the `review`
+action is retired in favor of `conflicts` (human-only), its skill retires itself
+when nobody edited it, and the `review` MCP prompt answers with its replacement.
 
-**Proveedor estructural.** Un modelo normalizado detrás de Codebase Memory,
-alcanzado solo por sus herramientas MCP públicas. El adaptador resuelve símbolos
-dentro del archivo declarado (antes caía en el primer resultado de búsqueda),
-recupera un mapeo de proyecto obsoleto sin reindexar a ciegas y siempre entrega
-rutas absolutas al proveedor.
+**Structural provider.** A normalized model behind Codebase Memory, reached only
+through its public MCP tools. The adapter resolves symbols inside the declared
+file (it used to fall back to the first search result), recovers a stale project
+mapping without blindly re-indexing, and always passes absolute paths to the
+provider.
 
-**Releases e instaladores.** El canal por defecto de los instaladores y de
-`rationale update` pasa a `stable`. La workflow de Release construye el Control
-Room antes de empaquetar y falla si no existe, y CI gana un job para su
-typecheck, tests y build.
+**Releases and installers.** The default channel of the installers and of
+`rationale update` becomes `stable`. The release workflow builds the Control
+Room before packaging and fails if it is missing, and CI gains a job for its
+typecheck, tests, and build.
 
-**Migrar desde beta.** Ejecuta `rationale install-agent` (actualiza registro,
-protocolo y skills) y `rationale migrate` si quedan propuestas pendientes: las
-válidas se vuelven Records `migrated` y las ruidosas se archivan con su motivo.
-`rationale review` sigue disponible como legado. Una llamada MCP con el contrato
-anterior (statement sin candidatos) se descarta de forma explícita en vez de
-crear una propuesta.
+**Migrating from beta.** Run `rationale install-agent` (it updates registration,
+protocol, and skills) and `rationale migrate` if pending proposals remain: valid
+ones become `migrated` Records and noisy ones are archived with their reason.
+`rationale review` remains available as legacy. An MCP call with the earlier
+contract (a statement without candidates) is discarded explicitly instead of
+creating a proposal.
 
-**Documentación.** La landing y los docs del sitio se rediseñaron y se
-reescribieron para 1.0 en inglés y español, con una página nueva del Control
-Room; la documentación del repositorio y los runbooks describen el flujo nuevo.
+**Documentation.** The landing page and the site documentation were redesigned
+and rewritten for 1.0 in English and Spanish, with a new Control Room page; the
+repository documentation and runbooks describe the new flow.
 
-Límites conocidos: la polaridad léxica de los conflictos con la intención es una
-pista ruidosa; la resolución de llamadas de Codebase Memory en algunos lenguajes
-es por nombre; varios ADRs detrás de 1.0 siguen `proposed` a la espera de
-revisión independiente. Verificación completa en
+Known limits: the lexical polarity of intent conflicts is a noisy hint; Codebase
+Memory resolves calls by name in some languages; several ADRs behind 1.0 are
+still `proposed`, awaiting independent review. Full verification in
 `docs/work-items/v1.0-release-verification.md`.
 
 ## v0.1.0-beta.3
 
-**Registro de agentes por usuario y convergente (ADR-0016).** Cursor mostraba
-`rationale` desconectado porque una aplicación gráfica no resolvía el comando
-lógico declarado en `.cursor/mcp.json`. El servidor MCP se registra ahora una vez
-por usuario en Claude Code, Codex y Cursor con la ruta absoluta del binario
-instalado; los archivos del proyecto conservan solo instrucciones y skills, y
-`install-agent` retira las entradas por proyecto que conservan la forma conocida
-de Rationale. La instalación compara comando y argumentos, así que un registro
-de Codex que apuntaba a un build viejo se migra; la desinstalación retira solo
-lo que apunta al binario desinstalado.
+**Per-user, convergent agent registration (ADR-0016).** Cursor showed
+`rationale` as disconnected because a graphical application could not resolve
+the logical command declared in `.cursor/mcp.json`. The MCP server is now
+registered once per user in Claude Code, Codex, and Cursor with the installed
+binary's absolute path; project files keep only instructions and skills, and
+`install-agent` removes per-project entries that keep Rationale's known shape.
+Installation compares command and arguments, so a Codex registration that
+pointed at an old build is migrated; uninstalling removes only what points at
+the uninstalled binary.
 
-**Identidad del proyecto en Codebase Memory.** Cuando el proveedor no persiste
-`root_path` entre procesos, Rationale guarda en `.rationale-local/` el nombre
-público que devuelve `index_repository`, sin node IDs ni acceso a su
-almacenamiento.
+**Project identity in Codebase Memory.** When the provider does not persist
+`root_path` across processes, Rationale stores in `.rationale-local/` the public
+name returned by `index_repository`, without node IDs or access to its storage.
 
 ## v0.1.0-beta.2
 
-**`rationale update` devolvía una versión anterior.** Defecto observado en la
-prueba de actualización real de beta.1, no en ningún test: `update` sobre una
-instalación de `alpha.7` instaló `alpha.7` otra vez.
+**`rationale update` returned an older version.** A defect observed in the real
+update test of beta.1, not in any test: `update` on an `alpha.7` installation
+installed `alpha.7` again.
 
-La causa es una consecuencia directa del cambio de canal de beta.1. El canal
-`preview` de los instaladores seleccionaba «la Release más reciente **marcada
-prerelease**», lo que funcionó mientras todas las versiones lo eran. `beta.1`
-es una Release completa a propósito —para que el canal `stable` pueda
-resolverla— así que `preview` la saltaba y caía en `alpha.7`.
+The cause was a direct consequence of beta.1's channel change. The installers'
+`preview` channel selected "the most recent release **marked prerelease**",
+which worked while every version was one. `beta.1` is a full release on purpose —
+so the `stable` channel can resolve it — so `preview` skipped it and fell back to
+`alpha.7`.
 
-`preview` significa ahora «la Release más reciente, prerelease o no», que es lo
-que siempre debió significar: la API las devuelve de más nueva a más vieja, así
-que basta la primera. `stable` sigue usando `releases/latest`. Los dos canales
-resuelven a la misma versión cuando la más reciente es completa, y `preview`
-adelanta cuando existe una prerelease más nueva.
+`preview` now means "the most recent release, prerelease or not", which is what
+it always should have meant: the API returns them from newest to oldest, so the
+first one is enough. `stable` still uses `releases/latest`. Both channels
+resolve to the same version when the most recent one is full, and `preview` gets
+ahead when a newer prerelease exists.
 
-`check-docs.sh` gana una guarda que rechaza volver a seleccionar por el flag,
-verificada reintroduciendo el defecto a propósito.
+`check-docs.sh` gains a guard that rejects selecting by the flag again, verified
+by reintroducing the defect on purpose.
 
-Los binarios de beta.1 eran correctos; el defecto estaba solo en los scripts
-auxiliares. No se reemplazaron los artefactos ya publicados: llevan attestation
-y sobrescribirlos la invalidaría. Se publica beta.2 en su lugar.
+The beta.1 binaries were correct; the defect was only in the helper scripts. The
+already-published artifacts were not replaced: they carry attestations, and
+overwriting them would invalidate those. beta.2 was published instead.
 
 ## v0.1.0-beta.1
 
-Primera beta. Rationale entra en beta porque el flujo completo —preparar,
-capturar, revisar y recuperar decisiones— funciona de forma repetible sobre un
-proyecto real en uso, no porque esté terminado. `docs/work-items/beta-readiness.md`
-declara con precisión qué se probó y qué no.
+First beta. Rationale enters beta because the full flow — prepare, capture,
+review, and retrieve decisions — works repeatably on a real project in use, not
+because it is finished. `docs/work-items/beta-readiness.md` states precisely
+what was tested and what was not.
 
-**El canal `stable` servía un build de dogfood.** GitHub solo marca «latest»
-una Release que no sea prerelease, y `releases/latest` es lo que resuelve el
-canal `stable` de los instaladores. El workflow marcaba `--prerelease` a
-cualquier tag con guión, así que las siete alphas quedaron todas como
-prerelease y «latest» se quedó anclado en `v0.0.0-dogfood.7` — anterior a
-`install-agent` y a la mitad del CLI actual. Cualquiera que instalara por ese
-canal recibía ese binario. Ahora solo `-alpha.`, `-rc.` y `-dogfood.` son
-prerelease (ADR-0010).
+**The `stable` channel served a dogfood build.** GitHub marks as "latest" only a
+release that is not a prerelease, and `releases/latest` is what the installers'
+`stable` channel resolves. The workflow marked any tag with a hyphen as
+`--prerelease`, so all seven alphas stayed prereleases and "latest" stayed
+anchored at `v0.0.0-dogfood.7` — older than `install-agent` and half of the
+current CLI. Anyone installing through that channel received that binary. Now
+only `-alpha.`, `-rc.`, and `-dogfood.` are prereleases (ADR-0010).
 
-**Cursor estaba roto, no solo sin validar.** `install-agent` escribía en
-`.cursor/rules/rationale.mdc` el mismo bloque markdown que en `CLAUDE.md`, sin
-el frontmatter YAML que Cursor exige para aplicar una regla: el protocolo
-terminaba en un archivo que el agente ignoraba. Además Cursor no se detectaba
-si el proyecto solo tenía `.cursor/` sin `mcp.json` y el usuario no tenía el
-CLI `cursor-agent`. Se corrigen las dos cosas, y `uninstall-agent` ya no deja
-el frontmatter huérfano. Que Cursor **aplique** la regla lo confirma una
-persona, no CI.
+**Cursor was broken, not just unvalidated.** `install-agent` wrote to
+`.cursor/rules/rationale.mdc` the same markdown block as in `CLAUDE.md`, without
+the YAML frontmatter Cursor requires to apply a rule: the protocol ended up in a
+file the agent ignored. Cursor was also not detected when the project had only
+`.cursor/` without `mcp.json` and the user did not have the `cursor-agent` CLI.
+Both are fixed, and `uninstall-agent` no longer leaves the frontmatter behind.
+That Cursor **applies** the rule is confirmed by a person, not by CI.
 
-**Una decisión por Record.** `finalize_change` ataba un binding a todo archivo
-del diff, lo que empujaba a escribir un Record único gigante en vez de varios
-pequeños. Se observó en uso real: una planificación produjo un Record atando
-doce documentos cuando su propio contenido especificaba diez decisiones. El
-prompt maestro ahora instruye dividir —con criterio de cuándo y cuándo no— y
-`governs_paths` permite que cada Record ate solo lo que gobierna. Omitirlo
-conserva el comportamiento anterior; declarar una ruta que no está en el diff
-falla en vez de fabricar un binding no verificable.
+**One decision per Record.** `finalize_change` bound every file in the diff,
+which pushed agents to write one giant Record instead of several small ones. It
+was observed in real use: a planning session produced a Record binding twelve
+documents when its own content specified ten decisions. The master prompt now
+instructs splitting — with criteria for when to and when not to — and
+`governs_paths` lets each Record bind only what it governs. Omitting it keeps
+the earlier behavior; declaring a path that is not in the diff fails instead of
+fabricating an unverifiable binding.
 
-**`/rationale-health` no funcionaba en una instalación limpia.** El skill no
-declaraba el permiso Bash de su propia inyección, así que pedía aprobación
-interactiva; y una vez concedida, seguía marcándose como fallo porque
-`doctor --check` sale 1 tanto por hallazgos normales —su propósito— como por
-errores reales. Ahora declara el permiso exacto y distingue los dos casos por
-contenido, sin `|| true` indiscriminado.
+**`/rationale-health` did not work on a clean install.** The skill did not
+declare the Bash permission for its own injection, so it asked for interactive
+approval; and once granted, it still reported a failure because `doctor --check`
+exits 1 both for normal findings — its purpose — and for real errors. It now
+declares the exact permission and tells the two cases apart by content, without
+an indiscriminate `|| true`.
 
-**La documentación pública dejó de ir a la deriva.** La versión estaba copiada
-a mano en diecinueve sitios sin ninguna guarda; `docs/RELEASE_VERSION` es ahora
-la única fuente y CI falla si alguna mención se desvía. El prompt maestro en
-español estaba un paso detrás del inglés —el que se compila al binario— y un
-usuario que lo leyera recibía instrucciones distintas de las que su agente
-tenía instaladas. Y el sitio nunca se construía en CI: `npm run check` existía
-y no lo ejecutaba nadie.
+**Public documentation stopped drifting.** The version was copied by hand in
+nineteen places with no guard; `docs/RELEASE_VERSION` is now the single source
+and CI fails if any mention drifts. The Spanish master prompt was one step behind
+the English one — the one compiled into the binary — and a user reading it got
+different instructions from those their agent had installed. And the site was
+never built in CI: `npm run check` existed and nobody ran it.
 
-**Un cliente GUI no encontraba el binario, y nadie lo explicaba.** La
-configuración MCP declara el comando lógico `rationale` a propósito, para que el
-archivo pueda versionarse sin la ruta personal de nadie. Pero en macOS una app
-abierta desde el Dock hereda el entorno de `launchd`, no el del shell, así que
-`~/.local/bin` —donde el instalador pone el binario— le es invisible: Cursor
-reportaba el servidor como no disponible mientras Codex y Claude Code en
-terminal funcionaban. `install-agent` ahora lo detecta y imprime el remedio, y
-troubleshooting lo documenta en los dos idiomas. La configuración del proyecto
-no cambia.
+**A GUI client could not find the binary, and nothing explained why.** The MCP
+configuration declared the logical command `rationale` on purpose, so the file
+could be versioned without anyone's personal path. But on macOS an app opened
+from the Dock inherits `launchd`'s environment, not the shell's, so
+`~/.local/bin` — where the installer puts the binary — is invisible to it:
+Cursor reported the server as unavailable while Codex and Claude Code in a
+terminal worked. `install-agent` now detects it and prints the remedy, and
+troubleshooting documents it in both languages. The project configuration does
+not change.
 
-**Limitaciones conocidas de esta beta**, declaradas en vez de omitidas:
+**Known limitations of this beta**, stated instead of omitted:
 
-- Windows pasa CI de punta a punta, incluido el smoke test de empaquetado, pero
-  nadie ha instalado y usado el binario en una máquina Windows física.
-- Cursor: los archivos se generan y revierten correctamente, con tests; que
-  Cursor los aplique requiere confirmación humana.
-- Ningún repositorio de otra persona: toda la evidencia proviene de proyectos
-  de quien desarrolla Rationale, así que nada prueba todavía que las
-  instrucciones funcionen sin conocimiento previo.
-- `.rationale/migrations/` sigue siendo una afordancia vacía: solo existe una
-  versión de schema, y `doctor` ya detecta una desconocida como puerta visible.
+- Windows passes CI end to end, including the packaging smoke test, but nobody
+  has installed and used the binary on a physical Windows machine.
+- Cursor: the files are generated and reverted correctly, with tests; that
+  Cursor applies them requires human confirmation.
+- No one else's repository: all the evidence comes from projects of the person
+  developing Rationale, so nothing yet proves the instructions work without
+  prior knowledge.
+- `.rationale/migrations/` is still an empty affordance: only one schema version
+  exists, and `doctor` already detects an unknown one as a visible gate.
 
-## Sin publicar
+## Between v0.1.0-alpha.7 and v0.1.0-beta.1
 
-- **`windows-latest` y CI sin agentes instalados encontraron cuatro defectos
-  que la máquina del desarrollador nunca podía ver.** `cargo test --locked`
-  estaba rojo en las tres plataformas (`main` en `eb35bfb5`), y eran cuatro
-  causas distintas:
-  - **JSON inválido en Windows.** `cmd_init` y `cmd_health` interpolaban la
-    ruta del proyecto en un literal JSON escrito a mano; `\` no es un escape
-    válido, así que el contrato de una línea salía corrupto. Ambos comandos
-    generan ahora el JSON con `serde_json`.
-  - **Comparación de rutas no portable en Windows.** `/otro/proyecto/CLAUDE.md`
-    **no es** `is_absolute()` en Windows — le falta la letra de unidad — así
-    que la migración de manifests heredados la trataba como ya relativa y la
-    saltaba, dejando una entrada externa que después abortaba
-    `uninstall-agent`. La migración decide ahora por el destino al que
-    apunta la ruta, no por su forma, comparando componentes portables (`/` y
-    `\` como separador en cualquier plataforma) en vez de `is_absolute()` o
-    subcadenas.
-  - **Tests de `agents::install` dependientes del PATH del desarrollador.**
-    `install()` detecta un agente si su binario está en `PATH` o si el
-    proyecto ya usa su configuración. En la Mac del desarrollador `claude` y
-    `codex` estaban en `PATH`, así que la detección siempre ocurría y
-    `install` siempre llegaba a escribir el manifest; en los runners de CI no
-    existe ninguno de los tres binarios, `install` retornaba temprano, y tres
-    tests que asumían un manifest ya escrito fallaban con `NotFound`. Un
-    cuarto test pasaba, pero por la razón equivocada: la guarda contra rutas
-    arbitrarias nunca se ejercitó porque `install` no hizo nada. Los tests
-    ahora siembran explícitamente la condición de detección (`AGENTS.md`,
-    `.cursor/mcp.json`, el directorio de skills) en vez de depender de qué
-    tenga instalado quien los corre.
-  - **`install-agent` abortaba por completo si Codex se detectaba sin
-    binario invocable.** Sembrar la detección de arriba expuso un defecto de
-    producción real, no solo de tests: al detectar `codex` por configuración
-    del proyecto (`AGENTS.md` heredado) sin que el binario `codex` exista en
-    esta máquina, `install-agent` intentaba de todos modos ejecutar
-    `codex mcp list` para el registro global y abortaba la instalación
-    completa — incluida la de los demás agentes detectados en la misma
-    pasada — con un error de proceso. Ahora, sin binario invocable, el
-    registro global de MCP se omite con un aviso; los demás agentes se
-    instalan con normalidad.
+These changes were recorded as unreleased at the time and shipped with beta.1.
 
-  Los cuatro defectos son independientes entre sí. Los dos tests de
-  `tests/cli.rs` que ya fallaban en Windows antes de esta sesión se
-  corrigieron en el mismo esfuerzo para que la matriz de alpha.8 pudiera
-  quedar completamente verde.
+- **`windows-latest` and CI without installed agents found four defects the
+  developer's machine could never see.** `cargo test --locked` was red on all
+  three platforms (`main` at `eb35bfb5`), for four different causes:
+  - **Invalid JSON on Windows.** `cmd_init` and `cmd_health` interpolated the
+    project path into a hand-written JSON literal; `\` is not a valid escape, so
+    the one-line contract came out corrupted. Both commands now generate the
+    JSON with `serde_json`.
+  - **Non-portable path comparison on Windows.** `/other/project/CLAUDE.md`
+    **is not** `is_absolute()` on Windows — it lacks the drive letter — so the
+    migration of legacy manifests treated it as already relative and skipped
+    it, leaving an external entry that later aborted `uninstall-agent`. The
+    migration now decides by the destination the path points at, not by its
+    shape, comparing portable components (`/` and `\` as separators on any
+    platform) instead of `is_absolute()` or substrings.
+  - **`agents::install` tests depended on the developer's PATH.** `install()`
+    detects an agent when its binary is on `PATH` or the project already uses
+    its configuration. On the developer's Mac, `claude` and `codex` were on
+    `PATH`, so detection always happened and `install` always wrote the
+    manifest; on CI runners none of the three binaries exist, `install`
+    returned early, and three tests that assumed a written manifest failed with
+    `NotFound`. A fourth test passed for the wrong reason: the guard against
+    arbitrary paths was never exercised because `install` did nothing. The
+    tests now seed the detection condition explicitly (`AGENTS.md`,
+    `.cursor/mcp.json`, the skills directory) instead of depending on what the
+    person running them has installed.
+  - **`install-agent` aborted entirely when Codex was detected without an
+    invocable binary.** Seeding the detection above exposed a real production
+    defect, not just a test one: when `codex` was detected through project
+    configuration (a legacy `AGENTS.md`) without the `codex` binary on this
+    machine, `install-agent` still tried to run `codex mcp list` for the global
+    registration and aborted the whole installation — including the other
+    agents detected in the same pass — with a process error. Now, without an
+    invocable binary, the global MCP registration is skipped with a notice; the
+    other agents install normally.
 
-- **Dogfood corrigió una falsa idempotencia de `init` y añadió acciones
-  pre-hechas.** Si `.rationale/` ya existía, `cmd_init` emitía
-  `already-initialized` y retornaba antes de `agents::install`; `update`
-  solo registra Codex globalmente, así que un repo inicializado antes de
-  instalar Claude Code quedaba permanentemente sin `.mcp.json`, bloque en
-  `CLAUDE.md` ni manifest. El defecto se observó en Monorepo y afecta los
-  cuatro repos piloto. Ahora `init` conserva el contrato JSON de una línea,
-  respeta los dos mecanismos de skip y converge la configuración de agentes
-  también al reinicializar. Rationale expone seis acciones desde una fuente
-  única: prompts MCP (`preflight`, `explain`, `capture`, `review`, `health`,
-  `protocol`) y skills de Claude Code `/rationale-*`. Los skills se escriben
-  atómicamente, se registran con hash SHA-256 y `uninstall-agent` borra solo
-  los intactos; un archivo editado por el usuario se conserva. La operación
-  destructiva ya no comprueba un path y luego lo borra: reclama la identidad
-  mediante rename atómico y publica reemplazos sin sobrescribir destinos que
-  reaparezcan, cerrando la carrera TOCTOU de pathname documentada en ADR-0008.
+  The four defects are independent of one another. The two `tests/cli.rs` tests
+  that already failed on Windows before this session were fixed in the same
+  effort so the alpha.8 matrix could go fully green.
 
-- **Landing final para la validación alpha → beta.** Inglés y español ahora
-  son rutas Astro estáticas (`/` y `/es/`) en vez de mutaciones de texto en
-  JavaScript. Documentación abre el manual localizado, Instalar conserva su
-  anchor, el Hero enlaza a un Quick Start que distingue slash commands reales
-  de Claude Code de solicitudes escritas para Codex, y las navegaciones usan
-  View Transitions MPA nativas con fallback normal y reduced motion.
+- **Dogfood fixed a false idempotency in `init` and added pre-made actions.**
+  If `.rationale/` already existed, `cmd_init` emitted `already-initialized`
+  and returned before `agents::install`; `update` only registers Codex globally,
+  so a repository initialized before installing Claude Code was permanently left
+  without `.mcp.json`, a `CLAUDE.md` block, or a manifest. The defect was
+  observed in Monorepo and affected the four pilot repositories. Now `init`
+  keeps the one-line JSON contract, honors both skip mechanisms, and converges
+  the agent configuration when reinitializing too. Rationale exposes six actions
+  from a single source: MCP prompts (`preflight`, `explain`, `capture`,
+  `review`, `health`, `protocol`) and `/rationale-*` Claude Code skills. The
+  skills are written atomically and recorded with a SHA-256 hash, and
+  `uninstall-agent` deletes only the intact ones; a file the user edited is
+  kept. The destructive operation no longer checks a path and then deletes it:
+  it claims the identity through an atomic rename and publishes replacements
+  without overwriting destinations that reappear, closing the pathname TOCTOU
+  race documented in ADR-0008.
 
-- **`windows-latest` entró a CI real por primera vez y encontró dos defectos
-  reales que ubuntu/macOS nunca podían detectar.** `cache::cache_root`
-  usaba `$HOME` directo — inexistente en Windows — cuando ADR-0005 ya
-  documentaba `%LOCALAPPDATA%\rationale\projects\...` como el candidato a
-  implementar "cuando Fase J necesite resolver Windows de forma real"; ese
-  momento es este. Implementado tal cual el ADR lo nombraba, sin decisión
-  nueva. El test de timeout de proveedor (`provider_timeout_reports_unavailable_and_kills_process`)
-  usa un mock en bash (`dd`, framing byte-exacto) que Windows no puede
-  ejecutar como binario nativo — se salta explícitamente en Windows con la
-  razón documentada en el propio test: es una limitación del fixture de
-  prueba, no del código de producción bajo prueba (`spawn_with` siempre
-  lanza un binario real, nunca un script, en cualquier plataforma).
+- **Final landing page for the alpha → beta validation.** English and Spanish
+  are now static Astro routes (`/` and `/es/`) instead of text mutations in
+  JavaScript. Documentation opens the localized manual, Install keeps its
+  anchor, the hero links to a Quick Start that tells real Claude Code slash
+  commands apart from written requests for Codex, and navigations use native MPA
+  View Transitions with a normal fallback and reduced motion.
 
-- **Corrige que `prepare_change` descartaba `intent` en silencio.** El MCP
-  exigía `mode: "intent-aware"` explícito además de `intent` para activar
-  detección de conflictos; sin ese flag, `intent` se ignoraba sin ningún
-  diagnóstico. `Rationale_v0.5.md §4.18` define el modo por la presencia de
-  intención, no por un flag separado, y el prompt maestro documentado
-  (`docs/prompt-master.md`) solo enseña `prepare_change(target, intent)` —
-  nunca `mode`. Cualquier agente siguiendo el protocolo oficial reproducía
-  exactamente el síntoma del bug real que motivó el proyecto: una intención
-  contradictoria pasaba sin que Rationale la señalara. `mode: "baseline"`
-  explícito sigue forzando retrieval puro sin detección, como override.
+- **`windows-latest` entered real CI for the first time and found two real
+  defects ubuntu/macOS could never detect.** `cache::cache_root` used `$HOME`
+  directly — which does not exist on Windows — when ADR-0005 already documented
+  `%LOCALAPPDATA%\rationale\projects\...` as the candidate to implement "when
+  Phase J needs to solve Windows for real"; that moment was this one. It was
+  implemented exactly as the ADR named it, with no new decision. The provider
+  timeout test (`provider_timeout_reports_unavailable_and_kills_process`) uses a
+  bash mock (`dd`, byte-exact framing) that Windows cannot run as a native
+  binary — it is skipped explicitly on Windows, with the reason documented in
+  the test itself: it is a limitation of the test fixture, not of the production
+  code under test (`spawn_with` always launches a real binary, never a script,
+  on any platform).
 
-- **Fase A — instalación/actualización sin pérdida de datos.** Windows:
-  `package.ps1` empaquetaba el ZIP con los archivos en la raíz mientras
-  `rationale-installer.ps1` los buscaba en un subdirectorio (CI nunca lo
-  detectó: solo compilaba ubuntu+macOS); ahora se corrige y `windows-latest`
-  se agrega a CI con un smoke test real del layout del archivo. Un merge
-  conflict que invierte los marcadores `rationale:begin`/`rationale:end`
-  hacía panicar `install-agent`; ahora falla con un error legible sin tocar
-  el archivo. `uninstall-agent` borraba el archivo entero para toda entrada
-  que Rationale hubiera creado, incluso si el usuario le agregó contenido
-  propio después (otro servidor MCP en el mismo `.mcp.json`, texto bajo el
-  bloque de `CLAUDE.md`); ahora extirpa solo lo que Rationale escribió.
-  `.mcp.json` no se actualizaba si el binario cambiaba de ruta. Las
-  escrituras de `agents.rs` (`CLAUDE.md`, `AGENTS.md`, `.mcp.json`, el
-  manifest) pasan a ser atómicas, mismo patrón que el canon YAML.
+- **Fixes `prepare_change` silently discarding `intent`.** The MCP server
+  required an explicit `mode: "intent-aware"` in addition to `intent` to enable
+  conflict detection; without that flag, `intent` was ignored with no
+  diagnostic. `Rationale_v0.5.md §4.18` defines the mode by the presence of an
+  intent, not by a separate flag, and the documented master prompt
+  (`docs/prompt-master.md`) teaches only `prepare_change(target, intent)` —
+  never `mode`. Any agent following the official protocol reproduced exactly the
+  symptom of the real bug that motivated the project: a contradictory intent
+  went through without Rationale flagging it. An explicit `mode: "baseline"`
+  still forces plain retrieval without detection, as an override.
 
-- **Fase B — corrección silenciosa en la cadena de gobernanza.**
-  `finalize_change` solo ataba bindings desde el diff mecánico, nunca desde
-  el target declarado — si el cambio real ya estaba commiteado antes de
-  `base_revision`, el Record resultante nunca podía gobernar su propio
-  target (mismo síntoma que el bug original del dogfood, causa distinta).
-  Ahora se ata también el target declarado cuando resuelve a un archivo
-  real. Además, `finalize_change` capturaba `AGENTS.md`/`CLAUDE.md`/
-  `.mcp.json` como si fueran parte del cambio del usuario cuando `init`/
-  `install-agent` los deja untracked (confirmado en dogfood real) — ahora
-  se excluyen, igual que `.rationale/`. `schema_version` se escribía pero
-  nunca se leía: `rationale doctor` ahora detecta versiones desconocidas.
-  `approved_at` nunca se escribía en una `Approval` — de una aprobación solo
-  quedaba el "quién", nunca el "cuándo". Una propuesta reclamada por
-  `rationale review` cuyo proceso muere antes de promoverla/rechazarla
-  quedaba huérfana para siempre en `.rationale/proposals/.in-review/`, sin
-  ningún camino de recuperación pese a que los comentarios prometían que
-  "queda recuperable"; `rationale doctor --repair` ahora la devuelve a
-  `proposals/`.
+- **Phase A — install and update without data loss.** Windows: `package.ps1`
+  packed the ZIP with the files at the root while `rationale-installer.ps1`
+  looked for them in a subdirectory (CI never caught it: it only built ubuntu +
+  macOS); it is now fixed and `windows-latest` is added to CI with a real smoke
+  test of the archive layout. A merge conflict that inverted the
+  `rationale:begin`/`rationale:end` markers made `install-agent` panic; it now
+  fails with a readable error without touching the file. `uninstall-agent`
+  deleted the whole file for every entry Rationale had created, even if the user
+  later added their own content (another MCP server in the same `.mcp.json`,
+  text below the `CLAUDE.md` block); it now removes only what Rationale wrote.
+  `.mcp.json` was not updated when the binary moved. The writes in `agents.rs`
+  (`CLAUDE.md`, `AGENTS.md`, `.mcp.json`, the manifest) become atomic, the same
+  pattern as the YAML canon.
 
-- **Fase C — camino de migración para el canon legado.** `doctor` detectaba
-  `RecordWithoutBindings` pero se negaba a repararlo ("inventar un binding
-  sería peor que ninguno") — correcto como principio, pero sin salida para
-  el canon que el productor roto de Fase 1 ya dejó escrito en cuatro repos.
-  `rationale doctor --repair` ahora pide la ruta (y símbolo opcional) al
-  humano, escribe el binding marcado `declared_by: human` — nunca
-  indistinguible de uno que un proveedor estructural confirmó — con su
-  propio evento de lifecycle. Rescata la evidencia de dogfood en vez de
-  descartarla.
+- **Phase B — silent correctness in the governance chain.** `finalize_change`
+  bound only from the mechanical diff, never from the declared target — if the
+  real change was already committed before `base_revision`, the resulting Record
+  could never govern its own target (the same symptom as the original dogfood
+  bug, a different cause). The declared target is now also bound when it
+  resolves to a real file. In addition, `finalize_change` captured
+  `AGENTS.md`/`CLAUDE.md`/`.mcp.json` as if they were part of the user's change
+  when `init`/`install-agent` left them untracked (confirmed in real dogfood) —
+  they are now excluded, like `.rationale/`. `schema_version` was written but
+  never read: `rationale doctor` now detects unknown versions. `approved_at` was
+  never written in an `Approval` — an approval kept only the "who", never the
+  "when". A proposal claimed by `rationale review` whose process died before
+  promoting or rejecting it was orphaned forever in
+  `.rationale/proposals/.in-review/`, with no recovery path even though the
+  comments promised it "stays recoverable"; `rationale doctor --repair` now
+  returns it to `proposals/`.
 
-- **Fase D — observabilidad del ciclo de vida.** `rationale review-record`
-  imprime ahora `approvals[]` (actor, autoridad, estado, `approved_at`) y el
-  historial completo de `lifecycle.events[]` antes del menú de acción —
-  antes había que leer el YAML a mano para auditar quién aprobó una
-  decisión y cuándo. `kind: "exception"` estaba en el enum de
-  `record.schema.json` desde el principio pero era inalcanzable:
-  `finalize_change` no tenía parámetro `kind` y el productor hardcodeaba
-  `"constraint"` siempre; ahora es un parámetro opcional validado, con
-  `"constraint"` como default implícito (el comportamiento de antes).
-  `review-record --project-root <ruta> <id>` ataba `record_id` al VALOR del
-  flag en vez del id real cuando el flag venía primero — solo funcionaba en
-  el orden documentado por casualidad; ahora el parseo de posicionales sabe
-  qué flags llevan valor.
+- **Phase C — a migration path for the legacy canon.** `doctor` detected
+  `RecordWithoutBindings` but refused to repair it ("inventing a binding would
+  be worse than none") — correct as a principle, but with no way out for the
+  canon that Phase 1's broken producer had already written in four repositories.
+  `rationale doctor --repair` now asks a human for the path (and an optional
+  symbol) and writes the binding marked `declared_by: human` — never
+  indistinguishable from one a structural provider confirmed — with its own
+  lifecycle event. It rescues the dogfood evidence instead of discarding it.
 
-- **Fase E — cobertura que faltaba para poder afirmar beta con evidencia.**
-  Cuatro áreas sin ningún test: que `uninstall-agent` de verdad conserva
-  `.rationale/` (ambos instaladores lo *imprimían*, ninguno lo probaba);
-  el exit code de `doctor --check` y la forma real de `doctor --json`;
-  y `project_root` distinto de `repo_path` (canon en un repo, código en
-  otro) — cableado desde el principio pero nunca ejercitado con dos repos
-  Git reales. Las cuatro ya pasan.
+- **Phase D — lifecycle observability.** `rationale review-record` now prints
+  `approvals[]` (actor, authority, status, `approved_at`) and the full
+  `lifecycle.events[]` history before the action menu — previously you had to
+  read the YAML by hand to audit who approved a decision and when.
+  `kind: "exception"` had been in the `record.schema.json` enum from the start
+  but was unreachable: `finalize_change` had no `kind` parameter and the
+  producer always hardcoded `"constraint"`; it is now an optional, validated
+  parameter, with `"constraint"` as the implicit default (the earlier behavior).
+  `review-record --project-root <path> <id>` bound `record_id` to the flag's
+  VALUE instead of the real id when the flag came first — it only worked in the
+  documented order by accident; positional parsing now knows which flags take a
+  value.
+
+- **Phase E — the coverage needed to claim beta with evidence.** Four areas had
+  no test: that `uninstall-agent` really keeps `.rationale/` (both installers
+  *printed* it, neither tested it); the exit code of `doctor --check` and the
+  real shape of `doctor --json`; and a `project_root` different from
+  `repo_path` (the canon in one repository, the code in another) — wired from the
+  start but never exercised with two real Git repositories. All four now pass.
 
 ## v0.1.0-alpha.7 — 2026-07-27
 
-- Corrige el canal por defecto de `rationale-installer.sh/.ps1` y
-  `rationale-update.sh/.ps1`: por defecto usaban `RATIONALE_CHANNEL=stable`,
-  que resuelve la versión vía `GET /releases/latest` de GitHub. Ese endpoint
-  excluye prereleases por diseño, y todas las alfas (incluida alpha.6) están
-  marcadas como prerelease — así que "stable" resolvía silenciosamente a
-  `v0.0.0-dogfood.7`, una Release anterior a `rationale-update.sh`. El
-  instalador fallaba con un 404 real al pedir ese archivo a esa Release
-  vieja. El canal por defecto pasa a `preview` mientras el proyecto sea
-  pre-1.0, tal como ya establecía `docs/work-items/alpha-release-mcp-cleanroom-hardening.md`.
-  Verificado end-to-end contra los assets reales de GitHub.
+- Fixes the default channel of `rationale-installer.sh/.ps1` and
+  `rationale-update.sh/.ps1`: they defaulted to `RATIONALE_CHANNEL=stable`,
+  which resolves the version through GitHub's `GET /releases/latest`. That
+  endpoint excludes prereleases by design, and every alpha (including alpha.6)
+  is marked as a prerelease — so "stable" silently resolved to
+  `v0.0.0-dogfood.7`, a release older than `rationale-update.sh`. The installer
+  failed with a real 404 when requesting that file from that old release. The
+  default channel becomes `preview` while the project is pre-1.0, as
+  `docs/work-items/alpha-release-mcp-cleanroom-hardening.md` already
+  established. Verified end to end against the real GitHub assets.
 
 ## v0.1.0-alpha.6 — 2026-07-27
 
-- Cadena de gobernanza completa: bindings de archivo y símbolo, Subjects
-  materializados, severidad tolerante, captura de cambios sin commit,
-  resolución de conflictos y `rationale doctor` para canon legado.
-- Chestie aparece en la revisión humana, `health`, la preparación y los
-  instaladores, con globo dinámico y salida sobria para CI, pipes y
+- Complete governance chain: file and symbol bindings, materialized Subjects,
+  tolerant severity, capture of uncommitted changes, conflict resolution, and
+  `rationale doctor` for the legacy canon.
+- Chestie appears in human review, `health`, preparation, and the installers,
+  with a dynamic speech bubble and sober output for CI, pipes, and
   `--no-mascot`.
-- El prompt maestro vive en [`docs/prompt-master.md`](docs/prompt-master.md) y
-  es la fuente que también consume `install-agent`.
-- El sitio documental Astro queda disponible en `/docs/*` y `/es/docs/*`, con
-  prompt maestro bilingüe, navegación, TOC y contenido operativo.
+- The master prompt lives in [`docs/prompt-master.md`](docs/prompt-master.md)
+  and is the source `install-agent` also consumes.
+- The Astro documentation site is available at `/docs/*` and `/es/docs/*`, with
+  a bilingual master prompt, navigation, table of contents, and operational
+  content.
 
 ## v0.1.0-alpha.5 — 2026-07-27
 
-Sin cambios funcionales sobre alpha.4 — release generada por el proceso de
-fusión de PRs de la rama de release; el contenido real llegó en alpha.6.
+No functional changes over alpha.4 — a release generated by the process of
+merging the release branch's pull requests; the real content arrived in alpha.6.
 
 ## v0.1.0-alpha.4 — 2026-07-26
 
-- Corrige el reporte de versión del servidor MCP para que las herramientas
-  expongan la Release real del binario.
-- Mantiene el pipeline de actualización preview robusto de alpha.2 y alpha.3.
+- Fixes the MCP server's version report so the tools expose the binary's real
+  release.
+- Keeps the robust preview update pipeline from alpha.2 and alpha.3.
 
 ## v0.1.0-alpha.3 — 2026-07-26
 
-- Evita fallos por `SIGPIPE` en el helper de actualización preview al dejar de
-  cerrar prematuramente el stream de Releases.
+- Avoids `SIGPIPE` failures in the preview update helper by no longer closing
+  the releases stream prematurely.
 
 ## v0.1.0-alpha.2 — 2026-07-26
 
-- Endurece la actualización preview y la selección de Releases prerelease en
-  los helpers Unix y PowerShell.
+- Hardens the preview update and the selection of prerelease releases in the
+  Unix and PowerShell helpers.
 
 ## v0.1.0-alpha.1 — 2026-07-26
 
-- Publica la primera alfa empaquetada con binarios, checksums, instaladores y
-  helper de actualización.
-- Corrige el transporte del servidor MCP: Rationale habla JSON por línea en
-  su frontera stdio, mientras conserva `Content-Length` únicamente como
-  cliente hacia Codebase Memory.
-- Hace `--help`, `--version` y las opciones inválidas no mutantes; antes,
-  `rationale init --help` podía crear `.rationale/` y modificar archivos de
-  instrucciones del agente.
-- Añade `install-agent`, `uninstall-agent`, integración MCP e instrucciones de
-  invocación con Chestie.
+- Publishes the first packaged alpha with binaries, checksums, installers, and
+  the update helper.
+- Fixes the MCP server transport: Rationale speaks line-delimited JSON at its
+  stdio boundary, while keeping `Content-Length` only as a client toward
+  Codebase Memory.
+- Makes `--help`, `--version`, and invalid options non-mutating; previously,
+  `rationale init --help` could create `.rationale/` and modify agent
+  instruction files.
+- Adds `install-agent`, `uninstall-agent`, MCP integration, and invocation
+  instructions with Chestie.
 
-### Historia que precede la alfa
+### History before the alpha
 
-Las siete Releases `v0.0.0-dogfood.1`–`v0.0.0-dogfood.7` compartieron el bug
-de framing que motivó [8ec97ea](https://github.com/Ragosorio/Rationale/commit/8ec97ea):
-el servidor esperaba `Content-Length`, aunque el transporte stdio de MCP usa
-un objeto JSON por línea. El proceso podía arrancar y parecer sano mientras
-el handshake nunca completaba. La corrección fue separar ambos codecs; no
-fue un fallo de Codebase Memory ni un problema de latencia.
+The seven releases `v0.0.0-dogfood.1`–`v0.0.0-dogfood.7` shared the framing bug
+that motivated [8ec97ea](https://github.com/Ragosorio/Rationale/commit/8ec97ea):
+the server expected `Content-Length`, although MCP's stdio transport uses one
+JSON object per line. The process could start and look healthy while the
+handshake never completed. The fix was to separate both codecs; it was not a
+Codebase Memory failure or a latency problem.
 
-El incidente de `SIGPIPE` fue posterior y distinto: lo introdujo el
-endurecimiento de alpha.1 en el pipeline preview y quedó corregido en alpha.3.
-La landing que apuntaba a `releases/latest` también era un problema separado:
-GitHub entregaba `dogfood.7`, anterior a `install-agent`, al `--help` seguro y
-al helper de actualización.
+The `SIGPIPE` incident came later and was different: alpha.1's hardening of the
+preview pipeline introduced it, and alpha.3 fixed it. The landing page pointing
+at `releases/latest` was also a separate problem: GitHub served `dogfood.7`,
+older than `install-agent`, to the safe `--help` and to the update helper.
 
 ## v0.0.0-dogfood.7 — 2026-07-26
 
-- MVP local instalable desde GitHub Release.
-- CLI para `init`, `health`, `prepare`, `review` y `review-record`.
-- Servidor MCP con `health`, `prepare_change`, `explain_target` y
+- A local MVP installable from a GitHub Release.
+- CLI for `init`, `health`, `prepare`, `review`, and `review-record`.
+- MCP server with `health`, `prepare_change`, `explain_target`, and
   `finalize_change`.
-- Lifecycle auditable de Records y autoridad declarada por proyecto.
-- Artefactos multi-plataforma, checksums SHA-256 e instaladores.
+- Auditable Record lifecycle and authority declared per project.
+- Multi-platform artifacts, SHA-256 checksums, and installers.
 
-Fue la última iteración dogfood antes de la alfa empaquetada. No debe usarse
-como referencia pública actual: la evidencia de Release vigente es
+It was the last dogfood iteration before the packaged alpha. It must not be used
+as a current public reference: the release evidence at the time was
 `v0.1.0-alpha.6`.

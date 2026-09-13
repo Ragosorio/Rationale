@@ -1,37 +1,37 @@
-# Experiment: <nombre corto>
+# Experiment: <short name>
 
 ## Hypothesis
 
-<Qué se espera demostrar o refutar. Debe ser falsificable — ver `Rationale_v0.5.md §30.1.16`.>
+<What is expected to be shown or refuted. It must be falsifiable — see `Rationale_v0.5.md §30.1.16`.>
 
 ## Protocol
 
-<Pasos exactos, condiciones controladas, orden de ejecución.>
+<Exact steps, controlled conditions, order of execution.>
 
 ## Dataset
 
-<Casos usados, origen, cuántos, revisión base fijada.>
+<Cases used, their origin, how many, and the pinned base revision.>
 
 ## Conditions
 
-<Las condiciones comparadas — p. ej. A. Código+Git / B. Documentación tradicional / C. Codebase Memory / D. Codebase Memory + Rationale / E. Prompt experto — ver `Rationale_v0.5.md §30.1.6`.>
+<The conditions compared — for example A. Code + Git / B. Traditional documentation / C. Codebase Memory / D. Codebase Memory + Rationale / E. Expert prompt — see `Rationale_v0.5.md §30.1.6`.>
 
 ## Metrics
 
-<Qué se mide exactamente: critical_constraint_recall, context_precision, harmful_context_rate, total_tokens_to_successful_completion, etc.>
+<What exactly is measured: critical_constraint_recall, context_precision, harmful_context_rate, total_tokens_to_successful_completion, and so on.>
 
 ## Raw results
 
-<Datos crudos sin interpretar, o enlace al archivo que los contiene.>
+<Raw data without interpretation, or a link to the file that holds it.>
 
 ## Analysis
 
-<Interpretación de los datos crudos. Medianas y percentiles, no solo promedios.>
+<Interpretation of the raw data. Medians and percentiles, not only averages.>
 
 ## Threats to validity
 
-<Qué podría invalidar o sesgar esta conclusión.>
+<What could invalidate or bias this conclusion.>
 
 ## Decision
 
-<Qué se decide a partir de este experimento. Puede ser "no concluyente" — es una respuesta válida.>
+<What is decided from this experiment. "Inconclusive" is a valid answer.>

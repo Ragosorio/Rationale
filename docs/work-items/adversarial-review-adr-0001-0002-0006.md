@@ -1,47 +1,47 @@
-# Revisión adversarial: ADR-0001, ADR-0002, ADR-0006
+# Adversarial review: ADR-0001, ADR-0002, ADR-0006
 
-**Rol:** Review Agent independiente (`Proceso §4.4` — "otra sesión" como revisor válido).
-**Encargo:** intentar refutar los tres ADRs `proposed`, sin autoaprobar. Metodología: lectura completa de ADRs, research notes citadas, código de ambos spikes, historial de git, e implementación real (`src/`).
-**Esta sesión no aprobó ni rechazó nada** — el veredicto queda para revisión humana.
+**Role:** independent Review Agent (`Proceso §4.4` — "another session" as a valid reviewer).
+**Assignment:** try to refute the three `proposed` ADRs, without self-approving. Methodology: a full reading of the ADRs, the cited research notes, the code of both spikes, the Git history, and the real implementation (`src/`).
+**This session approved or rejected nothing** — the verdict is left to human review.
 
 ---
 
-## Resumen ejecutivo
+## Executive summary
 
-| ADR | Veredicto | Hallazgo más severo |
+| ADR | Verdict | Most severe finding |
 |---|---|---|
-| ADR-0001 (Rust) | Sostiene con matices | Ninguno bloqueante; la conclusión resiste reponderación agresiva de los pesos (verificado recalculando 5 escenarios distintos — Rust gana en todos, incluso invirtiendo el criterio disputado). Debilidad real: el criterio de mayor peso ("seguridad de memoria y confiabilidad", 20%) se justifica con evidencia de gestión de subprocesos, no de memoria en sentido estricto; y el hallazgo central (footgun de Go) no quedó en un commit auditable, solo en prosa. |
-| ADR-0002 (sesión MCP persistente) | Sostiene con matices significativos | **La implementación real de Fase D (`src/main.rs`) no logra la amortización que el ADR reclama** — cada invocación de la CLI (`rationale prepare`) paga el handshake completo de ~6.8s, porque el binario es hoy un proceso de un solo uso, no un daemon. La ventaja medida (15-30ms por llamada) solo se realiza *dentro* de una invocación, nunca *entre* invocaciones. Depende de la pregunta arquitectónica todavía abierta en `Arquitectura §28`: "¿un proceso por sesión o daemon compartido?". |
-| ADR-0006 (revisión desde Git) | Sostiene | El más robusto de los tres. Evidencia central doblemente corroborada (`05` y `08` de forma independiente). Matices de implementación: gaps de test en symlinks/submodules/repo sin commits; y el ADR describe "hash de contenido cuando aplique" pero el código real solo calcula un booleano `working_tree_dirty`. |
+| ADR-0001 (Rust) | Holds, with nuances | Nothing blocking; the conclusion withstands aggressive re-weighting (verified by recomputing 5 different scenarios — Rust wins in all of them, even inverting the disputed criterion). A real weakness: the highest-weight criterion ("memory safety and reliability", 20%) is justified with evidence about subprocess management, not memory in the strict sense; and the central finding (Go's footgun) was not recorded in an auditable commit, only in prose. |
+| ADR-0002 (persistent MCP session) | Holds, with significant nuances | **The real Phase D implementation (`src/main.rs`) does not achieve the amortization the ADR claims** — every CLI invocation (`rationale prepare`) pays the full ~6.8 s handshake, because the binary today is a single-use process, not a daemon. The measured advantage (15–30 ms per call) is realized only *within* an invocation, never *between* invocations. It depends on the architectural question still open in `Arquitectura §28`: "one process per session or a shared daemon?". |
+| ADR-0006 (revision from Git) | Holds | The most robust of the three. The central evidence is doubly corroborated (`05` and `08`, independently). Implementation nuances: test gaps for symbolic links/submodules/a repository without commits; and the ADR describes "content hashes where applicable" but the real code only computes a `working_tree_dirty` boolean. |
 
-## Hallazgos completos (por ADR)
+## Full findings (by ADR)
 
 ### ADR-0001
 
-1. El footgun de Go (5016ms) no existe como commit auditable — solo hay un commit final ya corregido (`6b5d47e`). El "antes" solo se narra en `candidates.md`/`benchmark-results.json`. *(matiz)*
-2. `spike-notes.md` admite que el resultado fue "consecuencia del estilo de implementación manual", no una garantía estructural del lenguaje — el ADR generaliza más de lo que su propia evidencia sostiene. *(matiz)*
-3. La evidencia citada para "seguridad de memoria y confiabilidad" (20%, el peso más alto) es en realidad sobre ergonomía de gestión de subprocesos (`os/exec` vs manual poll), no sobre memoria en sentido tradicional. *(matiz — rigor metodológico)*
-4. Doble conteo: el mismo hecho (Go evita cgo con `modernc.org/sqlite`) se premia en "SQLite y filesystem" y se penaliza en "Interoperabilidad con procesos C" — simétricamente para Rust con `flock` FFI. Los efectos se cancelan aproximadamente, no cambia el resultado. *(cosmético)*
-5. **Verificación de sensibilidad de la puntuación (respuesta directa a la pregunta central del encargo):** recalculado bajo 5 escenarios de repeso distintos (incluyendo eliminar por completo el criterio disputado, o invertir su puntuación). Rust gana en todos. *(sostiene — la conclusión es robusta)*
-6. "Distribución como binario" (15%) se puntúa solo con tamaño de archivo — nunca se probó firma de código, instaladores, ni empaquetado real, aunque esto ya está reconocido transparentemente en `spike-notes.md`/`compatibility-matrix.md`. *(matiz)*
+1. Go's footgun (5016 ms) does not exist as an auditable commit — there is only a final, already fixed commit (`6b5d47e`). The "before" is only narrated in `candidates.md`/`benchmark-results.json`. *(nuance)*
+2. `spike-notes.md` admits the result was a "consequence of the manual implementation style", not a structural guarantee of the language — the ADR generalizes more than its own evidence supports. *(nuance)*
+3. The evidence cited for "memory safety and reliability" (20%, the highest weight) is really about the ergonomics of subprocess management (`os/exec` versus a manual poll), not about memory in the traditional sense. *(nuance — methodological rigor)*
+4. Double counting: the same fact (Go avoids cgo with `modernc.org/sqlite`) is rewarded under "SQLite and filesystem" and penalized under "Interoperability with C processes" — symmetrically for Rust with `flock` FFI. The effects roughly cancel out; the result does not change. *(cosmetic)*
+5. **Sensitivity check of the score (a direct answer to the assignment's central question):** recomputed under 5 different re-weighting scenarios (including removing the disputed criterion entirely, or inverting its score). Rust wins in all of them. *(holds — the conclusion is robust)*
+6. "Distribution as a binary" (15%) is scored only by file size — code signing, installers, and real packaging were never tested, although this is already acknowledged transparently in `spike-notes.md`/`compatibility-matrix.md`. *(nuance)*
 
 ### ADR-0002
 
-1. **[El más importante del reporte]** `cmd_health`/`cmd_prepare` en `src/main.rs` llaman `CodebaseMemoryClient::spawn()` al inicio de cada función, y el binario retorna al terminar. Cada ejecución de la CLI es un proceso del SO nuevo que paga el handshake completo. Esto es exactamente el perfil de la alternativa "sesión MCP nueva por operación" que el propio ADR-0002 descarta explícitamente. *(bloqueante para la realización actual, matiz para la decisión de transporte en sí)*
-2. Sin correlación de `id` de respuesta — el diseño depende de que las llamadas sean estrictamente secuenciales (documentado en un comentario, pero no verificado con un `id` real). Si Rationale necesita concurrencia futura, atribuiría respuestas incorrectamente. *(matiz)*
-3. La mitigación de riesgo prometida ("manejo de señales explícito") no está implementada — no hay `ctrlc`/`signal-hook` en el código, solo un `Drop` que no corre ante `SIGINT`/`SIGTERM` no manejado. *(matiz)*
-4. Contención de SQLite entre múltiples procesos Rationale concurrentes (dos terminales, dos agentes) no discutida en Risks. *(matiz)*
-5. La medición central (15-30ms cálido vs 2.2-6.8s frío, 3 corridas, <5% varianza) es sólida. *(sostiene)*
+1. **[The most important finding of this report]** `cmd_health`/`cmd_prepare` in `src/main.rs` call `CodebaseMemoryClient::spawn()` at the start of each function, and the binary returns when finished. Every CLI run is a new OS process that pays the full handshake. That is exactly the profile of the "new MCP session per operation" alternative that ADR-0002 itself explicitly discards. *(blocking for the current realization, a nuance for the transport decision itself)*
+2. No response `id` correlation — the design depends on calls being strictly sequential (documented in a comment, but not verified with a real `id`). If Rationale ever needs concurrency, it would attribute responses incorrectly. *(nuance)*
+3. The promised risk mitigation ("explicit signal handling") is not implemented — there is no `ctrlc`/`signal-hook` in the code, only a `Drop` that does not run on an unhandled `SIGINT`/`SIGTERM`. *(nuance)*
+4. SQLite contention between multiple concurrent Rationale processes (two terminals, two agents) is not discussed in Risks. *(nuance)*
+5. The central measurement (15–30 ms warm versus 2.2–6.8 s cold, 3 runs, <5% variance) is solid. *(holds)*
 
 ### ADR-0006
 
-1. Evidencia central doblemente corroborada: `05-revision-and-coverage.md` (detect_changes falla) y `08-workspaces-and-monorepos.md` (capability presente que falla en silencio) son hallazgos independientes que se refuerzan. *(sostiene)*
-2. La causa raíz de `detect_changes` sigue siendo "Unknown" en la propia evidencia — el ADR generaliza de una anomalía no aislada causalmente hacia un principio arquitectónico permanente. Razonable como default conservador, pero debería ser más honesto sobre esto. *(matiz)*
-3. **Pregunta directa del encargo — ¿hay un caso legítimo de revisión "virtual" que el ADR descarta sin justificación?** No se encontró contraejemplo: `v0.5 §4.19` ya limita el alcance a Git aguas arriba, y el ADR permite la señal del proveedor como metadato diagnóstico, solo no como autoridad. *(sostiene)*
-4. Casos borde sin test: symlinks, submodules (`git status --short` puede no recorrerlos según config), repo recién `git init` sin commits todavía. *(matiz — gap de test, no bug confirmado)*
-5. `check_consistency` puede etiquetar `WorkingTreeAhead` cuando en realidad hay dos problemas superpuestos (dirty + revisión distinta) — inofensivo funcionalmente, engañoso como diagnóstico. *(cosmético)*
-6. El ADR describe "hash de contenido cuando aplique" pero el código real solo calcula un booleano `dirty` — cualquier archivo no confirmado (incluso irrelevante) invalida todos los Records por igual. Consistente con "fallar con humildad", pero el ADR promete más precisión de la que el código tiene. *(matiz)*
+1. The central evidence is doubly corroborated: `05-revision-and-coverage.md` (detect_changes fails) and `08-workspaces-and-monorepos.md` (a present capability that fails silently) are independent findings that reinforce each other. *(holds)*
+2. The root cause of `detect_changes` is still "Unknown" in the evidence itself — the ADR generalizes from a causally unisolated anomaly to a permanent architectural principle. Reasonable as a conservative default, but it should be more honest about that. *(nuance)*
+3. **A direct question of the assignment — is there a legitimate case of a "virtual" revision that the ADR discards without justification?** No counterexample was found: `v0.5 §4.19` already limits the scope to Git upstream, and the ADR allows the provider's signal as diagnostic metadata, just not as authority. *(holds)*
+4. Untested edge cases: symbolic links, submodules (`git status --short` may not walk them depending on configuration), a freshly `git init`ed repository with no commits yet. *(nuance — a test gap, not a confirmed bug)*
+5. `check_consistency` can label `WorkingTreeAhead` when there are really two overlapping problems (dirty + a different revision) — functionally harmless, misleading as a diagnostic. *(cosmetic)*
+6. The ADR describes "content hashes where applicable" but the real code only computes a `dirty` boolean — any uncommitted file (even an irrelevant one) invalidates every Record equally. Consistent with "fail with humility", but the ADR promises more precision than the code has. *(nuance)*
 
-## Decisión pendiente
+## Pending decision
 
-El dueño humano del proyecto decide si estos ADRs pasan a `accepted`, se corrigen primero, o quedan `proposed` con las correcciones aplicadas. El hallazgo de ADR-0002 (#1) se incorpora directamente al propio ADR como reconocimiento explícito, ya que Fase E5 (superficie MCP, siguiente en el plan) es precisamente lo que resuelve ese gap: un servidor MCP es, por construcción, el proceso de larga duración que la CLI de un solo comando no es.
+The project's human owner decides whether these ADRs move to `accepted`, are corrected first, or stay `proposed` with the corrections applied. ADR-0002's finding (#1) is incorporated directly into the ADR itself as an explicit acknowledgment, since Phase E5 (the MCP surface, next in the plan) is precisely what closes that gap: an MCP server is, by construction, the long-lived process that a single-command CLI is not.

@@ -1,72 +1,72 @@
 # EPIC-CBM-ANALYSIS
 
-## Problema
+## Problem
 
-Rationale integrará Codebase Memory como su primer proveedor estructural, pero la arquitectura no puede fijar el adaptador, el transporte, ni el modelo de revisión/cobertura sin evidencia reproducible del comportamiento real de Codebase Memory (`Rationale_Arquitectura_Conceptual_v0.1.md §0, §6, §7`).
+Rationale will integrate Codebase Memory as its first structural provider, but the architecture cannot settle the adapter, the transport, or the revision/coverage model without reproducible evidence of Codebase Memory's real behavior (`Rationale_Arquitectura_Conceptual_v0.1.md §0, §6, §7`).
 
-## Objetivo
+## Goal
 
-Producir los 13 documentos de investigación de `docs/research/codebase-memory/` con evidencia reproducible, y cerrar con una recomendación de frontera de adaptador (`12-integration-recommendation.md`).
+Produce the 13 research documents in `docs/research/codebase-memory/` with reproducible evidence, closing with an adapter-boundary recommendation (`12-integration-recommendation.md`).
 
 ## Non-goals
 
-- No se implementa el adaptador todavía.
-- No se elige lenguaje aquí (eso es el spike de `docs/research/language/`).
-- No se modifica el clon de Codebase Memory.
+- The adapter is not implemented yet.
+- No language is chosen here (that is the spike in `docs/research/language/`).
+- The Codebase Memory clone is not modified.
 
 ## Base revision
 
-Codebase Memory: `97ce23f9827177fff3858831156e9795c6832b18` (`DeusData/codebase-memory-mcp`, 2026-07-23). Ver `docs/research/codebase-memory/00-source-lock.md`.
+Codebase Memory: `97ce23f9827177fff3858831156e9795c6832b18` (`DeusData/codebase-memory-mcp`, 2026-07-23). See `docs/research/codebase-memory/00-source-lock.md`.
 
-## Subtareas (`Rationale_Proceso_Construccion_Agentes_v0.1.md §8`)
+## Subtasks (`Rationale_Proceso_Construccion_Agentes_v0.1.md §8`)
 
-| Tarea | Descripción | Estado | Notas |
+| Task | Description | Status | Notes |
 |---|---|---|---|
-| CBM-001 | Clone and lock revision | ✅ hecho | `00-source-lock.md` + `source-lock.yaml`. Halló discrepancia de versión: binario instalado 0.8.1 vs clon 338 commits por delante de v0.9.0 |
-| CBM-002 | Build on MacBook Air M4 | ✅ hecho | `01-build-and-test.md`. Build exitoso, 2m49s, binario 296MB, reporta versión `dev` |
-| CBM-003 | Run tests | ✅ hecho (parcial) | `01-build-and-test.md`. `test-foundation` falla en link (símbolos `_suite_*`); suite completa no ejecutada por costo — documentado como limitación conocida, no responsabilidad de Rationale |
-| CBM-004 | Index itself | ✅ hecho | `02-module-map.md`. 20.747 nodos / 77.956 edges |
-| CBM-005 | Map modules | ✅ hecho | `02-module-map.md`. Hallazgo: `packages` en clusters no distingue módulos reales |
-| CBM-006 | Inspect MCP | ✅ hecho | `03-mcp-contracts.md`. 14 herramientas documentadas; ADR de CBM es documento único, no log de decisiones |
-| CBM-007 | Inspect CLI | ✅ hecho | `04-cli-contracts.md`. Latencia medida: 6.8s fría, 2.2s con daemon caliente |
-| CBM-008 | Inspect revision and coverage | ✅ hecho | `05-revision-and-coverage.md`. **Hallazgo crítico:** `detect_changes` devolvió vacío ante 200 archivos realmente modificados |
-| CBM-009 | Inspect daemon and watcher | ✅ hecho | `06-daemon-and-watcher.md`. `hook_augment.c` confirma el patrón no-bloqueante de `v0.5 §20.7` con evidencia de código |
-| CBM-010 | Inspect workspace support | ✅ hecho | `08-workspaces-and-monorepos.md`. **Hallazgo crítico:** cero relaciones `IMPORTS` cruzan paquetes en el Monorepo real (8 paquetes npm) |
-| CBM-011 | Measure CLI vs MCP | ✅ hecho (parcial) | `11-performance-observations.md`. CLI medido formalmente; MCP solo cualitativo — medición formal queda como research item antes de ADR-0002 |
-| CBM-012 | Recommend adapter boundary | ✅ hecho | `12-integration-recommendation.md`. Síntesis y recomendación de frontera de adaptador |
+| CBM-001 | Clone and lock revision | ✅ done | `00-source-lock.md` + `source-lock.yaml`. Found a version discrepancy: installed binary 0.8.1 versus a clone 338 commits ahead of v0.9.0 |
+| CBM-002 | Build on MacBook Air M4 | ✅ done | `01-build-and-test.md`. Successful build, 2m49s, 296 MB binary, reports version `dev` |
+| CBM-003 | Run tests | ✅ done (partial) | `01-build-and-test.md`. `test-foundation` fails at link time (`_suite_*` symbols); the full suite was not run because of its cost — documented as a known limitation, not Rationale's responsibility |
+| CBM-004 | Index itself | ✅ done | `02-module-map.md`. 20,747 nodes / 77,956 edges |
+| CBM-005 | Map modules | ✅ done | `02-module-map.md`. Finding: `packages` in clusters does not distinguish real modules |
+| CBM-006 | Inspect MCP | ✅ done | `03-mcp-contracts.md`. 14 tools documented; CBM's ADR is a single document, not a decision log |
+| CBM-007 | Inspect CLI | ✅ done | `04-cli-contracts.md`. Measured latency: 6.8 s cold, 2.2 s with a warm daemon |
+| CBM-008 | Inspect revision and coverage | ✅ done | `05-revision-and-coverage.md`. **Critical finding:** `detect_changes` returned empty for 200 really modified files |
+| CBM-009 | Inspect daemon and watcher | ✅ done | `06-daemon-and-watcher.md`. `hook_augment.c` confirms the non-blocking pattern of `v0.5 §20.7` with code evidence |
+| CBM-010 | Inspect workspace support | ✅ done | `08-workspaces-and-monorepos.md`. **Critical finding:** zero `IMPORTS` relationships cross packages in the real Monorepo (8 npm packages) |
+| CBM-011 | Measure CLI vs MCP | ✅ done (partial) | `11-performance-observations.md`. CLI measured formally; MCP only qualitatively — the formal measurement remains a research item before ADR-0002 |
+| CBM-012 | Recommend adapter boundary | ✅ done | `12-integration-recommendation.md`. Synthesis and adapter-boundary recommendation |
 
-Documentos adicionales completados fuera de la lista original de subtareas: `07-storage-and-cache.md`, `09-installation-and-agents.md`, `10-failure-modes.md` (consolidado transversal).
+Additional documents completed outside the original subtask list: `07-storage-and-cache.md`, `09-installation-and-agents.md`, `10-failure-modes.md` (a cross-cutting consolidation).
 
-## La pregunta que gobierna toda la arquitectura (CBM-008)
+## The question that governs the entire architecture (CBM-008)
 
-> ¿Codebase Memory expone la revisión que indexó, distingue working tree de HEAD, y reporta cobertura parcial de forma verificable?
+> Does Codebase Memory expose the revision it indexed, distinguish the working tree from HEAD, and report partial coverage verifiably?
 
-Toda la garantía de consistencia por revisión de Rationale depende de esto (`Rationale_v0.5.md §4.8, §12.5, §20.3`; Subject `architecture.revision-consistency` en `.rationale/subjects/`). Si la respuesta es negativa o parcial, no se disimula: se documenta como hallazgo, se reproduce, y se convierte en ADR — puede obligar a derivar la revisión desde Git en vez de confiar en el proveedor.
+Rationale's entire per-revision consistency guarantee depends on this (`Rationale_v0.5.md §4.8, §12.5, §20.3`; Subject `architecture.revision-consistency` in `.rationale/subjects/`). If the answer is negative or partial, it is not glossed over: it is documented as a finding, reproduced, and turned into an ADR — it may force deriving the revision from Git instead of trusting the provider.
 
-## Riesgos
+## Risks
 
-- El proveedor puede tener relaciones falsas, trazas vacías o resultados silenciosamente vacíos (`Rationale_v0.5.md §20.6`) — no asumir que ausencia de relación significa inexistencia.
-- Confundir "no encontré una relación" con "la relación no existe" (`Rationale_Arquitectura_Conceptual_v0.1.md §4.6`).
+- The provider can have false relationships, empty traces, or silently empty results (`Rationale_v0.5.md §20.6`) — do not assume the absence of a relationship means it does not exist.
+- Confusing "I did not find a relationship" with "the relationship does not exist" (`Rationale_Arquitectura_Conceptual_v0.1.md §4.6`).
 
 ## Plan
 
-Ver `Rationale_Arquitectura_Conceptual_v0.1.md §7` para la estructura de los 13 documentos y sus 6 secciones obligatorias (`Observed / Claimed / Verified / Unknown / Risk / Decision impact`).
+See `Rationale_Arquitectura_Conceptual_v0.1.md §7` for the structure of the 13 documents and their 6 mandatory sections (`Observed / Claimed / Verified / Unknown / Risk / Decision impact`).
 
 ## Tests
 
-No aplica código todavía. "Test" en esta epic significa: cada comando de investigación debe ser reproducible por otro agente con los mismos resultados declarados.
+No code applies yet. "Test" in this epic means: every research command must be reproducible by another agent with the same declared results.
 
 ## Docs
 
-Los 13 archivos en `docs/research/codebase-memory/00-source-lock.md` … `12-integration-recommendation.md`.
+The 13 files `docs/research/codebase-memory/00-source-lock.md` … `12-integration-recommendation.md`.
 
-## Criterio de éxito
+## Success criterion
 
-Los 13 documentos existen, con comandos reproducibles, secciones completas, y CBM-008 respondido explícitamente con evidencia — incluso si la respuesta es "no lo expone".
+The 13 documents exist, with reproducible commands, complete sections, and CBM-008 answered explicitly with evidence — even if the answer is "it does not expose it".
 
-**Estado: completo.** Los 13 documentos (`00`–`12`) más `source-lock.yaml` están escritos con evidencia reproducible. Dos hallazgos críticos con impacto arquitectónico directo:
+**Status: complete.** The 13 documents (`00`–`12`) plus `source-lock.yaml` are written with reproducible evidence. Two critical findings with direct architectural impact:
 
-1. `detect_changes` no detectó 200 archivos realmente modificados (CBM-008) → el Revision Coordinator de Rationale debe derivar su propia verdad de revisión desde Git, nunca confiar en la señal del proveedor.
-2. Cero relaciones `IMPORTS` cruzan paquetes en un monorepo real de 8 paquetes npm (CBM-010) → la recuperación cross-workspace de Rationale no puede depender únicamente de edges del proveedor; necesita bindings manuales/contractuales como fallback.
+1. `detect_changes` did not detect 200 really modified files (CBM-008) → Rationale's Revision Coordinator must derive its own revision truth from Git and never trust the provider's signal.
+2. Zero `IMPORTS` relationships cross packages in a real monorepo of 8 npm packages (CBM-010) → Rationale's cross-workspace retrieval cannot depend only on provider edges; it needs manual/contractual bindings as a fallback.
 
-Research items abiertos para antes de ADR-0002: medición formal de latencia MCP, lectura de `pass_pkgmap.c`, y confirmar si el hallazgo de cobertura vía CLI en HEAD también aparece vía MCP. Ver `12-integration-recommendation.md §Próximos research items`.
+Research items open before ADR-0002: formal MCP latency measurement, reading `pass_pkgmap.c`, and confirming whether the coverage finding through the CLI at HEAD also appears over MCP. See `12-integration-recommendation.md §Next research items` (all three were later resolved in B1; see that document).

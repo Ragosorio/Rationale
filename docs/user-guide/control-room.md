@@ -1,57 +1,55 @@
 # Control Room
 
-`rationale ui` abre un centro de control local y de solo lectura: el subgrafo de
-trabajo de los agentes, la memoria que lo explica y la actividad de cada sesión
-en vivo.
+`rationale ui` opens a local, read-only control room: the agents' working
+subgraph, the memory that explains it, and every session's activity live.
 
 ```bash
 rationale ui
 rationale ui --port 9800 --no-open
 ```
 
-Escucha solo en `127.0.0.1` (puerto `9748` por defecto; sin `--port` prueba los
-siguientes si está ocupado). La interfaz va embebida en el binario. Observa el
-mismo estado local que la CLI y el servidor MCP y nunca escribe:
-`rationale serve` sigue siendo la frontera con los agentes.
+It listens only on `127.0.0.1` (port `9748` by default; without `--port` it
+tries the next ports if that one is busy). The interface is embedded in the
+binary. It observes the same local state as the CLI and the MCP server and never
+writes: `rationale serve` remains the boundary with agents.
 
-## Vistas
+## Views
 
-- **Grafo.** El subgrafo de las operaciones recientes en 3D. El color del nodo
-  es su rol en el cambio (target, caller, callee, dependencia, dependiente,
-  test, contexto); el de la arista, su estado estructural. Un anillo marca lo
-  que explica el canon. Selecciona un nodo o una relación para leer sus Records,
-  sus relaciones y su historia.
-- **Actividad.** Cada sesión — Claude Code, Codex, Cursor o la CLI — con sus
-  operaciones, la latencia del proveedor, el tamaño del packet, lo capturado, lo
-  descartado, los conflictos y las explicaciones en riesgo. Llega por
+- **Graph.** The subgraph of recent operations, in 3D. A node's color is its
+  role in the change (target, caller, callee, dependency, dependent, test,
+  context); an edge's color is its structural state. A ring marks what the canon
+  explains. Select a node or relationship to read its Records, relationships,
+  and history.
+- **Activity.** Every session — Claude Code, Codex, Cursor, or the CLI — with
+  its operations, provider latency, packet size, what was captured, what was
+  discarded, conflicts, and explanations at risk. It arrives through
   Server-Sent Events.
-- **Memoria.** El canon con filtros por tipo, estado y autoridad, y los
-  conflictos pendientes.
-- **Sistema.** Proyecto, revisión Git, conteos del canon, estado del stream y
-  tabla de sesiones.
+- **Memory.** The canon, filterable by kind, status, and authority, plus pending
+  conflicts.
+- **System.** Project, Git revision, canon counts, stream status, and the
+  sessions table.
 
-## Datos que muestra
+## Data it shows
 
-- Actividad: `.rationale-local/activity/<session>.ndjson`.
-- Operaciones: `.rationale-local/operations/`.
-- Canon: `.rationale/records/`; conflictos: `.rationale-local/conflicts/`.
+- Activity: `.rationale-local/activity/<session>.ndjson`.
+- Operations: `.rationale-local/operations/`.
+- Canon: `.rationale/records/`; conflicts: `.rationale-local/conflicts/`.
 
-La actividad guarda identificadores, la intención declarada (una línea, 280
-caracteres como máximo) y referencias a Records — nunca contenido de Records,
-código ni conversaciones (ADR-0017). `RATIONALE_ACTIVITY=off` la desactiva por
-completo.
+Activity stores identifiers, the declared intent (one line, at most 280
+characters), and references to Records — never Record content, code, or
+conversations (ADR-0017). `RATIONALE_ACTIVITY=off` disables it entirely.
 
-## Seguridad
+## Security
 
-Solo `GET` y `HEAD`; validación de la cabecera `Host` contra nombres de loopback
-(defensa contra DNS rebinding); cabeceras acotadas en tamaño y tiempo;
-Content-Security-Policy restrictiva; solo assets embebidos, nunca rutas del
-sistema de archivos.
+Only `GET` and `HEAD`; the `Host` header is validated against loopback names
+(a defense against DNS rebinding); headers are bounded in size and time; a
+restrictive Content-Security-Policy; embedded assets only, never file-system
+paths.
 
-## Desde el código fuente
+## From source
 
-Sin `ui/dist`, el binario sirve una página que explica cómo construir la
-interfaz. Los binarios de Release siempre la incluyen.
+Without `ui/dist`, the binary serves a page that explains how to build the
+interface. Release binaries always include it.
 
 ```bash
 npm --prefix ui ci
@@ -59,6 +57,6 @@ npm --prefix ui run build
 cargo build --release
 ```
 
-`build.rs` vigila `ui/dist` (o `ui/` si todavía no existe). Si un directorio
-`target/` se compiló antes de que existiera `ui/`, toca `build.rs` una vez para
-que vuelva a embeber los assets.
+`build.rs` watches `ui/dist` (or `ui/` if it does not exist yet). If a `target/`
+directory was built before `ui/` existed, touch `build.rs` once so the assets
+are embedded again.

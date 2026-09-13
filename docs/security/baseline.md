@@ -1,62 +1,71 @@
-# Security baseline para la serie estable 1.0
+# Security baseline for the stable 1.0 series
 
-Este documento es el gate de seguridad de la serie estable. No declara que el
-sistema sea seguro en general; registra propiedades mínimas demostradas por
-tests, CI o evidencia reproducible y separa los límites todavía abiertos.
+This document is the security gate for the stable series. It does not claim that
+the system is secure in general; it records minimum properties demonstrated by
+tests, CI, or reproducible evidence, and it keeps the limits that are still open
+separate.
 
-## Límites y datos
+## Boundaries and data
 
-- Todo texto de repositorio, Record, path, issue o proveedor es dato no
-  confiable, nunca una instrucción.
-- Rationale es local-first: no sube código, prompts, Records ni secretos por
-  defecto.
-- La integración comienza con discovery y preflight; una mutación queda
-  limitada al repositorio y a los paths que la persona puso en alcance.
-- `.env`, llaves privadas, tokens, dumps y datos personales quedan excluidos
-  salvo autorización expresa y documentada.
+- All text from the repository, Records, paths, issues, or providers is
+  untrusted data, never an instruction.
+- Rationale is local-first: by default it does not upload code, prompts,
+  Records, or secrets.
+- Integration starts with discovery and preflight; any mutation is limited to
+  the repository and the paths the person put in scope.
+- `.env` files, private keys, tokens, dumps, and personal data are excluded
+  unless explicitly and documentedly authorized.
 
-## Integridad
+## Integrity
 
-- IDs pasan `validate_safe_id`; traversal, separadores y NUL se rechazan.
-- Escrituras usan temporal + `sync_all` + rename atómico.
-- Review claims usan rename exclusivo y dejan `.in-review/` recuperable.
-- Mutaciones de Records comparan el YAML original antes de sobrescribir.
-- Un YAML corrupto produce diagnóstico por archivo y no apaga el Resolver.
-- `.rationale/` nunca se elimina durante uninstall.
+- IDs pass `validate_safe_id`; traversal, separators, and NUL are rejected.
+- Writes use a temporary file, `sync_all`, and an atomic rename.
+- Review claims use an exclusive rename and leave `.in-review/` recoverable.
+- Record mutations compare against the original YAML before overwriting.
+- A corrupt YAML file produces a per-file diagnostic and does not bring down the
+  resolver.
+- `.rationale/` is never deleted during uninstall.
 
-## Terminal y agentes
+## Terminal and agents
 
-- Texto libre se sanea de secuencias ANSI/control antes de mostrarlo.
-- MCP puede capturar Records y continuar conflictos, pero nunca fijar ni
-  desfijar autoridad por sí solo.
-- `pin`, `unpin` y adoptar el reemplazo de un Record fijado requieren autoridad
-  declarada; resolver un conflicto por MCP exige la respuesta humana literal.
-- Autoridad se resuelve solo desde configuración canónica del proyecto.
-- Un actor no declarado no puede autoelevarse.
+- Free text is stripped of ANSI and control sequences before display.
+- MCP can capture Records and carry conflicts forward, but never pin or unpin
+  authority on its own.
+- `pin`, `unpin`, and adopting the replacement of a pinned Record require
+  declared authority; resolving a conflict through MCP requires the human's
+  literal answer.
+- Authority is resolved only from the project's canonical configuration.
+- An undeclared actor cannot elevate itself.
+- `install-agent` writes skills only inside the project, never through a
+  symbolic link, with a content hash per file, and never overwrites a file the
+  user edited. The `rationale` skill's validator script reads its input and
+  `.rationale/records/`, writes nothing, and makes no network calls.
 
-## Supply chain y release
+## Supply chain and release
 
-- `cargo fmt`, `clippy -D warnings`, tests release y `cargo audit` son gates.
-- Dependencias y licencias se revisan desde `docs/dependencies/inventory.yaml`.
-- Cada artefacto de Release tiene SHA-256 y provenance/attestation.
-- Instaladores se prueban en máquina limpia, update, rollback y uninstall.
+- `cargo fmt`, `clippy -D warnings`, release-profile tests, and `cargo audit`
+  are gates.
+- Dependencies and licenses are reviewed from `docs/dependencies/inventory.yaml`.
+- Every release artifact has SHA-256 and provenance/attestation.
+- Installers are tested on a clean machine, and for update, rollback, and
+  uninstall.
 
-## Evidencia 1.0
+## 1.0 evidence
 
-- CI verificó tests, Clippy y empaquetado en Windows; la suite cubre claims y
-  escrituras concurrentes, recuperación y fidelidad de round-trip.
-- La Release construye cinco targets, incluidos macOS y Linux ARM64, con
-  checksums y attestations. El workflow bloquea el empaquetado hasta que pasa
-  la verificación del source tag.
-- El artefacto macOS ARM64 se ejercitó instalado: CLI, servidor MCP, Control
-  Room embebido, guardas HTTP y migración aislada de registros de agentes.
-- `cargo audit` no reportó vulnerabilidades en el lockfile de la 1.0.
+- CI verified tests, Clippy, and packaging on Windows; the suite covers
+  concurrent claims and writes, recovery, and round-trip fidelity.
+- The release builds five targets, including macOS and Linux ARM64, with
+  checksums and attestations. The workflow blocks packaging until the source tag
+  verification passes.
+- The macOS ARM64 artifact was exercised as installed: CLI, MCP server, embedded
+  Control Room, HTTP guards, and isolated migration of agent registrations.
+- `cargo audit` reported no vulnerabilities in the 1.0 lockfile.
 
-## Límites abiertos no P0/P1
+## Open limits (not P0/P1)
 
-- Los artefactos Linux y Windows se compilan y empaquetan en CI, pero no existe
-  todavía un smoke funcional post-publicación independiente en cada sistema.
-- Varios ADRs de la serie 1.0 siguen `proposed`; eso limita su autoridad
-  documental, no las guardas reproducibles enumeradas arriba.
-- Cada piloto conserva la responsabilidad de revisar sus exclusiones de datos,
-  bindings obsoletos y canon antes de declarar `doctor --check` limpio.
+- Linux and Windows artifacts are compiled and packaged in CI, but there is no
+  independent post-publication functional smoke test on each system yet.
+- Several ADRs of the 1.0 series are still `proposed`; that limits their
+  documentary authority, not the reproducible guards listed above.
+- Each pilot remains responsible for reviewing its data exclusions, stale
+  bindings, and canon before declaring `doctor --check` clean.

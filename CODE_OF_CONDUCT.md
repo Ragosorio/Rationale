@@ -1,11 +1,11 @@
-# Código de conducta
+# Code of conduct
 
-Este proyecto adopta el [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+This project adopts the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 
-Esperamos una comunidad profesional, respetuosa e inclusiva. No se toleran
-acoso, ataques personales, discriminación, publicación de información privada
-ni comportamiento que ponga en riesgo a otras personas o sus repositorios.
+We expect a professional, respectful, and inclusive community. Harassment,
+personal attacks, discrimination, publishing private information, and behavior
+that puts other people or their repositories at risk are not tolerated.
 
-Para reportar una conducta problemática, contacta privadamente al mantenedor a
-través del canal de seguridad del repositorio. No publiques datos sensibles en
-issues o PRs.
+To report problematic conduct, contact the maintainer privately through the
+repository's security channel. Do not post sensitive data in issues or pull
+requests.

@@ -1,31 +1,32 @@
 ---
 name: Bug report
-about: Reportar un fallo reproducible
+about: Report a reproducible failure
 title: "bug: "
 labels: bug
 ---
 
-## Comando y resultado
+## Command and result
 
 ```text
-Pega aquí el comando y la salida redactada.
+Paste the command and its redacted output here.
 ```
 
-## Entorno
+## Environment
 
-- Sistema/arquitectura:
-- Versión o commit:
-- Proveedor Codebase Memory: disponible / no disponible / desconocido
+- OS/architecture:
+- Version or commit (`rationale --version`):
+- Agent and how it was connected:
+- Codebase Memory provider: available / unavailable / unknown
 
-## Reproducción
+## Reproduction
 
 1.
 2.
 3.
 
-## Resultado esperado
+## Expected result
 
-## Datos sensibles
+## Sensitive data
 
-Confirma que quitaste tokens, URLs privadas, datos personales y contenido de
-repositorios antes de publicar.
+Confirm that you removed tokens, private URLs, personal data, and repository
+content before posting.

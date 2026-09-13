@@ -1,32 +1,61 @@
 # Rust — security guide
 
-Aplica los principios de `Rationale_Arquitectura_Conceptual_v0.1.md §15` y `Rationale_v0.5.md §4.10-4.11` al código Rust concreto.
+Applies the principles of `Rationale_Arquitectura_Conceptual_v0.1.md §15` and
+`Rationale_v0.5.md §4.10–4.11` to concrete Rust code.
 
 ## `unsafe`
 
-- El spike usa un único bloque `unsafe` (FFI directo a `flock()` en `demo_file_lock`, `cfg(unix)`), documentado con un comentario explicando por qué se evita una dependencia extra (`libc` crate) para una sola syscall.
-- Regla para Fase D en adelante: **todo bloque `unsafe` debe llevar un comentario `// SAFETY:` explicando la invariante que lo hace correcto** — no se hizo en el spike por ser código de investigación de corta vida; sí es obligatorio en producción.
-- Preferir la ruta portable de la std cuando exista (`std::fs::File::lock`, disponible desde Rust 1.89 — no usada en el spike, ver `docs/research/language/compatibility-matrix.md`) sobre FFI manual, salvo que haya una razón medida y documentada para no hacerlo.
+- The spike uses a single `unsafe` block (direct FFI to `flock()` in
+  `demo_file_lock`, `cfg(unix)`), documented with a comment explaining why it
+  avoids an extra dependency (the `libc` crate) for one system call.
+- Rule for the core: **every `unsafe` block must carry a `// SAFETY:` comment
+  explaining the invariant that makes it correct.** The spike did not, because it
+  was short-lived research code; production code must.
+- Prefer the portable `std` path when it exists (`std::fs::File::lock`,
+  available since Rust 1.89 — not used in the spike; see
+  `docs/research/language/compatibility-matrix.md`) over manual FFI, unless there
+  is a measured, documented reason not to.
 
-## Contenido del repositorio es dato, no instrucción
+## Repository content is data, not instructions
 
-Directamente aplicable al parseo de `Record` YAML (`op1_read_record` en el spike): `serde_yaml::from_str` deserializa a un struct tipado (`Record`), nunca a un tipo dinámico ejecutable. Esto ya es correcto por construcción en Rust con `serde` — el riesgo de "texto convertido en instrucción" (`Rationale_v0.5.md §4.10`) requeriría deserializar a algo interpretable como código, lo cual no ocurre en este diseño.
+This applies directly to parsing YAML Records (`op1_read_record` in the spike):
+deserialization targets a typed struct (`Record`), never a dynamic type that
+could be executed. With `serde` this is correct by construction — the risk of
+"text turned into instructions" (`Rationale_v0.5.md §4.10`) would require
+deserializing into something interpretable as code, which this design never
+does.
 
-## Subprocess
+## Subprocesses
 
-- Nunca construir un comando de shell por concatenación de strings — el spike usa `Command::new(script)` con argumentos separados (`cmd.arg("slow")`), nunca `sh -c "{string}"`. Mantener esta disciplina en Fase D para cualquier invocación al binario de Codebase Memory o a scripts auxiliares.
-- Todo subproceso debe tener un deadline explícito y una ruta de cancelación real verificada (ver hallazgo de `docs/research/language/candidates.md` sobre el footgun de Go — la lección aplica igual en Rust: **no asumir que "matar el proceso" cierra automáticamente todo lo que ese proceso pudo haber heredado o lanzado**; verificarlo con un test de tiempo, no solo revisar el código).
+- Never build a shell command by concatenating strings. The spike uses
+  `Command::new(script)` with separate arguments (`cmd.arg("slow")`), never
+  `sh -c "{string}"`. Keep that discipline for every invocation of the Codebase
+  Memory binary, agent CLIs, or helper scripts.
+- Every subprocess needs an explicit deadline and a real, verified cancellation
+  path. See the finding in `docs/research/language/candidates.md` about Go's
+  footgun — the lesson applies equally to Rust: **do not assume that killing a
+  process closes everything it inherited or launched**; verify it with a timing
+  test, not only by reading the code.
 
 ## Paths
 
-- Canonicalizar y validar cualquier path que provenga de un `Record` o de configuración antes de usarlo para leer/escribir (no implementado en el spike porque los paths son fixtures fijos y confiables; **obligatorio en Fase D** cuando los paths puedan venir de datos versionados en `.rationale/`, que `Rationale_Arquitectura_Conceptual_v0.1.md §15.3` trata como no confiables).
-- Escrituras atómicas (escribir a un temporal + rename) para cualquier archivo canónico — no ejercitado en el spike (usa SQLite, que maneja su propia atomicidad); sí obligatorio para escrituras directas a `.rationale/*.yaml` en Fase D/E.
+- Canonicalize and validate any path that comes from a `Record` or from
+  configuration before reading or writing with it
+  (`Rationale_Arquitectura_Conceptual_v0.1.md §15.3` treats versioned data in
+  `.rationale/` as untrusted).
+- Atomic writes (write to a temporary file, then rename) for every canonical
+  file and every file `install-agent` owns. Refuse managed paths that cross a
+  symbolic link.
 
-## Dependencias
+## Dependencies
 
-- `cargo audit` forma parte del quality gate desde Fase F — la ejecución más reciente sobre las 38 dependencias del `Cargo.lock` cargó 1.169 advisories y encontró 0 vulnerabilidades. Debe repetirse cada vez que cambien las dependencias del `Cargo.toml` raíz.
-- `Cargo.lock` se versiona (ya está en el repo, `spikes/language/rust/Cargo.lock`) para builds reproducibles — igual criterio aplicará al núcleo real.
+- `cargo audit` has been part of the quality gate since Phase F. The latest
+  recorded run is in `docs/dependencies/inventory.yaml`. Repeat it whenever the
+  dependencies of the root `Cargo.toml` change.
+- `Cargo.lock` is versioned for reproducible builds, in the core and in the
+  spike.
 
-## Sensibilidad
+## Sensitivity
 
-No aplica todavía al spike (no maneja datos de proyectos reales). Ver `Rationale_v0.5.md §26.5` para las reglas de `visibility`/`sensitivity` que el núcleo deberá aplicar en Fase E al leer/escribir Records reales.
+See `Rationale_v0.5.md §26.5` for the `visibility`/`sensitivity` rules the core
+applies when reading and writing real Records.

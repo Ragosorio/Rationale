@@ -1,37 +1,60 @@
 # Rust — testing guide
 
-## Pirámide aplicable (subconjunto de `Rationale_Arquitectura_Conceptual_v0.1.md §19.1` relevante hoy)
+## Applicable pyramid (the subset of `Rationale_Arquitectura_Conceptual_v0.1.md §19.1` relevant today)
 
 ```text
-Unit          cargo test — funciones puras, sin I/O externo cuando sea posible
-Integration   cargo test con fixtures reales (ver spikes/language/rust/fixtures/)
-Contract      Fase D: fixtures propios contra Codebase Memory (Arquitectura §19.3)
-Property      sin dependencia extra en el spike (test manual de invariante);
-              evaluar `proptest` cuando un caso concreto lo justifique — no
-              añadir preventivamente (Proceso §19: "¿es necesaria?")
-Golden packet Fase D — determinismo del Context Packet completo (Arquitectura §19.4)
+Unit          cargo test — pure functions, without external I/O when possible
+Integration   cargo test with real fixtures and the compiled binary (tests/)
+Contract      fixtures against Codebase Memory (Arquitectura §19.3)
+Property      no extra dependency (manual invariant tests); evaluate `proptest`
+              when a concrete case justifies it — do not add it preemptively
+              (Proceso §19: "is it necessary?")
+Golden packet determinism of the complete Context Packet (Arquitectura §19.4)
 ```
 
-## Comandos
+## Commands
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
-cargo test                    # toda la suite
-cargo test <nombre_parcial>   # filtrar por nombre
-cargo test -- --nocapture     # ver stdout de los tests (útil para depurar JSON emitido)
+cargo test                    # the whole suite
+cargo test <partial_name>     # filter by name
+cargo test -- --nocapture     # show test stdout (useful to debug emitted JSON)
 ```
 
-## Convenciones de test verificadas en el spike
+## Test conventions verified in the spike and kept in the core
 
-- Un test por operación del pipeline cuando la operación tiene lógica no trivial (`test_op4_*`, `test_op5_*`) — no testear operaciones que son I/O puro sin lógica de decisión (ej. no hace falta un test dedicado para "leer un archivo", pero sí para "qué se decide con lo leído").
-- Fixtures reales en disco (`fixtures/record.yaml`) en vez de strings YAML embebidos en el test — permite que el mismo fixture sirva de entrada tanto al pipeline real como al test, evitando que diverjan.
-- Tests de invariante (`test_severity_weight_monotonic_property`) cuando no se justifica una dependencia de property-testing — documentar explícitamente en el nombre del test que es un property-test manual, para que quede claro que no reemplaza cobertura real de un framework dedicado si se añade después.
-- `tempdir`/`std::env::temp_dir()` con un sufijo único (`process::id()`) para tests que tocan SQLite en disco — nunca un path fijo compartido entre tests (evita colisión si `cargo test` corre en paralelo, que es el comportamiento por defecto).
+- One test per pipeline operation when the operation has non-trivial logic
+  (`test_op4_*`, `test_op5_*` in the spike). Do not test operations that are
+  pure I/O without decision logic: "read a file" needs no dedicated test, but
+  "what is decided from what was read" does.
+- Real on-disk fixtures (`fixtures/record.yaml`) instead of YAML strings
+  embedded in the test, so the same fixture feeds both the real pipeline and the
+  test and they cannot diverge.
+- Invariant tests (`test_severity_weight_monotonic_property`) when a
+  property-testing dependency is not justified. State in the test name that it
+  is a manual property test, so it is clear it does not replace a dedicated
+  framework if one is added later.
+- `std::env::temp_dir()` with a unique suffix for tests that touch the disk or
+  SQLite — never a fixed path shared between tests, because `cargo test` runs in
+  parallel by default.
+- Tests that protect a contract with agents (skill content, prompt text, tool
+  descriptions) assert the property that matters — a language rule, a link that
+  exists, a list that mirrors the gate — rather than whole paragraphs.
 
-## Tests obligatorios antes de Fase D (recordatorio de `Arquitectura §19.2`)
+## Tests required before Phase D (reminder of `Arquitectura §19.2`)
 
-No implementados todavía en el spike (pertenecen a la vertical slice real, no al spike de lenguaje): schema validation, atomic writes, revision consistency states, provider timeout/unavailable, partial coverage, token budget, deduplication, critical blocking predicate, prompt injection sanitization, path traversal, concurrent reads, write locks, cache rebuild, monorepo cross-package relevance, baseline deadline, context packet determinism. Ver Fase D5 del plan de arranque para el subconjunto exigido en la vertical slice.
+These belonged to the real vertical slice, not the language spike: schema
+validation, atomic writes, revision consistency states, provider
+timeout/unavailability, partial coverage, token budget, deduplication, the
+critical blocking predicate, prompt-injection sanitization, path traversal,
+concurrent reads, write locks, cache rebuild, monorepo cross-package relevance,
+baseline deadline, and context-packet determinism. See Phase D5 of the kickoff
+plan for the subset required in the vertical slice.
 
-## Qué el spike sí demostró como viable
+## What the spike did prove viable
 
-- Deadline + cancelación real de subproceso, verificado con un test manual de tiempo (`--demo-timeout`), no con `cargo test` — porque requiere medir wall-clock, no solo un assert de valor. Para Fase D, este tipo de test de latencia debe vivir en la categoría "performance" de la pirámide (`Arquitectura §19.1`), separado de la suite unitaria rápida.
+- A deadline with real subprocess cancellation, verified with a manual timing
+  test (`--demo-timeout`) rather than `cargo test`, because it measures
+  wall-clock time rather than asserting a value. This kind of latency test
+  belongs in the "performance" category of the pyramid (`Arquitectura §19.1`),
+  separate from the fast unit suite.

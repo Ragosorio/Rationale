@@ -1,50 +1,50 @@
 # ADR-0004: Derived database
 
-**Status:** proposed — pendiente de revisión cruzada independiente antes de `accepted`.
+**Status:** proposed — pending independent cross-review before `accepted`.
 **Date:** 2026-07-25
-**Deciders:** Claude Code (análisis e implementación); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno
+**Deciders:** Claude Code (analysis and implementation); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** none
 
 ## Context
 
-`Rationale_v0.5.md §26.2` especifica la capa derivada como "SQLite. Regenerable. Optimizado. No necesariamente versionado. Invalidado por revisión, schema o generación del proveedor." `Rationale_Arquitectura_Conceptual_v0.1.md §11.7` asigna a esta capa: indexar Records, FTS, aliases, scope paths, binding resolutions, candidate retrieval, deduplicación, cache de assessments, invalidación por revisión.
+`Rationale_v0.5.md §26.2` specifies the derived layer as "SQLite. Regenerable. Optimized. Not necessarily versioned. Invalidated by revision, schema, or provider generation." `Rationale_Arquitectura_Conceptual_v0.1.md §11.7` assigns this layer: indexing Records, FTS, aliases, scope paths, binding resolutions, candidate retrieval, deduplication, assessment cache, and invalidation by revision.
 
-Hoy (Fase D completa) Rationale no tiene capa derivada — lee YAML directamente en cada invocación (`src/storage.rs`). Esto es correcto para una vertical slice de una sola constraint, pero Fase E2/E3 introduce `Assessment` (que debe recalcularse, no reescribirse sobre el Record original) y un Context Compiler con budget y ranking sobre potencialmente muchos Records — leer y parsear YAML completo en cada consulta deja de ser sostenible.
+Today (Phase D complete) Rationale has no derived layer — it reads YAML directly on every invocation (`src/storage.rs`). That is correct for a vertical slice with a single constraint, but Phase E2/E3 introduces `Assessment` (which must be recomputed, not rewritten over the original Record) and a Context Compiler with a budget and ranking over potentially many Records — reading and parsing all the YAML on every query stops being sustainable.
 
 ## Decision
 
-**SQLite (vía `rusqlite`, feature `bundled`)** es el motor de la capa derivada: assessments calculados, índice FTS5 sobre statements/títulos, y resoluciones de binding cacheadas. Se añade como dependencia real del core en Fase E3 (hoy solo existe en el spike de lenguaje).
+**SQLite (through `rusqlite`, feature `bundled`)** is the engine of the derived layer: computed assessments, an FTS5 index over statements and titles, and cached binding resolutions. It is added as a real core dependency in Phase E3 (today it exists only in the language spike).
 
 ## Evidence
 
-- `rusqlite 0.31` (feature `bundled`) ya fue validado end-to-end en `spikes/language/rust/`: build exitoso, 6 tests unitarios incluyendo un roundtrip real de creación de tabla + insert + select (`docs/research/language/candidates.md`), sin requerir SQLite del sistema (vendorizado en C).
-- Codebase Memory, el proveedor estructural que Rationale ya consume, usa el mismo patrón (SQLite por proyecto en `~/.cache/codebase-memory-mcp/*.db`, con modo WAL activo) — confirmado por inspección directa de archivos en `docs/research/codebase-memory/07-storage-and-cache.md`. Es un precedente real, no solo una preferencia, de que SQLite es adecuado para este tipo de índice derivado de una herramienta de desarrollador local.
-- `v0.5 §26.2` ya prescribe SQLite explícitamente para esta capa — este ADR no introduce una alternativa nueva, formaliza con evidencia una decisión ya apuntada en el contrato conceptual.
+- `rusqlite 0.31` (feature `bundled`) was already validated end to end in `spikes/language/rust/`: a successful build and 6 unit tests, including a real round trip of table creation + insert + select (`docs/research/language/candidates.md`), without requiring a system SQLite (vendored in C).
+- Codebase Memory, the structural provider Rationale already consumes, uses the same pattern (a SQLite database per project in `~/.cache/codebase-memory-mcp/*.db`, with WAL mode active) — confirmed by direct file inspection in `docs/research/codebase-memory/07-storage-and-cache.md`. It is a real precedent, not only a preference, that SQLite suits this kind of derived index for a local developer tool.
+- `v0.5 §26.2` already prescribes SQLite explicitly for this layer — this ADR introduces no new alternative; it formalizes with evidence a decision already pointed to in the conceptual contract.
 
 ## Alternatives considered
 
-- **Sin base de datos, releer YAML siempre**: es lo que hace hoy la Fase D (correcto para su alcance mínimo). Descartado para Fase E porque el Context Compiler necesita ranking y filtrado sobre un volumen creciente de Records/Assessments sin re-parsear YAML en cada consulta — no escala con el número de Records de un proyecto real.
-- **Un motor embebido distinto (sled, redb)**: descartado sin evaluación propia — `v0.5 §26.2` ya fija SQLite, y no hay evidencia de que Rationale necesite las garantías específicas de un KV store embebido en Rust puro sobre SQLite, que además ya tiene FTS5 nativo (necesario para `retrieval` según `v0.5 §19.1`).
-- **PostgreSQL/base de datos administrada**: descartado explícitamente por `Arquitectura §4.1` ("no deberá requerir obligatoriamente... base de datos administrada").
+- **No database, always re-read YAML**: what Phase D does today (correct for its minimal scope). Discarded for Phase E because the Context Compiler needs ranking and filtering over a growing volume of Records/Assessments without re-parsing YAML on every query — it does not scale with the number of Records in a real project.
+- **A different embedded engine (sled, redb)**: discarded without its own evaluation — `v0.5 §26.2` already sets SQLite, and there is no evidence Rationale needs the specific guarantees of a pure-Rust embedded KV store over SQLite, which also has native FTS5 (needed for `retrieval` according to `v0.5 §19.1`).
+- **PostgreSQL/a managed database**: explicitly discarded by `Arquitectura §4.1` ("shall not mandatorily require... a managed database").
 
 ## Consequences
 
-- Se añade `rusqlite = { version = "0.31", features = ["bundled"] }` al `Cargo.toml` raíz en Fase E3.
-- El binario crece en tamaño (SQLite vendorizado en C se compila dentro del binario Rust) — ya medido indirectamente en el spike, sin cifra específica para el core real todavía; se mide en la verificación de Fase E.
-- Introduce una dependencia con un componente C compilado — coherente con la ventaja ya evaluada en ADR-0001 ("interoperabilidad con procesos C", 5% del criterio ponderado, a favor de Rust).
-- La capa derivada nunca es la única copia de una decisión (`Arquitectura §11.7`) — todo lo que SQLite almacena debe ser reconstruible desde `.rationale/` (verificado explícitamente en Fase E3 con un test de "cache rebuild desde cero").
+- `rusqlite = { version = "0.31", features = ["bundled"] }` is added to the root `Cargo.toml` in Phase E3.
+- The binary grows (SQLite vendored in C is compiled into the Rust binary) — already measured indirectly in the spike, with no specific figure for the real core yet; measured in the Phase E verification.
+- It introduces a dependency with a compiled C component — consistent with the advantage already evaluated in ADR-0001 ("interoperability with C processes", 5% of the weighted criteria, in Rust's favor).
+- The derived layer is never the only copy of a decision (`Arquitectura §11.7`) — everything SQLite stores must be rebuildable from `.rationale/` (verified explicitly in Phase E3 with a "cache rebuild from scratch" test).
 
 ## Risks
 
-- Corrupción del archivo SQLite (energía, proceso matado a mitad de escritura) — mitigación: modo WAL (mismo patrón observado en Codebase Memory) y regenerabilidad completa como red de seguridad, no como excepción.
-- Crecimiento del cache sin límite con el tiempo — pendiente de política de invalidación/expiración explícita en Fase E3 (no existe todavía ni en Rationale ni, según `07-storage-and-cache.md`, se confirmó que exista en Codebase Memory).
+- Corruption of the SQLite file (power loss, a process killed mid-write) — mitigation: WAL mode (the same pattern observed in Codebase Memory) and full regenerability as the safety net, not as an exception.
+- Unbounded cache growth over time — pending an explicit invalidation/expiry policy in Phase E3 (it does not exist yet in Rationale, and `07-storage-and-cache.md` did not confirm that it exists in Codebase Memory).
 
 ## Validation
 
-`rusqlite` ya está validado por el spike (Fase C). La integración real en el core se valida en Fase E3 con: test de creación de tabla + insert + select sobre datos reales, test de regeneración completa desde `.rationale/`, y medición de tamaño de binario resultante.
+`rusqlite` is already validated by the spike (Phase C). The real integration into the core is validated in Phase E3 with a table creation + insert + select test on real data, a full regeneration test from `.rationale/`, and a measurement of the resulting binary size.
 
-**Este ADR está en estado `proposed`**, pendiente de revisión cruzada y aprobación humana.
+**This ADR is `proposed`**, pending cross-review and human approval.
 
 ## Revisit trigger
 
-Reabrir si la medición real de Fase E3 muestra un tamaño de binario o tiempo de compilación inaceptable, o si aparece un caso de corrupción reproducible que WAL no mitigue.
+Reopen if the real Phase E3 measurement shows an unacceptable binary size or compilation time, or if a reproducible corruption case appears that WAL does not mitigate.

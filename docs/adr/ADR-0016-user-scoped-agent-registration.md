@@ -1,96 +1,99 @@
 # ADR-0016: User-scoped MCP registration and convergent migration
 
-**Status:** proposed — pendiente de revisión cruzada independiente y aprobación humana.
+**Status:** proposed — pending independent cross-review and human approval.
 **Date:** 2026-07-29
-**Deciders:** Codex (investigación e implementación); decisión humana pendiente
-**Supersedes / Superseded by:** propone reemplazar ADR-0015 si este ADR llega a `accepted`. Mientras ambos sigan `proposed`, ninguno gobierna al otro.
+**Deciders:** Codex (research and implementation); human decision pending
+**Supersedes / Superseded by:** proposes replacing ADR-0015 if this ADR reaches `accepted`. While both remain `proposed`, neither governs the other.
 
 ## Context
 
-ADR-0015 eligió el comando lógico `rationale` dentro de `.mcp.json` y
-`.cursor/mcp.json`. Su propio `Revisit trigger` exigía reabrir la decisión si
-Cursor no podía resolver el comando desde una aplicación gráfica.
+ADR-0015 chose the logical command `rationale` inside `.mcp.json` and
+`.cursor/mcp.json`. Its own `Revisit trigger` required reopening the decision if
+Cursor could not resolve the command from a graphical application.
 
-La validación real falló el 2026-07-29. Cursor cargó la regla
-`.cursor/rules/rationale.mdc` y vio `.cursor/mcp.json`, pero reportó el servidor
-`rationale` como desconectado. El proceso gráfico no resolvía
-`~/.local/bin/rationale` con el `PATH` que tenía disponible; el CLI local sí
-respondía.
+The real validation failed on 2026-07-29. Cursor loaded the
+`.cursor/rules/rationale.mdc` rule and saw `.cursor/mcp.json`, but reported the
+`rationale` server as disconnected. The graphical process did not resolve
+`~/.local/bin/rationale` with the `PATH` it had available; the local CLI did
+respond.
 
-Codebase Memory resuelve la misma frontera registrando su MCP una vez en la
-configuración del usuario de cada cliente y usando la ruta absoluta del binario
-instalado. Sus archivos del proyecto no mezclan una ruta personal con la
-configuración compartida.
+Codebase Memory solves the same boundary by registering its MCP server once in
+each client's user configuration and using the absolute path of the installed
+binary. Its project files do not mix a personal path with shared configuration.
 
-La migración de Codex tenía además un defecto independiente: Rationale
-consideraba terminado el trabajo si `codex mcp list` contenía el nombre
-`rationale`, aunque el comando todavía apuntara a un build viejo.
+Codex's migration also had an independent defect: Rationale considered the work
+done if `codex mcp list` contained the name `rationale`, even when the command
+still pointed at an old build.
 
 ## Decision
 
-1. El registro MCP de Claude Code, Codex y Cursor es **por usuario**. El
-   instalador usa la ruta absoluta del binario instalado en `~/.claude.json`,
-   la configuración oficial administrada por `codex mcp`, y
+1. MCP registration for Claude Code, Codex, and Cursor is **per user**. The
+   installer uses the absolute path of the installed binary in `~/.claude.json`,
+   in the official configuration managed by `codex mcp`, and in
    `~/.cursor/mcp.json`.
-2. Los archivos del proyecto contienen instrucciones y skills, no la ruta del
-   servidor instalado. `install-agent` retira entradas heredadas de
-   `.mcp.json` y `.cursor/mcp.json` solo cuando conservan una forma que
-   Rationale reconoce como propia.
-3. Toda instalación es convergente: se compara comando y argumentos, no solo
-   la existencia del nombre. Una entrada obsoleta se migra al binario actual.
-4. La desinstalación global retira únicamente entradas que todavía apuntan al
-   binario que se está desinstalando.
-5. El soporte verificable de beta.3 sigue siendo Claude Code, Codex y Cursor.
-   La tabla de clientes de Codebase Memory sirve como precedente de diseño,
-   no como evidencia de que Rationale ya soporte todos sus clientes.
-6. Cuando una versión de Codebase Memory no persiste `root_path` entre
-   procesos, Rationale guarda en `.rationale-local/` el nombre público que
-   devuelve `index_repository`, junto con la raíz canónica. No guarda node IDs
-   ni accede al almacenamiento del proveedor.
+2. Project files contain instructions and skills, not the path of the installed
+   server. `install-agent` removes legacy entries from `.mcp.json` and
+   `.cursor/mcp.json` only when they keep a shape Rationale recognizes as its
+   own.
+3. Every installation is convergent: it compares command and arguments, not only
+   the existence of the name. An obsolete entry is migrated to the current
+   binary.
+4. Global uninstall removes only entries that still point at the binary being
+   uninstalled.
+5. The verifiable support in beta.3 remains Claude Code, Codex, and Cursor.
+   Codebase Memory's client table serves as a design precedent, not as evidence
+   that Rationale already supports all its clients.
+6. When a Codebase Memory version does not persist `root_path` across processes,
+   Rationale stores in `.rationale-local/` the public name returned by
+   `index_repository`, together with the canonical root. It stores no node IDs
+   and does not access the provider's storage.
+
+Note added after 1.0: project files now also carry the `rationale` Agent Skill
+(`.claude/skills/rationale/`, `.agents/skills/rationale/`), still without any
+machine-specific path.
 
 ## Evidence
 
-- Cursor mostró `rationale` configurado pero desconectado mientras el CLI
-  local respondía.
-- Simular el `PATH` típico de una aplicación GUI no encuentra `rationale`; la
-  ruta absoluta instalada sí existe.
-- La configuración global de Cursor de Codebase Memory usa una ruta absoluta.
-- `codex mcp get rationale` permite detectar un comando obsoleto que
-  `codex mcp list` no distingue.
+- Cursor showed `rationale` configured but disconnected while the local CLI
+  answered.
+- Simulating a typical GUI application `PATH` does not find `rationale`; the
+  installed absolute path does exist.
+- Codebase Memory's global Cursor configuration uses an absolute path.
+- `codex mcp get rationale` can detect an obsolete command that
+  `codex mcp list` does not distinguish.
 
 ## Consequences
 
-- Instalar o actualizar repara los tres clientes soportados sin editar cada
-  repositorio.
-- Reiniciar el cliente sigue siendo necesario.
-- Dos usuarios del mismo repositorio pueden tener rutas de instalación
-  distintas sin producir diffs.
-- Un checkout clonado pero sin Rationale instalado obtiene instrucciones, no
-  un servidor inexistente.
+- Installing or updating repairs the three supported clients without editing
+  each repository.
+- Restarting the client is still necessary.
+- Two users of the same repository can have different installation paths
+  without producing diffs.
+- A checkout that was cloned without Rationale installed gets instructions, not a
+  nonexistent server.
 
 ## Risks
 
-- Los formatos globales son contratos externos y una versión futura podría
-  cambiarlos.
-- Cada integrante debe ejecutar el instalador una vez.
-- El alcance inicial no replica las decenas de clientes soportados por
-  Codebase Memory. Añadirlos exige detección, merge no destructivo, reversión
-  y validación real por cliente.
+- Global formats are external contracts, and a future version could change them.
+- Every member must run the installer once.
+- The initial scope does not replicate the dozens of clients Codebase Memory
+  supports. Adding them requires detection, non-destructive merging, reversal,
+  and real validation per client.
 
 ## Validation
 
-Antes de publicar beta.3:
+Before publishing beta.3:
 
-1. Instalar sobre un HOME aislado con configuraciones preexistentes.
-2. Migrar una entrada Codex con comando obsoleto.
-3. Migrar un proyecto beta.2 preservando instrucciones y otros servidores.
-4. Reiniciar Cursor y ejecutar `health` mediante MCP real. **Pasó el
-   2026-07-29:** `user-rationale` apareció `ready`, las cuatro herramientas
-   estuvieron disponibles y `health` devolvió cobertura completa.
-5. Ejecutar formatter, clippy, tests y clean-room de release.
+1. Install on an isolated HOME with pre-existing configurations.
+2. Migrate a Codex entry with an obsolete command.
+3. Migrate a beta.2 project, preserving instructions and other servers.
+4. Restart Cursor and run `health` through real MCP. **Passed on
+   2026-07-29:** `user-rationale` appeared `ready`, the four tools were
+   available, and `health` returned complete coverage.
+5. Run the formatter, Clippy, tests, and the release clean room.
 
 ## Revisit trigger
 
-Reabrir si un cliente soportado deja de aceptar su configuración global, si
-un usuario necesita dos binarios simultáneos, o si se añade otro cliente sin
-una estrategia explícita de detección, merge, reversión y prueba real.
+Reopen if a supported client stops accepting its global configuration, if a user
+needs two binaries at the same time, or if another client is added without an
+explicit detection, merge, reversal, and real-test strategy.

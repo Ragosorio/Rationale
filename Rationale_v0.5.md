@@ -1,244 +1,254 @@
 # Rationale
 
-## Capa de contexto causal y confianza para agentes de programación
+## Causal context and trust layer for coding agents
 
-### Documento fundacional, contrato de producto y plan de desarrollo
+### Founding document, product contract, and development plan
 
-**Versión conceptual:** 0.5  
-**Estado:** diseño semidefinitivo previo a implementación y validación experimental  
-**Principio rector:** compilar el conocimiento confiable del proyecto en el contexto mínimo y suficiente que una tarea necesita; medir si mejora resultados reales; primero demostrar valor, después estabilizar la arquitectura y formalizar el protocolo.
+**Conceptual version:** 0.5\
+**Status:** near-final design prior to implementation and experimental validation\
+**Guiding principle:** compile the project's trustworthy knowledge into the minimum sufficient context a task needs; measure whether it improves real results; first demonstrate value, then stabilize the architecture and formalize the protocol.
+
+> **Status (1.0):** this is the founding contract Rationale was built from, and
+> other documents cite its sections (`Rationale_v0.5.md §N`). The problem, the
+> principles, and the trust model still hold. The operating model changed in
+> 1.0: `finalize_change` writes Records directly through a capture gate instead
+> of leaving proposals for review, people keep authority by pinning Records and
+> deciding conflicts, and Records can explain relationships between symbols.
+> Read [`README.md`](README.md), [`docs/user-guide/concepts.md`](docs/user-guide/concepts.md),
+> and [`docs/work-items/vnext-implementation-plan.md`](docs/work-items/vnext-implementation-plan.md)
+> for what ships today.
 
 ---
 
-# 1. Resumen del proyecto
+# 1. Project summary
 
 
-**Rationale** es una herramienta open source, local y consultable que preserva el contexto causal de decisiones importantes de software y lo entrega a agentes de programación antes de que modifiquen las partes relacionadas de un sistema.
+**Rationale** is an open-source, local, queryable tool that preserves the causal context of important software decisions and delivers it to coding agents before they modify the related parts of a system.
 
-Su propósito no es explicar únicamente qué hace el código ni cómo está conectado.
+Its purpose is not only to explain what the code does or how it is connected.
 
-Su propósito es conservar y recuperar información como:
+Its purpose is to preserve and retrieve information such as:
 
-* Por qué existe una sección del código.
-* Qué problema motivó su creación.
-* Qué comportamiento se intentaba conseguir.
-* Qué decisiones se tomaron.
-* Qué restricciones deben mantenerse.
-* Qué riesgos ya fueron descubiertos.
-* Qué alternativas fueron descartadas.
-* Cómo se comprobó que el cambio funcionaba.
-* Qué partes del sistema dependen de esa decisión.
-* Qué cambios futuros podrían volver obsoleto ese conocimiento.
-* Quién expresó o aprobó una afirmación.
-* Qué autoridad tenía esa persona para establecerla.
-* En qué revisión del repositorio fue evaluada.
-* Qué calidad y cobertura tenía la evidencia estructural utilizada.
+* Why a section of code exists.
+* What problem motivated its creation.
+* What behavior it was meant to achieve.
+* What decisions were made.
+* What constraints must be kept.
+* What risks were already discovered.
+* What alternatives were discarded.
+* How the change was verified to work.
+* What parts of the system depend on that decision.
+* What future changes could make that knowledge obsolete.
+* Who stated or approved a claim.
+* What authority that person had to establish it.
+* In which repository revision it was evaluated.
+* What quality and coverage the structural evidence used had.
 
-Rationale se integrará inicialmente con **Codebase Memory MCP**, utilizándolo como motor de inteligencia estructural.
+Rationale will initially integrate with **Codebase Memory MCP**, using it as its structural intelligence engine.
 
-Codebase Memory permite descubrir:
+Codebase Memory makes it possible to discover:
 
-* Funciones.
-* Clases.
-* Rutas.
-* Llamadas.
-* Dependencias.
-* Flujos.
-* Símbolos.
-* Cambios estructurales.
-* Impacto sobre otras zonas del código.
-* Relaciones entre paquetes, servicios y repositorios cuando el proveedor posee cobertura suficiente.
+* Functions.
+* Classes.
+* Routes.
+* Calls.
+* Dependencies.
+* Flows.
+* Symbols.
+* Structural changes.
+* Impact on other areas of the code.
+* Relationships between packages, services, and repositories when the provider has enough coverage.
 
-Rationale agregará una capa distinta:
+Rationale will add a different layer:
 
-* Intención.
-* Causalidad.
-* Decisiones normativas.
-* Restricciones.
-* Riesgos.
-* Evidencia.
-* Procedencia.
-* Autoridad.
-* Confianza epistemológica.
-* Vigencia.
-* Consistencia por revisión.
-* Consecuencias.
+* Intent.
+* Causality.
+* Normative decisions.
+* Constraints.
+* Risks.
+* Evidence.
+* Provenance.
+* Authority.
+* Epistemic trust.
+* Validity.
+* Per-revision consistency.
+* Consequences.
 
-La relación entre ambos puede resumirse así:
+The relationship between the two can be summarized like this:
 
-> **Codebase Memory comprende la estructura actual del código.  
-> Rationale conserva qué decisiones todavía gobiernan esa estructura, por qué existen y por qué deben considerarse confiables.**
+> **Codebase Memory understands the current structure of the code.\
+> Rationale keeps which decisions still govern that structure, why they exist, and why they should be considered trustworthy.**
 
-Rationale no pretende recordar absolutamente todo.
+Rationale does not aim to remember absolutely everything.
 
-Su función es recuperar únicamente el conocimiento que:
+Its job is to retrieve only the knowledge that:
 
-1. Continúa siendo confiable.
-2. Tiene una procedencia conocida.
-3. Fue aprobado por la autoridad adecuada cuando es normativo.
-4. Sigue siendo aplicable a la revisión actual.
-5. Es relevante para la intención y el alcance del cambio.
-6. Está respaldado por evidencia cuya cobertura es conocida.
-7. Cabe dentro de un presupuesto razonable de contexto.
+1. Is still trustworthy.
+2. Has known provenance.
+3. Was approved by the appropriate authority when it is normative.
+4. Still applies to the current revision.
+5. Is relevant to the intent and scope of the change.
+6. Is backed by evidence whose coverage is known.
+7. Fits within a reasonable context budget.
 
-Por eso, las frases centrales del proyecto serán:
+That is why the project's central phrases will be:
 
 > **Git remembers what changed. Rationale remembers why it still matters.**
 
 > **Rationale does not remember everything. It remembers what still matters.**
 
-La unidad de valor principal no será una base de datos extensa ni un grafo perfecto.
+The main unit of value will not be a large database or a perfect graph.
 
-Será un **preflight de decisiones de software**:
+It will be a **software decision preflight**:
 
-> Antes de modificar código, el agente recibe las restricciones, decisiones y riesgos vigentes que gobiernan esa zona, junto con su procedencia, autoridad, evidencia, revisión e incertidumbre.
+> Before modifying code, the agent receives the constraints, decisions, and risks in force that govern that area, together with their provenance, authority, evidence, revision, and uncertainty.
 
-Rationale debe entenderse además como un **compilador de contexto del proyecto**. No reemplaza el prompt de la tarea ni entrega toda la memoria disponible. Toma una intención cuando existe, unos targets y un snapshot del repositorio, y compila un paquete pequeño con el conocimiento institucional de mayor utilidad para esa operación.
+Rationale must also be understood as a **project context compiler**. It does not replace the task prompt or hand over all available memory. It takes an intent when one exists, some targets, and a snapshot of the repository, and compiles a small packet with the most useful institutional knowledge for that operation.
 
 ```text
-Memoria compartida del proyecto
+Shared project memory
         +
-Intención y síntomas actuales
+Current intent and symptoms
         +
-Estructura observada
+Observed structure
         +
-Presupuesto de contexto
+Context budget
         ↓
-Context packet específico para la tarea
+Task-specific context packet
 ```
 
-El objetivo no es que el agente reciba más texto. El objetivo es que reciba **más contexto relevante, confiable, accionable y vigente por cada token utilizado**.
+The goal is not for the agent to receive more text. The goal is for it to receive **more relevant, trustworthy, actionable, and current context per token used**.
 
-## 1.1 Validación inicial del problema
+## 1.1 Initial validation of the problem
 
-El problema es real: los agentes modernos pueden reconstruir estructura, llamadas y dependencias, pero no pueden conocer con certeza motivos que nunca fueron codificados. El propio ecosistema de Codebase Memory ya muestra interés en ADR, historial por símbolo y drift arquitectónico, lo que valida la necesidad; al mismo tiempo, obliga a que Rationale tenga una frontera clara para no duplicar funciones estructurales o históricas que el proveedor pueda incorporar.
+The problem is real: modern agents can reconstruct structure, calls, and dependencies, but they cannot know with certainty reasons that were never encoded. The Codebase Memory ecosystem itself already shows interest in ADRs, per-symbol history, and architectural drift, which validates the need; at the same time, it forces Rationale to have a clear boundary so it does not duplicate structural or historical features that the provider may add.
 
-La diferenciación de Rationale no será simplemente “guardar ADR más detallados”.
+Rationale's differentiation will not simply be "storing more detailed ADRs".
 
-Será la combinación de:
+It will be the combination of:
 
 ```text
-Decisiones normativas
+Normative decisions
         +
-Procedencia y autoridad
+Provenance and authority
         +
-Vigencia por revisión
+Validity per revision
         +
-Anclaje estructural
+Structural anchoring
         +
-Comparación contra la intención
+Comparison against the intent
         +
-Entrega compacta antes del cambio
+Compact delivery before the change
 ```
 
-## 1.2 Las preguntas fundamentales
+## 1.2 The fundamental questions
 
 ```text
-¿Qué?       Git: resultado exacto y líneas modificadas.
-¿Dónde?     Codebase Memory: ubicación, símbolos y conexiones.
-¿Cuándo?    Git: historia; Rationale: vigencia y revisión evaluada.
-¿Quién?     Git identifica autores; Rationale identifica procedencia y autoridad.
-¿Cómo?      Codebase Memory explica la mecánica actual; el agente diseña la implementación.
-¿Por qué?   Rationale conserva el origen causal y la evidencia.
-¿Para qué?  Rationale conserva la intención, restricciones e invariantes que deben sobrevivir.
+What?       Git: exact result and modified lines.
+Where?      Codebase Memory: location, symbols, and connections.
+When?       Git: history; Rationale: validity and evaluated revision.
+Who?        Git identifies authors; Rationale identifies provenance and authority.
+How?        Codebase Memory explains the current mechanics; the agent designs the implementation.
+Why?        Rationale keeps the causal origin and the evidence.
+What for?   Rationale keeps the intent, constraints, and invariants that must survive.
 ```
 
-En la analogía de construcción:
+In the construction analogy:
 
-* Git conserva los ladrillos colocados y la bitácora de obra.
-* Codebase Memory conserva los planos actuales de tuberías, cables y conexiones.
-* Rationale conserva el estudio de suelo, las decisiones del ingeniero, las restricciones de seguridad y la revisión en la que esas conclusiones fueron comprobadas.
+* Git keeps the bricks laid and the site logbook.
+* Codebase Memory keeps the current plans of pipes, cables, and connections.
+* Rationale keeps the soil study, the engineer's decisions, the safety constraints, and the revision in which those conclusions were verified.
 
-## 1.3 Panorama de soluciones relacionadas
+## 1.3 Landscape of related solutions
 
-Rationale no parte de un terreno vacío. Existen varias familias de herramientas cercanas:
+Rationale does not start from empty ground. Several families of nearby tools exist:
 
-| Familia o ejemplo | Qué resuelve bien | Hueco que permanece |
+| Family or example | What it solves well | Gap that remains |
 |---|---|---|
-| Codebase Memory | Grafo estructural, símbolos, llamadas, rutas, impacto y búsqueda local | No debe asumirse que una relación estructural explica la decisión normativa o su autoridad |
-| ADR / MADR | Conservación explícita de decisiones arquitectónicas | Normalmente no mantienen bindings por revisión, aplicabilidad actual ni comparación contra una intención concreta |
-| PROJECTMEM y memorias basadas en eventos | Eventos, decisiones y puertas previas a acciones | Debe evaluarse cuánto modelan autoridad, evidencia estructural y consistencia exacta con Git |
-| Packmind y sistemas de estándares | Distribución de reglas y estándares de ingeniería hacia agentes | Las reglas pueden no conservar el origen causal, la revisión o el enlace con el comportamiento real |
-| Hermes Agent y memorias procedimentales | Aprendizaje de hábitos, habilidades y preferencias de un agente | La memoria general del agente no equivale a gobernanza causal portable del repositorio |
+| Codebase Memory | Structural graph, symbols, calls, routes, impact, and local search | It must not be assumed that a structural relationship explains the normative decision or its authority |
+| ADR / MADR | Explicit preservation of architectural decisions | They usually do not keep per-revision bindings, current applicability, or comparison against a concrete intent |
+| PROJECTMEM and event-based memories | Events, decisions, and gates before actions | How much they model authority, structural evidence, and exact consistency with Git must be evaluated |
+| Packmind and standards systems | Distribution of engineering rules and standards to agents | Rules may not keep the causal origin, the revision, or the link to real behavior |
+| Hermes Agent and procedural memories | Learning an agent's habits, skills, and preferences | An agent's general memory is not the same as portable causal governance of the repository |
 
-Hermes es probablemente la herramienta recordada como “Hermes o Hércules”. Su enfoque puede inspirar captura de hábitos y aprendizaje procedimental, pero Rationale debe evitar convertirse en memoria personal de un agente.
+Hermes is probably the tool remembered as "Hermes or Hercules". Its approach can inspire habit capture and procedural learning, but Rationale must avoid becoming an agent's personal memory.
 
-La frontera competitiva de Rationale será:
+Rationale's competitive boundary will be:
 
 ```text
-No recordar cómo trabaja un agente en general.
-No volver a indexar el código.
-No limitarse a almacenar ADR.
+Not remembering how an agent works in general.
+Not re-indexing the code.
+Not limiting itself to storing ADRs.
 
-Sí conservar qué decisión aprobada gobierna un comportamiento,
-por qué existe, qué evidencia la respalda y en qué revisión aplica.
+Yes to keeping which approved decision governs a behavior,
+why it exists, what evidence backs it, and in which revision it applies.
 ```
 
-## 1.4 Hipótesis de producto
+## 1.4 Product hypotheses
 
-Hipótesis del problema:
+Problem hypothesis:
 
-> En repositorios complejos, una parte significativa del riesgo de los agentes proviene de reconstruir correctamente el cómo, pero desconocer una restricción causal o normativa no visible en el código.
+> In complex repositories, a significant part of agents' risk comes from correctly reconstructing the how, but not knowing a causal or normative constraint that is not visible in the code.
 
-Hipótesis de solución:
+Solution hypothesis:
 
-> Un preflight compacto, enlazado a la estructura actual y limitado a conocimiento aprobado, reduce regresiones y arqueología repetida sin añadir una carga humana excesiva.
+> A compact preflight, linked to the current structure and limited to approved knowledge, reduces regressions and repeated archaeology without adding an excessive human burden.
 
-Estas hipótesis deben validarse experimentalmente antes de declarar estable la arquitectura o el protocolo.
+These hypotheses must be validated experimentally before the architecture or the protocol is declared stable.
 
-## 1.5 Decisiones conceptuales de la versión 0.4
+## 1.5 Conceptual decisions of version 0.4
 
-La versión 0.4 incorpora cuatro problemas del desarrollo real, pero corrige varias interpretaciones excesivas del feedback recibido.
+Version 0.4 incorporates four problems from real development, but corrects several excessive interpretations of the feedback received.
 
-### Aceptado: el alcance debe cruzar paquetes y workspaces
+### Accepted: scope must cross packages and workspaces
 
-Una decisión puede originarse en un paquete y gobernar otros. Una regla de autorización implementada en el backend puede afectar el contrato de una API, los componentes que el dashboard permite mostrar y los tests de integración.
+A decision can originate in one package and govern others. An authorization rule implemented in the backend can affect an API contract, the components the dashboard allows to be shown, and the integration tests.
 
-Sin embargo, en un monorepositorio no existe necesariamente “una carpeta `.rationale/` por paquete”. Un monorepo continúa siendo un repositorio Git. El problema real es otro:
+However, in a monorepo there is not necessarily "one `.rationale/` folder per package". A monorepo is still one Git repository. The real problem is a different one:
 
-> **Rationale necesita identidad de proyecto, scopes jerárquicos, bindings calificados por workspace y recuperación capaz de atravesar paquetes sin contaminar el contexto con reglas irrelevantes.**
+> **Rationale needs project identity, hierarchical scopes, workspace-qualified bindings, and retrieval able to cross packages without contaminating the context with irrelevant rules.**
 
-La v0.1 debe soportar un repositorio Git con múltiples workspaces o paquetes. La federación completa entre repositorios independientes continuará siendo posterior.
+v0.1 must support one Git repository with multiple workspaces or packages. Full federation across independent repositories will remain for later.
 
-### Aceptado con límites: resolución estricta de Subjects
+### Accepted with limits: strict Subject resolution
 
-Antes de crear un Subject nuevo, Rationale debe buscar conceptos existentes mediante IDs, aliases, bindings, scope, FTS y, opcionalmente, similitud semántica local.
+Before creating a new Subject, Rationale must look for existing concepts through IDs, aliases, bindings, scope, FTS, and, optionally, local semantic similarity.
 
-Los embeddings pueden producir candidatos. Nunca pueden:
+Embeddings may produce candidates. They can never:
 
-* Fusionar Subjects automáticamente.
-* Declarar que dos reglas son equivalentes.
-* Convertir similitud textual en identidad conceptual.
-* Bloquear la creación de un concepto sin una ruta de revisión.
+* Merge Subjects automatically.
+* Declare that two rules are equivalent.
+* Turn textual similarity into conceptual identity.
+* Block the creation of a concept without a review path.
 
-Cuando exista una coincidencia fuerte y el agente proponga un Subject nuevo, deberá entregar una `novelty_reason` explícita.
+When there is a strong match and the agent proposes a new Subject, it must provide an explicit `novelty_reason`.
 
-### Aceptado con límites: detección pasiva de drift
+### Accepted with limits: passive drift detection
 
-Rationale debe detectar que Git avanzó aunque nadie haya ejecutado `finalize_change`. La garantía mínima no depende de un daemon:
+Rationale must detect that Git moved forward even if nobody ran `finalize_change`. The minimum guarantee does not depend on a daemon:
 
-* Cada consulta compara el `HEAD` actual con la última revisión procesada.
-* Si no coinciden, degrada bindings y assessments relacionados.
-* Nunca sirve silenciosamente una evaluación antigua como actual.
+* Every query compares the current `HEAD` with the last processed revision.
+* If they do not match, it degrades the related bindings and assessments.
+* It never silently serves an old evaluation as current.
 
-Hooks de Git o un proceso local pueden acelerar esta detección, pero son optimizaciones opcionales. Los hooks pueden omitirse, no se clonan automáticamente y pueden ser saltados. Por eso no son la frontera de corrección.
+Git hooks or a local process can speed up this detection, but they are optional optimizations. Hooks can be omitted, are not cloned automatically, and can be skipped. That is why they are not the correctness boundary.
 
-### Aceptado con límites: no depender de que el agente recuerde una herramienta
+### Accepted with limits: not depending on the agent remembering a tool
 
-MCP por sí solo no puede interceptar universalmente cada edición ni conocer una intención que el agente nunca expresó. La solución será estratificada:
+MCP alone cannot universally intercept every edit or know an intent the agent never expressed. The solution will be layered:
 
-1. **Baseline target context:** al leer, buscar o editar un target, integraciones compatibles pueden inyectar un paquete mínimo con restricciones críticas vinculadas.
-2. **Intent-aware preflight:** cuando existe intención explícita, `prepare_change` compara esa intención contra decisiones activas y entrega contexto más rico.
-3. **Post-change audit:** al finalizar o revisar un diff, Rationale detecta posibles violaciones aunque el preflight se haya omitido.
-4. **Policy enforcement:** CI solo bloquea reglas críticas, deterministas, aprobadas y evaluadas en una revisión coherente.
+1. **Baseline target context:** when reading, searching, or editing a target, compatible integrations may inject a minimal packet with linked critical constraints.
+2. **Intent-aware preflight:** when there is an explicit intent, `prepare_change` compares that intent against active decisions and delivers richer context.
+3. **Post-change audit:** when finalizing or reviewing a diff, Rationale detects possible violations even if the preflight was skipped.
+4. **Policy enforcement:** CI only blocks critical, deterministic, approved rules evaluated at a coherent revision.
 
-La inyección automática mejora cobertura, pero no sustituye el contrato explícito de `prepare_change`.
+Automatic injection improves coverage, but it does not replace the explicit contract of `prepare_change`.
 
-### Corrección importante: más contexto no siempre significa mejor contexto
+### Important correction: more context does not always mean better context
 
-Una descripción precisa del bug, su reproducción, síntomas y alcance suele mejorar mucho la solución. Pero añadir texto irrelevante o colocar conocimiento crítico dentro de un contexto enorme puede reducir la capacidad del modelo para utilizarlo.
+A precise description of the bug, its reproduction, symptoms, and scope usually improves the solution a lot. But adding irrelevant text or placing critical knowledge inside an enormous context can reduce the model's ability to use it.
 
-Rationale adopta este principio:
+Rationale adopts this principle:
 
 ```text
 context_utility_density =
@@ -249,128 +259,128 @@ context_utility_density =
   ÷ tokens
 ```
 
-La meta es maximizar utilidad, no volumen.
+The goal is to maximize utility, not volume.
 
-### Objetivo realista: continuidad senior, no reemplazo de una persona senior
+### Realistic goal: senior continuity, not replacement of a senior person
 
-Rationale puede conservar:
+Rationale can preserve:
 
-* Decisiones anteriores.
-* Invariantes.
-* Incidentes y bugs históricos.
-* Alternativas descartadas.
-* Relaciones estructurales.
-* Validaciones conocidas.
+* Earlier decisions.
+* Invariants.
+* Historical incidents and bugs.
+* Discarded alternatives.
+* Structural relationships.
+* Known validations.
 
-Eso permite una continuidad parecida a la memoria técnica de una persona senior. No reemplaza:
+That enables a continuity similar to a senior person's technical memory. It does not replace:
 
-* Juicio de producto.
-* Priorización empresarial.
-* Negociación entre equipos.
-* Autoridad humana.
-* Conocimiento que nunca fue expresado o evidenciado.
+* Product judgment.
+* Business prioritization.
+* Negotiation between teams.
+* Human authority.
+* Knowledge that was never expressed or evidenced.
 
-La promesa correcta es **preservar memoria institucional accionable**, no fabricar experiencia humana completa.
+The right promise is to **preserve actionable institutional memory**, not to fabricate complete human experience.
 
-## 1.6 Decisiones conceptuales de la versión 0.5
+## 1.6 Conceptual decisions of version 0.5
 
-La versión 0.5 no altera la identidad central de Rationale. Convierte varias aspiraciones de la 0.4 en hipótesis medibles y añade dos límites operativos necesarios antes de comenzar a construir.
+Version 0.5 does not change Rationale's central identity. It turns several aspirations from 0.4 into measurable hypotheses and adds two operational limits needed before starting to build.
 
-### Aceptado: la densidad de utilidad debe ser falsificable
+### Accepted: utility density must be falsifiable
 
-`context_utility_density` continuará siendo un principio de diseño, pero no se utilizará como una puntuación autorreferencial con la que Rationale se declare exitoso.
+`context_utility_density` will remain a design principle, but it will not be used as a self-referential score with which Rationale declares itself successful.
 
-Debe evaluarse sobre el **Context Packet exacto** entregado para una tarea y contrastarse contra:
+It must be evaluated on the **exact Context Packet** delivered for a task and checked against:
 
-* Un ground truth preparado para el caso.
-* El resultado real de la tarea.
-* Los tokens totales hasta completarla correctamente.
-* Las restricciones respetadas u omitidas.
-* Las falsedades incluidas.
-* El contexto manual que todavía debió escribir la persona.
+* A ground truth prepared for the case.
+* The real result of the task.
+* The total tokens until it was completed correctly.
+* The constraints respected or omitted.
+* The falsehoods included.
+* The manual context the person still had to write.
 
-Una puntuación alta del paquete no compensa una solución incorrecta.
+A high packet score does not make up for an incorrect solution.
 
-### Aceptado con límites: `novelty_reason` debe ser estructurada
+### Accepted with limits: `novelty_reason` must be structured
 
-Una justificación libre como:
-
-```text
-Este Subject es diferente.
-```
-
-no demuestra novedad conceptual.
-
-Cuando exista un candidato similar, la propuesta debe contrastar explícitamente:
-
-* El Subject existente.
-* La diferencia de comportamiento, scope, ciclo de vida, autoridad o invariante.
-* La evidencia que respalda esa diferencia.
-
-La herramienta debe rechazar razones genéricas o circulares. Sin embargo, una similitud alta tampoco convierte al candidato en idéntico ni autoriza una fusión automática.
-
-### Aceptado: baseline necesita una ruta rápida separada
-
-El baseline de alta frecuencia no debe ejecutar el pipeline completo de Rationale.
-
-Debe utilizar una ruta local, precomputada, acotada y no bloqueante para recuperar únicamente restricciones críticas y advertencias de consistencia ya indexadas.
-
-El análisis de intención, arqueología, embeddings, clasificación con LLM y reconstrucción de relaciones pertenece al preflight completo, no a cada lectura o búsqueda.
-
-### Corrección: latencia y densidad son propiedades extremas a extremo
-
-No basta con medir cuántos milisegundos tarda una consulta aislada ni cuántos tokens devuelve `prepare_change`.
-
-Rationale puede ser localmente rápido y, aun así, añadir suficientes llamadas o aclaraciones como para empeorar el flujo completo. También puede entregar pocos tokens, pero omitir la única restricción crítica.
-
-Por eso el piloto medirá simultáneamente:
+A free-form justification such as:
 
 ```text
-Calidad del Context Packet
-        +
-Latencia de recuperación
-        +
-Tokens y llamadas hasta solución correcta
-        +
-Regresiones y restricciones respetadas
-        +
-Contexto manual requerido
+This Subject is different.
 ```
 
-### Condición para avanzar a implementación estable
+does not demonstrate conceptual novelty.
 
-La 0.5 se considera semidefinitiva en concepto, no validada en resultados.
+When a similar candidate exists, the proposal must explicitly contrast:
 
-Antes de estabilizar la arquitectura, el experimento 0.0 debe producir evidencia de que Rationale mejora al menos una combinación material de:
+* The existing Subject.
+* The difference in behavior, scope, lifecycle, authority, or invariant.
+* The evidence that backs that difference.
 
-* Éxito de tarea.
-* Recuperación de restricciones críticas.
-* Prevención de regresiones históricas.
-* Tokens totales.
+The tool must reject generic or circular reasons. However, high similarity does not make the candidate identical either, nor does it authorize an automatic merge.
+
+### Accepted: baseline needs a separate fast path
+
+The high-frequency baseline must not run Rationale's full pipeline.
+
+It must use a local, precomputed, bounded, non-blocking path to retrieve only critical constraints and consistency warnings that are already indexed.
+
+Intent analysis, archaeology, embeddings, LLM classification, and relationship reconstruction belong to the full preflight, not to every read or search.
+
+### Correction: latency and density are end-to-end properties
+
+It is not enough to measure how many milliseconds an isolated query takes or how many tokens `prepare_change` returns.
+
+Rationale can be fast locally and still add enough calls or clarifications to make the overall flow worse. It can also deliver few tokens but omit the only critical constraint.
+
+That is why the pilot will measure simultaneously:
+
+```text
+Context Packet quality
+        +
+Retrieval latency
+        +
+Tokens and calls until a correct solution
+        +
+Regressions and constraints respected
+        +
+Manual context required
+```
+
+### Condition for moving to a stable implementation
+
+0.5 is considered near-final in concept, not validated in results.
+
+Before stabilizing the architecture, experiment 0.0 must produce evidence that Rationale improves at least one material combination of:
+
+* Task success.
+* Recall of critical constraints.
+* Prevention of historical regressions.
+* Total tokens.
 * Tool calls.
-* Tiempo humano de preparación del prompt.
-* Tiempo hasta una solución correcta.
+* Human time preparing the prompt.
+* Time to a correct solution.
 
-Si no lo logra, el producto, el retrieval o incluso la hipótesis central deberán revisarse.
+If it does not, the product, the retrieval, or even the central hypothesis will have to be revised.
 
 ---
 
-# 2. El problema
+# 2. The problem
 
-Cuando una inteligencia artificial trabaja sobre un repositorio, puede reconstruir una gran parte de su funcionamiento actual.
+When an artificial intelligence works on a repository, it can reconstruct a large part of how it currently works.
 
-Puede descubrir que:
+It can discover that:
 
-* Una función llama a otra.
-* Una ruta modifica una tabla.
-* Un controlador valida un permiso.
-* Una clase implementa una interfaz.
-* Un cambio afecta múltiples símbolos.
-* Un servicio depende de otro.
+* One function calls another.
+* A route modifies a table.
+* A controller validates a permission.
+* A class implements an interface.
+* A change affects multiple symbols.
+* A service depends on another.
 
-Sin embargo, leer el código actual no garantiza comprender por qué terminó siendo implementado de esa manera.
+However, reading the current code does not guarantee understanding why it ended up implemented that way.
 
-Una IA puede encontrar este código:
+An AI may find this code:
 
 ```ts
 if (entityAssignment) {
@@ -380,179 +390,179 @@ if (entityAssignment) {
 return denyAccess();
 ```
 
-Puede deducir que el acceso depende de una asignación por entidad.
+It can deduce that access depends on a per-entity assignment.
 
-Pero probablemente no podrá deducir con certeza que:
+But it probably cannot deduce with certainty that:
 
-* Antes, los usuarios con acceso a varias entidades recibían `super_admin` global.
-* Esto otorgaba privilegios innecesarios a cuentas de soporte.
-* Se decidió que tener acceso a varias entidades no debe implicar administración global.
-* Algunos usuarios son excepciones deliberadas porque son dueños del proyecto.
-* Un usuario sin asignaciones debe quedarse sin acceso.
-* Restaurar el rol global reintroduciría el problema original.
-* La migración fue diseñada para ser reversible.
-* El cambio debía ser idempotente.
-* La decisión surgió después de observar un riesgo real de privilegios excesivos.
+* Previously, users with access to several entities received global `super_admin`.
+* This granted unnecessary privileges to support accounts.
+* It was decided that having access to several entities must not imply global administration.
+* Some users are deliberate exceptions because they own the project.
+* A user without assignments must be left without access.
+* Restoring the global role would reintroduce the original problem.
+* The migration was designed to be reversible.
+* The change had to be idempotent.
+* The decision came after observing a real risk of excessive privileges.
 
-Ese conocimiento normalmente queda disperso en:
+That knowledge usually ends up scattered across:
 
-* Conversaciones con agentes.
-* Chats internos.
+* Conversations with agents.
+* Internal chats.
 * Pull requests.
 * Issues.
-* Reuniones.
-* Comentarios temporales.
-* Mensajes de commits.
-* Incidentes.
-* Pruebas.
-* La memoria de desarrolladores.
+* Meetings.
+* Temporary comments.
+* Commit messages.
+* Incidents.
+* Tests.
+* Developers' memory.
 
-Después de varios meses, el código permanece, pero su contexto causal se pierde.
+After several months, the code remains, but its causal context is lost.
 
-Esto produce el problema conocido como la **Valla de Chesterton**:
+This produces the problem known as **Chesterton's Fence**:
 
-> Antes de eliminar o modificar una estructura, es necesario comprender por qué fue creada.
+> Before removing or modifying a structure, you need to understand why it was built.
 
-La IA puede entender la valla.
+The AI can understand the fence.
 
-Lo que no necesariamente entiende es por qué alguien decidió construirla.
-
----
-
-# 3. El verdadero reto
-
-
-El reto principal de Rationale no es almacenar texto.
-
-Guardar explicaciones en archivos YAML o en una base de datos es relativamente sencillo.
-
-Los problemas difíciles son:
-
-* Saber si una explicación es verdadera.
-* Diferenciar hechos, afirmaciones humanas e inferencias.
-* Saber quién tenía autoridad para convertir una afirmación en regla.
-* Detectar contradicciones entre humanos, equipos y decisiones posteriores.
-* Detectar cuándo una decisión dejó de aplicar sin confundir cambio estructural con cambio conceptual.
-* Mantener enlaces aunque el código sea refactorizado.
-* Evitar alertas constantes.
-* No obligar a los desarrolladores a documentar cada cambio.
-* Adoptar la herramienta en proyectos antiguos.
-* Evitar llenar al agente con demasiado contexto.
-* Decidir qué conocimiento importa para una intención concreta.
-* Evitar responder con datos construidos sobre revisiones incompatibles.
-* No tratar las ausencias o errores del proveedor estructural como verdad.
-* Evitar que registros de texto se conviertan en prompt injection.
-* Impedir que secretos o información sensible terminen versionados.
-* Garantizar que el agente consulte Rationale cuando realmente importa.
-* Probar que la herramienta reduce el costo total de resolver una tarea, no solo el tamaño de una respuesta.
-* Resolver scopes e herencia en monorepos sin inyectar políticas de paquetes no relacionados.
-* Detectar commits humanos y avances de Git aunque el flujo asistido se haya omitido.
-* Evitar Subjects duplicados sin entregar la identidad conceptual a una heurística semántica.
-* Compartir la memoria canónica por Git mientras cada máquina mantiene índices y cobertura local distintos.
-* Entregar restricciones críticas aunque el agente omita el preflight, sin fingir que puede inferirse siempre la intención.
-* Diferenciar contexto suficiente de acumulación indiscriminada de contexto.
-
-Existe además una limitación inevitable:
-
-```text
-El porqué verdadero no siempre puede deducirse del código.
-Los humanos no quieren documentar cada cambio.
-Las inferencias automáticas pueden ser falsas.
-```
-
-Rationale no puede eliminar esta contradicción. Debe diseñarse alrededor de ella.
-
-La respuesta correcta es aceptar una **cobertura parcial e intencional**:
-
-* Capturar hacia adelante.
-* Priorizar áreas de alto riesgo.
-* Permitir motivo desconocido.
-* Solicitar confirmación solo para deltas normativos importantes.
-* Recuperar historia antigua únicamente bajo demanda.
-* Nunca presentar cobertura parcial como conocimiento completo.
-
-Por lo tanto, Rationale no debe definirse únicamente como una memoria del porqué.
-
-Debe definirse como:
-
-> **Una capa local de contexto causal, procedencia, autoridad y control de vigencia que conecta decisiones, restricciones, riesgos y evidencia con los comportamientos reales de un sistema, y recupera únicamente aquello que sigue siendo relevante y confiable para un cambio específico.**
-
-El objetivo no es construir una memoria perfecta.
-
-El objetivo es impedir que una decisión importante sea destruida porque el agente solo pudo observar su implementación actual.
+What it does not necessarily understand is why someone decided to build it.
 
 ---
 
-# 4. Principios fundamentales
+# 3. The real challenge
 
 
-## 4.1 No tener una explicación es mejor que conservar una explicación falsa
+Rationale's main challenge is not storing text.
 
-Una inferencia generada por una IA nunca debe convertirse silenciosamente en un hecho.
+Saving explanations in YAML files or in a database is relatively simple.
 
-Si un agente observa un límite de 50 elementos y deduce que existe por rendimiento, pero el verdadero motivo es una restricción comercial de una API externa, guardar la explicación incorrecta sería más peligroso que admitir que el motivo es desconocido.
+The hard problems are:
 
-Rationale debe poder responder:
+* Knowing whether an explanation is true.
+* Distinguishing facts, human claims, and inferences.
+* Knowing who had the authority to turn a claim into a rule.
+* Detecting contradictions between humans, teams, and later decisions.
+* Detecting when a decision stopped applying without confusing structural change with conceptual change.
+* Keeping links even when the code is refactored.
+* Avoiding constant alerts.
+* Not forcing developers to document every change.
+* Adopting the tool in old projects.
+* Avoiding flooding the agent with too much context.
+* Deciding which knowledge matters for a concrete intent.
+* Avoiding answers built on incompatible revisions.
+* Not treating the structural provider's absences or errors as truth.
+* Keeping text records from becoming prompt injection.
+* Preventing secrets or sensitive information from ending up versioned.
+* Guaranteeing that the agent consults Rationale when it really matters.
+* Proving that the tool reduces the total cost of solving a task, not just the size of a response.
+* Resolving scopes and inheritance in monorepos without injecting policies from unrelated packages.
+* Detecting human commits and Git progress even when the assisted flow was skipped.
+* Avoiding duplicate Subjects without handing conceptual identity over to a semantic heuristic.
+* Sharing the canonical memory through Git while each machine keeps different local indexes and coverage.
+* Delivering critical constraints even when the agent skips the preflight, without pretending the intent can always be inferred.
+* Distinguishing sufficient context from indiscriminate accumulation of context.
+
+There is also an unavoidable limitation:
 
 ```text
-Motivo confirmado: desconocido.
-
-Hipótesis:
-El límite podría estar relacionado con rendimiento.
-
-Confianza: baja.
-No confirmado por una persona ni por evidencia directa.
+The true why cannot always be deduced from the code.
+Humans do not want to document every change.
+Automatic inferences can be false.
 ```
 
-Nunca debe responder:
+Rationale cannot eliminate this contradiction. It must be designed around it.
 
-```text
-El límite existe por rendimiento.
-```
+The right answer is to accept **partial, intentional coverage**:
 
-si eso no fue demostrado.
+* Capture going forward.
+* Prioritize high-risk areas.
+* Allow an unknown reason.
+* Request confirmation only for important normative deltas.
+* Retrieve old history only on demand.
+* Never present partial coverage as complete knowledge.
+
+Therefore, Rationale must not be defined only as a memory of the why.
+
+It must be defined as:
+
+> **A local layer of causal context, provenance, authority, and validity control that connects decisions, constraints, risks, and evidence with the real behaviors of a system, and retrieves only what is still relevant and trustworthy for a specific change.**
+
+The goal is not to build a perfect memory.
+
+The goal is to keep an important decision from being destroyed because the agent could only observe its current implementation.
 
 ---
 
-## 4.2 Un cambio estructural no implica un cambio conceptual
+# 4. Fundamental principles
 
-Una función puede:
 
-* Cambiar de nombre.
-* Moverse de archivo.
-* Dividirse.
-* Ser extraída a una clase.
-* Convertirse en un servicio.
-* Reescribirse en otro lenguaje.
+## 4.1 Having no explanation is better than keeping a false explanation
 
-Y aun así continuar implementando exactamente la misma decisión.
+An inference generated by an AI must never silently become a fact.
 
-Rationale debe diferenciar:
+If an agent observes a limit of 50 items and deduces that it exists for performance, but the real reason is a commercial constraint of an external API, storing the wrong explanation would be more dangerous than admitting that the reason is unknown.
+
+Rationale must be able to answer:
 
 ```text
-El código cambió.
+Confirmed reason: unknown.
+
+Hypothesis:
+The limit could be related to performance.
+
+Confidence: low.
+Not confirmed by a person or by direct evidence.
 ```
 
-de:
+It must never answer:
 
 ```text
-La decisión dejó de ser aplicable.
+The limit exists for performance.
 ```
 
-No debe marcar una decisión como obsoleta únicamente porque cambió el fingerprint de una función.
+if that was not demonstrated.
 
 ---
 
-## 4.3 El conocimiento pertenece primero a un concepto, no a un archivo
+## 4.2 A structural change does not imply a conceptual change
 
-La identidad principal de una decisión no debe ser:
+A function can:
+
+* Be renamed.
+* Move to another file.
+* Be split.
+* Be extracted into a class.
+* Become a service.
+* Be rewritten in another language.
+
+And still keep implementing exactly the same decision.
+
+Rationale must distinguish:
+
+```text
+The code changed.
+```
+
+from:
+
+```text
+The decision stopped being applicable.
+```
+
+It must not mark a decision as obsolete only because a function's fingerprint changed.
+
+---
+
+## 4.3 Knowledge belongs first to a concept, not to a file
+
+The primary identity of a decision must not be:
 
 ```yaml
 path: src/auth/authorization.ts
 symbol: resolveEntityRole
 ```
 
-La identidad principal debe ser el comportamiento que representa:
+The primary identity must be the behavior it represents:
 
 ```yaml
 subject:
@@ -560,11 +570,11 @@ subject:
   id: authorization.entity-scoped-staff-access
 ```
 
-Los archivos, funciones, tablas y rutas serán anclas de la implementación actual.
+Files, functions, tables, and routes will be anchors of the current implementation.
 
-Esto permite que la decisión sobreviva a refactors y migraciones arquitectónicas.
+This lets the decision survive refactors and architectural migrations.
 
-Sin embargo, un ID conceptual tampoco es mágicamente estable. Rationale debe soportar operaciones explícitas de identidad:
+However, a conceptual ID is not magically stable either. Rationale must support explicit identity operations:
 
 ```text
 alias
@@ -576,261 +586,261 @@ scope-expanded
 supersede
 ```
 
-La herramienta puede proponer linaje, pero no debe prometer reconstrucción conceptual automática perfecta.
+The tool may propose lineage, but it must not promise perfect automatic conceptual reconstruction.
 
 ---
 
-## 4.4 La captura debe tener poca fricción
+## 4.4 Capture must have low friction
 
-Los desarrolladores no deben llenar formularios gigantes ni aprobar documentos completos después de cada cambio.
+Developers must not fill in giant forms or approve complete documents after every change.
 
-Rationale debe obtener automáticamente los datos verificables:
+Rationale must automatically obtain the verifiable data:
 
-* Archivos modificados.
-* Símbolos modificados.
-* Dependencias añadidas.
-* Dependencias eliminadas.
-* Pruebas ejecutadas.
-* Commits relacionados.
-* Rutas afectadas.
-* Cambios de esquema.
+* Modified files.
+* Modified symbols.
+* Added dependencies.
+* Removed dependencies.
+* Tests run.
+* Related commits.
+* Affected routes.
+* Schema changes.
 
-La participación humana debe limitarse a confirmar las afirmaciones que una herramienta no puede conocer por sí sola:
+Human participation must be limited to confirming the claims that a tool cannot know on its own:
 
-* Por qué se hizo el cambio.
-* Qué decisión se tomó.
-* Qué alternativa fue descartada.
-* Qué comportamiento nunca debe romperse.
-* Qué riesgo no es visible directamente en el código.
-* Quién tiene autoridad para aprobar la regla.
+* Why the change was made.
+* What decision was taken.
+* What alternative was discarded.
+* What behavior must never break.
+* What risk is not directly visible in the code.
+* Who has the authority to approve the rule.
 
-Una pregunta útil:
+A useful question:
 
 ```text
-Detecté una posible restricción normativa:
-“El acceso multi-entidad no debe implicar administración global”.
+I detected a possible normative constraint:
+"Multi-entity access must not imply global administration."
 
-¿Debe conservarse como regla aprobada del sistema?
+Should it be kept as an approved rule of the system?
 ```
 
-Una pregunta inútil:
+A useless question:
 
 ```text
-¿Deseas documentar este cambio?
+Do you want to document this change?
 ```
 
-Siempre debe ser válido responder:
+It must always be valid to answer:
 
 ```text
-Motivo desconocido.
-No crear una restricción.
+Unknown reason.
+Do not create a constraint.
 ```
 
 ---
 
-## 4.5 El sistema debe adoptarse progresivamente
+## 4.5 The system must be adopted progressively
 
-Rationale no necesita conocer la historia completa de un repositorio para ser útil.
+Rationale does not need to know the full history of a repository to be useful.
 
-Al instalarlo en un proyecto antiguo debe aceptar:
+When installed in an old project, it must accept:
 
 ```text
-La razón de gran parte del código todavía es desconocida.
+The reason for much of the code is still unknown.
 
-A partir de hoy, los cambios importantes comenzarán a conservar su contexto.
+From today on, important changes will start keeping their context.
 
-El conocimiento histórico será recuperado únicamente cuando sea necesario.
+Historical knowledge will be retrieved only when needed.
 ```
 
-La herramienta debe empezar a generar valor desde el primer cambio nuevo.
+The tool must start generating value from the first new change.
 
-El objetivo no es cobertura del 100%.
+The goal is not 100% coverage.
 
-El objetivo es cobertura suficiente en las áreas donde perder contexto tiene consecuencias graves.
-
----
-
-## 4.6 La recuperación debe respetar un presupuesto de contexto
-
-Un agente no debe recibir quince registros históricos completos antes de modificar una función central.
-
-Rationale debe construir respuestas priorizadas y limitadas por tokens.
-
-Primero debe entregar:
-
-1. Restricciones críticas aprobadas.
-2. Conflictos con la intención actual.
-3. Decisión vigente.
-4. Riesgos directamente relevantes.
-5. Calidad y revisión de la evidencia.
-6. Conexiones estructurales principales.
-
-El resto del historial debe mantenerse disponible mediante consultas adicionales.
+The goal is sufficient coverage in the areas where losing context has serious consequences.
 
 ---
 
-## 4.7 Procedencia y autoridad son dimensiones diferentes
+## 4.6 Retrieval must respect a context budget
 
-Saber que una afirmación fue expresada por una persona no indica que esa persona tuviera autoridad para convertirla en política.
+An agent must not receive fifteen complete historical records before modifying a central function.
 
-Rationale debe separar:
+Rationale must build prioritized, token-limited responses.
+
+It must deliver first:
+
+1. Approved critical constraints.
+2. Conflicts with the current intent.
+3. The decision in force.
+4. Directly relevant risks.
+5. Quality and revision of the evidence.
+6. Main structural connections.
+
+The rest of the history must remain available through additional queries.
+
+---
+
+## 4.7 Provenance and authority are different dimensions
+
+Knowing that a claim was stated by a person does not indicate that the person had the authority to turn it into policy.
+
+Rationale must separate:
 
 ```text
-Procedencia: quién o qué produjo la afirmación.
-Autoridad: qué capacidad tenía para aprobarla dentro de ese dominio.
+Provenance: who or what produced the claim.
+Authority: what capacity it had to approve it within that domain.
 ```
 
-Un desarrollador puede describir correctamente lo que cree que ocurre y aun así no ser el responsable de producto, seguridad o arquitectura que puede establecer la regla.
+A developer can correctly describe what they believe happens and still not be the product, security, or architecture owner who can establish the rule.
 
-Una restricción crítica no debe considerarse aprobada únicamente porque tenga `human-confirmed`.
+A critical constraint must not be considered approved only because it has `human-confirmed`.
 
-Debe poseer una política de aprobación explícita.
+It must have an explicit approval policy.
 
 ---
 
-## 4.8 Toda respuesta debe pertenecer a una revisión coherente
+## 4.8 Every response must belong to a coherent revision
 
-Rationale nunca debe construir una respuesta aparentemente actual usando:
+Rationale must never build a seemingly current response using:
 
 ```text
-Git HEAD: revisión C
-Índice de Codebase Memory: revisión B
-Evaluación de Rationale: revisión A
+Git HEAD: revision C
+Codebase Memory index: revision B
+Rationale evaluation: revision A
 ```
 
-Cada paquete debe declarar:
+Every packet must declare:
 
-* Revisión de Git.
-* Revisión o generación del proveedor estructural.
-* Revisión de los registros.
-* Revisión de la última evaluación de aplicabilidad.
-* Estado de consistencia.
+* Git revision.
+* Structural provider revision or generation.
+* Records revision.
+* Revision of the last applicability evaluation.
+* Consistency status.
 
-Si no existe coherencia, la herramienta debe degradar o rechazar la respuesta en lugar de servir contexto plausible pero incorrecto.
+If there is no coherence, the tool must degrade or reject the response instead of serving plausible but incorrect context.
 
 ---
 
-## 4.9 La evidencia estructural es falible
+## 4.9 Structural evidence is fallible
 
-Codebase Memory es un proveedor valioso, no un oráculo.
+Codebase Memory is a valuable provider, not an oracle.
 
-Una relación ausente puede significar:
+A missing relationship can mean:
 
-* Que no existe.
-* Que el índice está atrasado.
-* Que el lenguaje o framework no fue resuelto.
-* Que el código usa reflexión o configuración dinámica.
-* Que una carpeta fue ignorada.
-* Que hubo un error del proveedor.
+* That it does not exist.
+* That the index is behind.
+* That the language or framework was not resolved.
+* That the code uses reflection or dynamic configuration.
+* That a folder was ignored.
+* That there was a provider error.
 
-Rationale debe diferenciar:
+Rationale must distinguish:
 
 ```text
-No se encontró una relación.
+No relationship was found.
 ```
 
-de:
+from:
 
 ```text
-Se comprobó que la relación no existe.
+It was verified that the relationship does not exist.
 ```
 
-La segunda afirmación requerirá evidencia mucho más fuerte.
+The second claim will require much stronger evidence.
 
 ---
 
-## 4.10 El texto almacenado es dato, no instrucción
+## 4.10 Stored text is data, not instruction
 
-Los registros, evidencias, ADR, issues y conversaciones pueden contener contenido malicioso o accidentalmente instructivo.
+Records, evidence, ADRs, issues, and conversations can contain malicious or accidentally instructive content.
 
-Rationale debe tratarlos como datos no ejecutables.
+Rationale must treat them as non-executable data.
 
-Nunca debe permitir que un registro modifique:
+It must never allow a record to modify:
 
-* Las instrucciones del sistema.
-* Los permisos del agente.
-* Las políticas de seguridad.
-* El alcance de herramientas externas.
-* La obligación de proteger secretos.
+* The system instructions.
+* The agent's permissions.
+* The security policies.
+* The scope of external tools.
+* The obligation to protect secrets.
 
-Las restricciones críticas deben preferir una representación declarativa estructurada y usar el texto libre como explicación, no como programa.
-
----
-
-## 4.11 Lo sensible debe minimizarse y clasificarse
-
-El porqué puede incluir vulnerabilidades, nombres de clientes, contratos, incidentes, costos o información privada.
-
-Rationale debe aplicar:
-
-* Minimización.
-* Referencias externas cuando sea posible.
-* Clasificación de sensibilidad.
-* Controles de visibilidad.
-* Redacción de secretos.
-* Políticas de exportación.
-
-No debe copiar conversaciones completas dentro del repositorio por comodidad.
+Critical constraints must prefer a structured declarative representation and use free text as explanation, not as a program.
 
 ---
 
-## 4.12 La conversación es la interfaz principal, no el único mecanismo
+## 4.11 Sensitive data must be minimized and classified
 
-El agente puede olvidar llamar una herramienta MCP.
+The why can include vulnerabilities, customer names, contracts, incidents, costs, or private information.
 
-Por eso Rationale debe ofrecer capas progresivas:
+Rationale must apply:
+
+* Minimization.
+* External references when possible.
+* Sensitivity classification.
+* Visibility controls.
+* Secret redaction.
+* Export policies.
+
+It must not copy complete conversations into the repository for convenience.
+
+---
+
+## 4.12 Conversation is the main interface, not the only mechanism
+
+The agent can forget to call an MCP tool.
+
+That is why Rationale must offer progressive layers:
 
 ```text
-Informativa: consulta voluntaria del agente.
-Asistida: instrucciones del cliente para ejecutar preflight.
-Revisión: análisis del diff al finalizar.
-Política: CI solo para reglas críticas deterministas y aprobadas.
+Informative: voluntary query by the agent.
+Assisted: client instructions to run the preflight.
+Review: analysis of the diff when finishing.
+Policy: CI only for critical, deterministic, approved rules.
 ```
 
-La experiencia humana puede vivir principalmente en el chat del IDE, pero los casos críticos necesitan un mecanismo verificable fuera de la buena voluntad del modelo.
+The human experience can live mainly in the IDE chat, but critical cases need a verifiable mechanism beyond the model's goodwill.
 
 ---
 
-## 4.13 El ahorro debe medirse de extremo a extremo
+## 4.13 Savings must be measured end to end
 
-Rationale consume llamadas y tokens propios.
+Rationale consumes calls and tokens of its own.
 
-No debe prometer que toda consulta será más barata.
+It must not promise that every query will be cheaper.
 
-El ahorro real aparece cuando evita:
+Real savings appear when it avoids:
 
-* Leer decenas de archivos.
-* Repetir arqueología histórica.
-* Proponer una arquitectura incompatible.
-* Reintroducir un incidente.
-* Ejecutar varios intentos fallidos.
+* Reading dozens of files.
+* Repeating historical archaeology.
+* Proposing an incompatible architecture.
+* Reintroducing an incident.
+* Running several failed attempts.
 
-La métrica correcta es el costo total hasta resolver la tarea, no únicamente el tamaño del paquete de contexto.
+The right metric is the total cost until the task is solved, not only the size of the context packet.
 
-## 4.14 Rationale compila contexto; no descarga memoria
+## 4.14 Rationale compiles context; it does not dump memory
 
-El prompt del usuario seguirá describiendo la tarea actual:
+The user's prompt will keep describing the current task:
 
-* Qué se quiere lograr.
-* Qué bug se observa.
-* Cómo se reproduce.
-* Qué comportamiento se esperaba.
-* Qué restricciones temporales existen.
+* What is to be achieved.
+* What bug is observed.
+* How it is reproduced.
+* What behavior was expected.
+* What temporary constraints exist.
 
-Rationale aporta aquello que el usuario no debería tener que repetir:
+Rationale contributes what the user should not have to repeat:
 
-* Decisiones históricas.
-* Reglas de negocio.
-* Riesgos conocidos.
-* Incidentes anteriores.
-* Contratos entre paquetes.
-* Validaciones que deben repetirse.
+* Historical decisions.
+* Business rules.
+* Known risks.
+* Earlier incidents.
+* Contracts between packages.
+* Validations that must be repeated.
 
-La combinación forma el contexto efectivo. Rationale no convierte un prompt ambiguo en una especificación perfecta.
+The combination forms the effective context. Rationale does not turn an ambiguous prompt into a perfect specification.
 
-## 4.15 La identidad del proyecto no es idéntica a la carpeta ni al repositorio
+## 4.15 Project identity is not identical to the folder or the repository
 
-Rationale utilizará una identidad lógica de proyecto. En la primera implementación normalmente corresponderá a un repositorio Git, pero el modelo distinguirá:
+Rationale will use a logical project identity. In the first implementation it will normally correspond to a Git repository, but the model will distinguish:
 
 ```text
 Project
@@ -840,44 +850,44 @@ Project
             └── Target
 ```
 
-Esto permite que un Subject de proyecto gobierne varios paquetes, mientras un registro local permanece limitado a un workspace o componente.
+This allows a project Subject to govern several packages, while a local record stays limited to a workspace or component.
 
-## 4.16 La frescura se comprueba activamente en cada frontera de lectura
+## 4.16 Freshness is actively checked at every read boundary
 
-Un daemon puede fallar y un hook puede no ejecutarse. Por eso, antes de devolver conocimiento como actual, Rationale debe comparar la revisión observada con la revisión evaluada.
+A daemon can fail and a hook may not run. That is why, before returning knowledge as current, Rationale must compare the observed revision with the evaluated revision.
 
-La detección pasiva es una mejora de latencia. La comprobación en consulta es la garantía de corrección.
+Passive detection is a latency improvement. The check at query time is the correctness guarantee.
 
-## 4.17 La identidad conceptual se resuelve de forma determinista antes de usar semántica
+## 4.17 Conceptual identity is resolved deterministically before using semantics
 
-La creación de Subjects no será una escritura libre del agente. Pasará por un resolvedor que consulta:
+Creating Subjects will not be a free write by the agent. It will go through a resolver that queries:
 
-1. ID exacto.
-2. Alias exactos y normalizados.
-3. Bindings compartidos.
-4. Parent domain y scope.
-5. Coincidencia textual FTS.
-6. Similitud semántica opcional.
+1. Exact ID.
+2. Exact and normalized aliases.
+3. Shared bindings.
+4. Parent domain and scope.
+5. FTS text match.
+6. Optional semantic similarity.
 
-La similitud solo amplía candidatos. La decisión final queda explícita y auditable.
+Similarity only widens the candidates. The final decision remains explicit and auditable.
 
-## 4.18 El preflight posee dos modos
+## 4.18 The preflight has two modes
 
 ```text
 Baseline mode:
-Targets conocidos, intención ausente o incompleta.
-Entrega restricciones críticas y riesgos directamente vinculados.
+Known targets, intent absent or incomplete.
+Delivers critical constraints and directly linked risks.
 
 Intent-aware mode:
-Targets + intención + síntomas o reproducción.
-Compara el cambio propuesto contra decisiones y antecedentes.
+Targets + intent + symptoms or reproduction.
+Compares the proposed change against decisions and precedents.
 ```
 
-Esto reduce el punto único de fallo del agente olvidadizo sin afirmar que Rationale conoce una intención inexistente.
+This reduces the single point of failure of the forgetful agent without claiming that Rationale knows an intent that does not exist.
 
-## 4.19 La memoria compartida y el estado local son capas diferentes
+## 4.19 Shared memory and local state are different layers
 
-Rationale distinguirá:
+Rationale will distinguish:
 
 ```text
 Shared canonical layer
@@ -891,33 +901,33 @@ Shared canonical layer
 Local derived layer
 - Binding resolutions
 - Provider coverage
-- Assessments recalculables
+- Recomputable assessments
 - FTS / embeddings / caches
 - Working-tree overlays
 
 Ephemeral session layer
-- Hipótesis
-- Descubrimientos temporales
-- Intención actual
+- Hypotheses
+- Temporary discoveries
+- Current intent
 - Tool traces
 ```
 
-Un equipo comparte el conocimiento canónico mediante Git. Cada computadora reconstruye la representación estructural y declara su propia cobertura.
+A team shares canonical knowledge through Git. Each computer rebuilds the structural representation and declares its own coverage.
 
 ---
 
-# 5. Definición exacta del producto
+# 5. Exact product definition
 
 
-Rationale es una herramienta local, estructurada y consultable que registra el razonamiento consolidado de cambios importantes de software y lo convierte en un **preflight de decisiones** antes de cambios futuros.
+Rationale is a local, structured, queryable tool that records the consolidated reasoning behind important software changes and turns it into a **decision preflight** before future changes.
 
-Su unidad principal continúa siendo un **Rationale Record**, pero el sistema no debe mezclar en un único objeto mutable todo lo que ocurrió y todo lo que hoy se cree sobre ello.
+Its main unit is still a **Rationale Record**, but the system must not mix into a single mutable object everything that happened and everything that is believed about it today.
 
-La v1 diferenciará seis entidades principales:
+v1 will distinguish six main entities:
 
 ## 5.1 `Subject`
 
-Representa el comportamiento o dominio conceptual gobernado.
+Represents the governed behavior or conceptual domain.
 
 ```yaml
 id: authorization.entity-scoped-staff-access
@@ -933,7 +943,7 @@ applies_to:
 
 ## 5.2 `Record`
 
-Representa una decisión, restricción, riesgo o conocimiento operativo consolidado.
+Represents a consolidated decision, constraint, risk, or piece of operational knowledge.
 
 ```yaml
 id: constraint.no-global-admin-for-staff
@@ -946,26 +956,26 @@ scope:
     - authorization.entity-scoped-staff-access
 ```
 
-Un registro puede contener:
+A record can contain:
 
-* Problema.
-* Intención.
-* Decisión.
-* Restricción.
-* Riesgo.
-* Alternativas.
+* Problem.
+* Intent.
+* Decision.
+* Constraint.
+* Risk.
+* Alternatives.
 * Non-goals.
-* Consecuencias.
-* Validaciones.
-* Condiciones de revisión.
+* Consequences.
+* Validations.
+* Review conditions.
 
-En la v1, estos elementos serán campos estructurados dentro del registro. Solo se convertirán en nodos independientes cuando exista una consulta real que justifique esa complejidad.
+In v1, these elements will be structured fields inside the record. They will only become independent nodes when a real query justifies that complexity.
 
 ## 5.3 `Binding`
 
-Relaciona el concepto con una implementación esperada o conocida. Debe separar la declaración portable de su resolución local.
+Relates the concept to an expected or known implementation. It must separate the portable declaration from its local resolution.
 
-Declaración canónica compartida:
+Shared canonical declaration:
 
 ```yaml
 id: binding.authorization.resolve-entity-role
@@ -976,7 +986,7 @@ path_hint: apps/api/src/auth/authorization.ts
 scope: package:npm:@boost/api
 ```
 
-Resolución local derivada:
+Derived local resolution:
 
 ```yaml
 binding_id: binding.authorization.resolve-entity-role
@@ -987,11 +997,11 @@ coverage: complete
 status: current
 ```
 
-La declaración permite compartir el ancla conceptual. La resolución expresa lo que una computadora y una versión concreta del proveedor pudieron comprobar.
+The declaration makes it possible to share the conceptual anchor. The resolution expresses what one computer and one concrete provider version were able to verify.
 
 ## 5.4 `Evidence`
 
-Describe evidencia verificable o referenciada.
+Describes verifiable or referenced evidence.
 
 ```yaml
 type: migration
@@ -1003,7 +1013,7 @@ visibility: repository
 
 ## 5.5 `Approval`
 
-Describe quién aprobó una afirmación normativa y con qué autoridad.
+Describes who approved a normative claim and with what authority.
 
 ```yaml
 actor: user:security-owner
@@ -1015,7 +1025,7 @@ policy: codeowners
 
 ## 5.6 `Assessment`
 
-Describe una evaluación mutable sobre la relación entre un registro y el sistema actual.
+Describes a mutable evaluation of the relationship between a record and the current system.
 
 ```yaml
 record_id: constraint.no-global-admin-for-staff
@@ -1026,32 +1036,32 @@ provider_generation: 184
 assessment_reason: implementation-still-enforces-entity-assignments
 ```
 
-Esta separación es fundamental:
+This separation is fundamental:
 
 ```text
-Record = lo que el proyecto decidió.
-Assessment = lo que Rationale puede afirmar hoy sobre su vigencia y enlace.
+Record = what the project decided.
+Assessment = what Rationale can claim today about its validity and linkage.
 ```
 
-La unidad principal no es:
+The main unit is not:
 
-* Un archivo.
-* Un commit.
-* Una conversación.
-* Un resumen generado por IA.
-* Un documento libre.
-* Un embedding.
-* Una salida de Codebase Memory tomada como verdad absoluta.
+* A file.
+* A commit.
+* A conversation.
+* An AI-generated summary.
+* A free-form document.
+* An embedding.
+* Codebase Memory output taken as absolute truth.
 
-El sistema debe responder:
+The system must answer:
 
-> ¿Qué aprendió el proyecto durante este cambio, quién tenía autoridad para aprobarlo, qué evidencia lo respalda y qué parte de ese aprendizaje continúa gobernando la revisión actual?
+> What did the project learn during this change, who had the authority to approve it, what evidence backs it, and which part of that learning still governs the current revision?
 
-## 5.7 `ProjectScope` y referencias calificadas
+## 5.7 `ProjectScope` and qualified references
 
-`ProjectScope` será un value object, no una séptima entidad persistida independiente. Define dónde gobierna un Subject o Record.
+`ProjectScope` will be a value object, not a seventh independently persisted entity. It defines where a Subject or Record governs.
 
-Jerarquía inicial:
+Initial hierarchy:
 
 ```text
 project
@@ -1062,7 +1072,7 @@ domain:<id>
 target:<provider>:<structural-id>
 ```
 
-Ejemplo:
+Example:
 
 ```yaml
 project_id: boost
@@ -1079,272 +1089,272 @@ excludes:
   - package:npm:@boost/legacy-admin
 ```
 
-Reglas conceptuales:
+Conceptual rules:
 
-* Los registros de proyecto pueden heredarse hacia scopes hijos.
-* La herencia nunca implica inclusión automática en el paquete de contexto; todavía debe existir relevancia estructural o conflicto con la intención.
-* Un registro local no se eleva a proyecto por similitud textual.
-* Un binding siempre incluye proyecto, repositorio, workspace o package cuando estén disponibles.
-* Las dependencias entre paquetes pueden propagar relevancia, pero deben conservar la ruta que explica por qué el registro fue incluido.
-* La federación entre varios repositorios utilizará referencias calificadas en el futuro, sin cambiar la identidad de los Subjects actuales.
+* Project records can be inherited by child scopes.
+* Inheritance never implies automatic inclusion in the context packet; structural relevance or a conflict with the intent must still exist.
+* A local record is not promoted to project level by textual similarity.
+* A binding always includes project, repository, workspace, or package when available.
+* Dependencies between packages can propagate relevance, but they must keep the path that explains why the record was included.
+* Federation across several repositories will use qualified references in the future, without changing the identity of current Subjects.
 
-## 5.8 Contrato de producto de la v1
+## 5.8 v1 product contract
 
-Antes del cambio, Rationale debe:
+Before the change, Rationale must:
 
-1. Recibir targets, revisión y presupuesto; además intención, síntomas o reproducción cuando existan.
-2. Verificar coherencia entre Git, proveedor estructural y evaluaciones.
-3. Resolver los sujetos afectados.
-4. Recuperar decisiones y restricciones aprobadas.
-5. Comparar la intención contra ellas.
-6. Entregar un paquete compacto con incertidumbre explícita.
+1. Receive targets, revision, and budget; plus intent, symptoms, or reproduction when available.
+2. Verify coherence between Git, the structural provider, and the evaluations.
+3. Resolve the affected subjects.
+4. Retrieve approved decisions and constraints.
+5. Compare the intent against them.
+6. Deliver a compact packet with explicit uncertainty.
 
-Después del cambio, Rationale debe:
+After the change, Rationale must:
 
-1. Recibir el diff y las validaciones.
-2. Guardar hechos mecánicos.
-3. Proponer únicamente nuevos deltas normativos.
-4. Solicitar confirmaciones concretas.
-5. Actualizar bindings y assessments.
-6. Conservar supersesiones y linaje sin reescribir la historia.
-7. Detectar si Git avanzó fuera del flujo y degradar los assessments afectados.
-8. Resolver Subjects existentes antes de permitir crear uno nuevo.
-9. Compartir declaraciones canónicas mediante Git sin compartir obligatoriamente índices locales.
-
----
-
-# 6. Qué preguntas debe responder
-
-## 6.1 Sobre código existente
-
-* ¿Por qué existe esta función?
-* ¿Qué problema originó este comportamiento?
-* ¿Esta condición es deliberada?
-* ¿Qué decisión gobierna este módulo?
-* ¿Qué restricciones debo preservar?
-* ¿Qué riesgo ya fue descubierto?
-* ¿Qué pruebas protegen este comportamiento?
-* ¿Qué partes del sistema dependen conceptualmente de esto?
-* ¿Qué podría romper aunque el código compile?
-* ¿Qué información todavía es desconocida?
-
-## 6.2 Antes de realizar un cambio
-
-* ¿La intención contradice una decisión vigente?
-* ¿Estoy intentando restaurar un comportamiento eliminado?
-* ¿Qué invariantes debo preservar?
-* ¿Qué contratos pueden cambiar?
-* ¿Qué riesgos están relacionados con esta intención?
-* ¿Qué validaciones deberían repetirse?
-* ¿Qué otros componentes están implicados?
-* ¿Qué conocimiento es confiable y qué parte es inferida?
-
-## 6.3 Sobre la vigencia del conocimiento
-
-* ¿Esta decisión continúa activa?
-* ¿La implementación se movió?
-* ¿El enlace con el código se degradó?
-* ¿Cambió el comportamiento o solamente la estructura?
-* ¿Qué evidencia sigue siendo válida?
-* ¿Existe una decisión posterior que la reemplaza?
-* ¿Hay registros contradictorios?
-* ¿Qué necesita revisión humana?
-
-## 6.4 Sobre el historial
-
-* ¿Qué cambio introdujo esta restricción?
-* ¿Qué incidente motivó la decisión?
-* ¿Qué alternativas se descartaron?
-* ¿Qué intentos anteriores fallaron?
-* ¿Qué consecuencia inesperada se descubrió?
-* ¿Cuándo se validó por última vez?
+1. Receive the diff and the validations.
+2. Store mechanical facts.
+3. Propose only new normative deltas.
+4. Request concrete confirmations.
+5. Update bindings and assessments.
+6. Keep supersessions and lineage without rewriting history.
+7. Detect whether Git moved forward outside the flow and degrade the affected assessments.
+8. Resolve existing Subjects before allowing a new one to be created.
+9. Share canonical declarations through Git without necessarily sharing local indexes.
 
 ---
 
-# 7. Lo que Rationale no es
+# 6. Questions it must answer
+
+## 6.1 About existing code
+
+* Why does this function exist?
+* What problem gave rise to this behavior?
+* Is this condition deliberate?
+* What decision governs this module?
+* What constraints must I preserve?
+* What risk was already discovered?
+* What tests protect this behavior?
+* What parts of the system conceptually depend on this?
+* What could break even if the code compiles?
+* What information is still unknown?
+
+## 6.2 Before making a change
+
+* Does the intent contradict a decision in force?
+* Am I trying to restore a removed behavior?
+* What invariants must I preserve?
+* What contracts may change?
+* What risks are related to this intent?
+* What validations should be repeated?
+* What other components are involved?
+* What knowledge is trustworthy and what part is inferred?
+
+## 6.3 About the validity of knowledge
+
+* Is this decision still active?
+* Did the implementation move?
+* Did the link to the code degrade?
+* Did the behavior change or only the structure?
+* What evidence is still valid?
+* Is there a later decision that replaces it?
+* Are there contradictory records?
+* What needs human review?
+
+## 6.4 About history
+
+* What change introduced this constraint?
+* What incident motivated the decision?
+* What alternatives were discarded?
+* What earlier attempts failed?
+* What unexpected consequence was discovered?
+* When was it last validated?
+
+---
+
+# 7. What Rationale is not
 
 
-## 7.1 No es otro indexador de código
+## 7.1 It is not another code indexer
 
-Rationale no debe volver a implementar todo lo que Codebase Memory ya resuelve.
+Rationale must not reimplement everything Codebase Memory already solves.
 
-No necesita reconstruir por sí solo:
+It does not need to rebuild on its own:
 
-* AST completos.
+* Complete ASTs.
 * Call graphs.
-* Resolución de símbolos.
-* Búsqueda estructural.
-* Impacto de cambios.
-* Relaciones entre servicios.
-* Búsqueda semántica general de código.
-* Historial estructural que el proveedor ya exponga con garantías suficientes.
+* Symbol resolution.
+* Structural search.
+* Change impact.
+* Relationships between services.
+* General semantic code search.
+* Structural history the provider already exposes with sufficient guarantees.
 
-Estas capacidades se consumirán mediante un adaptador versionado.
+These capabilities will be consumed through a versioned adapter.
 
 ---
 
-## 7.2 No es un reemplazo de Git
+## 7.2 It is not a replacement for Git
 
-Git continuará siendo la fuente de verdad sobre:
+Git will remain the source of truth on:
 
-* Qué cambió.
-* Quién lo cambió.
-* Cuándo ocurrió.
-* Qué revisión contiene el cambio.
-* Qué líneas fueron modificadas.
+* What changed.
+* Who changed it.
+* When it happened.
+* Which revision contains the change.
+* Which lines were modified.
 
-Rationale añadirá significado causal y evaluación de vigencia.
+Rationale will add causal meaning and validity evaluation.
 
-> Git remembers what changed.  
+> Git remembers what changed.\
 > Rationale remembers why it still matters.
 
 ---
 
-## 7.3 No es un almacén de conversaciones
+## 7.3 It is not a conversation store
 
-Rationale no debe indexar y recuperar conversaciones completas.
+Rationale must not index and retrieve complete conversations.
 
-Las conversaciones contienen:
+Conversations contain:
 
-* Ideas temporales.
-* Hipótesis incorrectas.
-* Repeticiones.
-* Confusión.
-* Caminos descartados.
-* Decisiones que luego cambiaron.
-* Datos privados.
-* Posibles instrucciones maliciosas.
+* Temporary ideas.
+* Wrong hypotheses.
+* Repetitions.
+* Confusion.
+* Discarded paths.
+* Decisions that later changed.
+* Private data.
+* Possible malicious instructions.
 
-El sistema debe extraer el aprendizaje consolidado, no preservar todo el ruido.
-
----
-
-## 7.4 No es solamente un sistema de ADR
-
-Los Architecture Decision Records suelen representar decisiones grandes:
-
-* Elección de base de datos.
-* Arquitectura distribuida.
-* Estrategia de autenticación.
-* Cambio de framework.
-
-Rationale también debe representar decisiones más locales:
-
-* Por qué una función valida una asignación.
-* Por qué un límite específico existe.
-* Por qué una migración desactiva en lugar de borrar.
-* Por qué un usuario es una excepción.
-* Por qué un proceso debe ser idempotente.
-* Por qué un endpoint rechaza determinado estado.
-
-Un ADR puede ser evidencia o una fuente importada de un Rationale Record, pero no sustituye:
-
-* Procedencia.
-* Autoridad.
-* Binding por revisión.
-* Assessment de aplicabilidad.
-* Comparación contra la intención.
+The system must extract the consolidated learning, not preserve all the noise.
 
 ---
 
-## 7.5 No es una memoria completa de la organización
+## 7.4 It is not only an ADR system
 
-La primera versión no intentará modelar:
+Architecture Decision Records usually represent large decisions:
 
-* Personas como red social completa.
-* Reuniones completas.
-* Cultura empresarial.
-* Clientes.
-* Contratos.
-* Estrategia.
-* Toda la historia de producto.
+* Choice of database.
+* Distributed architecture.
+* Authentication strategy.
+* Framework change.
 
-El dominio inicial será:
+Rationale must also represent more local decisions:
 
-> Contexto causal necesario para modificar software de forma segura.
+* Why a function validates an assignment.
+* Why a specific limit exists.
+* Why a migration deactivates instead of deleting.
+* Why a user is an exception.
+* Why a process must be idempotent.
+* Why an endpoint rejects a certain state.
 
----
+An ADR can be evidence or an imported source of a Rationale Record, but it does not replace:
 
-## 7.6 No es un sistema autónomo que inventa la historia
-
-Rationale puede:
-
-* Recuperar evidencia.
-* Proponer hipótesis.
-* Detectar señales.
-* Corroborar fuentes.
-* Solicitar confirmación.
-
-No puede garantizar que reconstruirá un motivo que nunca fue documentado.
+* Provenance.
+* Authority.
+* Per-revision binding.
+* Applicability assessment.
+* Comparison against the intent.
 
 ---
 
-## 7.7 No es una capa que siempre reduce tokens
+## 7.5 It is not a complete organizational memory
 
-En tareas pequeñas puede agregar costo.
+The first version will not try to model:
 
-Debe activarse con presupuestos y políticas, y demostrar valor en tareas donde evita lectura extensa, arqueología repetida o errores costosos.
+* People as a complete social network.
+* Complete meetings.
+* Company culture.
+* Customers.
+* Contracts.
+* Strategy.
+* The whole product history.
+
+The initial domain will be:
+
+> Causal context needed to modify software safely.
 
 ---
 
-## 7.8 No es un protocolo abierto desde el primer commit
+## 7.6 It is not an autonomous system that invents history
 
-La visión final puede convertirse en protocolo, pero primero debe existir:
+Rationale can:
 
-* Una implementación útil.
-* Casos reales.
-* Más de un consumidor o proveedor.
-* Versionado probado.
+* Retrieve evidence.
+* Propose hypotheses.
+* Detect signals.
+* Corroborate sources.
+* Request confirmation.
+
+It cannot guarantee that it will reconstruct a reason that was never documented.
+
+---
+
+## 7.7 It is not a layer that always reduces tokens
+
+On small tasks it can add cost.
+
+It must be activated with budgets and policies, and prove its value on tasks where it avoids extensive reading, repeated archaeology, or costly mistakes.
+
+---
+
+## 7.8 It is not an open protocol from the first commit
+
+The final vision may become a protocol, but first there must be:
+
+* A useful implementation.
+* Real cases.
+* More than one consumer or provider.
+* Proven versioning.
 * Conformance tests.
 
-La primera entrega será un producto y un modelo de contexto versionado.
+The first delivery will be a product and a versioned context model.
 
-El protocolo abierto será una consecuencia del uso, no una declaración inicial.
-
----
-
-## 7.9 No es un fork interno de Codebase Memory
-
-Rationale no debe:
-
-* Leer tablas internas no públicas de Codebase Memory.
-* Importar headers privados.
-* Compilarse dentro de su repositorio.
-* Depender de IDs sin contrato de estabilidad.
-* Asumir que una herramienta o schema interno nunca cambiará.
-
-La integración correcta será mediante una interfaz pública, adaptador y negociación de capacidades.
+The open protocol will be a consequence of use, not an initial declaration.
 
 ---
 
-# 8. Modelo conceptual
+## 7.9 It is not an internal fork of Codebase Memory
+
+Rationale must not:
+
+* Read non-public internal Codebase Memory tables.
+* Import private headers.
+* Be compiled inside its repository.
+* Depend on IDs without a stability contract.
+* Assume that an internal tool or schema will never change.
+
+The right integration will be through a public interface, an adapter, and capability negotiation.
+
+---
+
+# 8. Conceptual model
 
 
-El modelo conceptual completo continúa siendo útil para comprender el dominio:
+The complete conceptual model is still useful for understanding the domain:
 
 ```text
-Problema
+Problem
    ↓
-Intención
+Intent
    ↓
-Cambio
+Change
    ↓
-Decisiones
+Decisions
    ↓
-Restricciones
+Constraints
    ↓
-Comportamientos del sistema
+System behaviors
    ↓
-Anclas de implementación
+Implementation anchors
    ↓
-Validaciones
+Validations
    ↓
-Consecuencias
+Consequences
    ↓
-Vigencia, autoridad y confianza
+Validity, authority, and trust
 ```
 
-Los conceptos de dominio serán:
+The domain concepts will be:
 
 * `Problem`
 * `Intent`
@@ -1361,7 +1371,7 @@ Los conceptos de dominio serán:
 * `Approval`
 * `Assessment`
 
-Relaciones conceptuales:
+Conceptual relationships:
 
 ```text
 Change       --SOLVES----------> Problem
@@ -1383,11 +1393,11 @@ Subject      --ALIASES---------> Subject
 Subject      --SPLIT_INTO------> Subject
 ```
 
-## 8.1 Modelo conceptual completo vs. modelo persistido de la v1
+## 8.1 Complete conceptual model vs. v1 persisted model
 
-El sistema no necesita materializar todos estos conceptos como nodos desde el inicio.
+The system does not need to materialize all these concepts as nodes from the start.
 
-La persistencia de la v1 utilizará:
+v1 persistence will use:
 
 ```text
 Subject
@@ -1398,18 +1408,18 @@ Approval
 Assessment
 ```
 
-`Problem`, `Intent`, `Risk`, `Validation`, `Consequence` y `Change` permanecerán como estructuras internas del `Record` hasta que casos reales demuestren que requieren identidad independiente.
+`Problem`, `Intent`, `Risk`, `Validation`, `Consequence`, and `Change` will remain internal structures of the `Record` until real cases show that they need independent identity.
 
-Esto conserva la visión completa sin pagar prematuramente el costo de un grafo de dominio excesivo.
+This keeps the complete vision without prematurely paying the cost of an excessive domain graph.
 
 ---
 
 # 9. Concept-first, code-anchored
 
 
-Cada registro debe tener un sujeto conceptual estable.
+Every record must have a stable conceptual subject.
 
-Ejemplo:
+Example:
 
 ```yaml
 subject:
@@ -1420,7 +1430,7 @@ subject:
     - auth.staff-per-entity
 ```
 
-Después tendrá múltiples bindings o anclas:
+It will then have multiple bindings or anchors:
 
 ```yaml
 bindings:
@@ -1453,11 +1463,11 @@ bindings:
     revision: 91ac21f
 ```
 
-Las anclas pueden cambiar.
+Anchors can change.
 
-El concepto debe mantenerse cuando la decisión siga representando el mismo comportamiento.
+The concept must be kept when the decision still represents the same behavior.
 
-Si una implementación es dividida:
+If an implementation is split:
 
 ```yaml
 concept_lineage:
@@ -1469,7 +1479,7 @@ concept_lineage:
       - authorization.staff-entity-assignment
 ```
 
-Si una función se divide sin que el concepto cambie:
+If a function is split without the concept changing:
 
 ```yaml
 binding_lineage:
@@ -1482,7 +1492,7 @@ binding_lineage:
       - gateway:authorizeEntityRequest
 ```
 
-Si no puede reconstruirse automáticamente:
+If it cannot be reconstructed automatically:
 
 ```yaml
 assessment:
@@ -1492,32 +1502,32 @@ assessment:
   requires_review: true
 ```
 
-La decisión no se pierde solamente porque su implementación se movió.
+The decision is not lost just because its implementation moved.
 
-## 9.1 Identidad conceptual y deduplicación
+## 9.1 Conceptual identity and deduplication
 
-Dos agentes pueden crear IDs diferentes para el mismo concepto:
+Two agents can create different IDs for the same concept:
 
 ```text
 authorization.entity-scoped-staff-access
 auth.staff-per-entity-permissions
 ```
 
-Por eso un agente no escribirá directamente un Subject nuevo. `finalize_change` enviará una propuesta al **Subject Resolver**.
+That is why an agent will not write a new Subject directly. `finalize_change` will send a proposal to the **Subject Resolver**.
 
-Orden obligatorio de resolución:
+Mandatory resolution order:
 
 ```text
-1. ID o alias exacto.
-2. Nombre normalizado dentro del mismo proyecto y domain.
-3. Overlap de bindings estructurales.
-4. Relación parent/child y compatibilidad de scope.
-5. Búsqueda FTS por título, descripción e invariantes.
-6. Similitud semántica local, si está habilitada.
-7. Revisión de candidatos y decisión explícita.
+1. Exact ID or alias.
+2. Normalized name within the same project and domain.
+3. Overlap of structural bindings.
+4. Parent/child relationship and scope compatibility.
+5. FTS search by title, description, and invariants.
+6. Local semantic similarity, if enabled.
+7. Candidate review and explicit decision.
 ```
 
-Resultado posible:
+Possible result:
 
 ```yaml
 resolution:
@@ -1533,13 +1543,13 @@ resolution:
   novelty_reason: null
 ```
 
-Si el agente decide `create` frente a un candidato de alta similitud, debe explicar una `novelty_reason` concreta:
+If the agent decides `create` in the face of a highly similar candidate, it must explain a concrete `novelty_reason`:
 
 ```text
-Este Subject representa el contrato visual del dashboard, no la política de asignación del backend; ambos se relacionan, pero poseen ciclos de vida y autoridades diferentes.
+This Subject represents the dashboard's visual contract, not the backend assignment policy; the two are related, but they have different lifecycles and authorities.
 ```
 
-Operaciones permitidas:
+Allowed operations:
 
 ```text
 alias
@@ -1551,20 +1561,20 @@ scope-expanded
 supersede
 ```
 
-Reglas:
+Rules:
 
-* La similitud no fusiona automáticamente.
-* Un overlap de bindings no demuestra identidad conceptual.
-* Un merge o split requiere evento auditable.
-* Los aliases deben ser únicos dentro del proyecto.
-* La base local puede mantener una cola de colisiones conceptuales sin bloquear el trabajo cotidiano.
-* Cada operación conserva linaje, actor, evidencia, scope y revisión.
+* Similarity does not merge automatically.
+* Binding overlap does not demonstrate conceptual identity.
+* A merge or split requires an auditable event.
+* Aliases must be unique within the project.
+* The local database can keep a queue of conceptual collisions without blocking day-to-day work.
+* Every operation keeps lineage, actor, evidence, scope, and revision.
 
-## 9.2 `novelty_reason` estructurada y resistente al bypass
+## 9.2 Structured, bypass-resistant `novelty_reason`
 
-La `novelty_reason` no debe depender solamente de un prompt bien redactado. Debe tener una forma auditable que obligue a comparar el concepto propuesto contra candidatos concretos.
+`novelty_reason` must not depend only on a well-written prompt. It must have an auditable form that forces the proposed concept to be compared against concrete candidates.
 
-Ejemplo:
+Example:
 
 ```yaml
 novelty_reason:
@@ -1596,7 +1606,7 @@ novelty_reason:
   review_state: unreviewed
 ```
 
-Tipos iniciales de diferencia:
+Initial difference types:
 
 ```text
 different_behavior
@@ -1609,17 +1619,17 @@ existing_subject_is_too_broad
 existing_subject_is_too_narrow
 ```
 
-Una razón se considera insuficiente cuando:
+A reason is considered insufficient when it:
 
-* No identifica qué candidatos fueron comparados.
-* Repite que el concepto es nuevo sin expresar una diferencia observable.
-* Utiliza frases genéricas como `is different`, `separate concern` o `new functionality` sin contraste.
-* Confunde archivos diferentes con conceptos diferentes.
-* Confunde wording diferente con identidad diferente.
-* No aporta evidencia cuando existe similitud alta de bindings, invariantes o scope.
-* Declara una autoridad distinta sin indicar el dominio responsable.
+* Does not identify which candidates were compared.
+* Repeats that the concept is new without expressing an observable difference.
+* Uses generic phrases such as `is different`, `separate concern`, or `new functionality` without contrast.
+* Confuses different files with different concepts.
+* Confuses different wording with different identity.
+* Provides no evidence when there is high similarity of bindings, invariants, or scope.
+* Declares a different authority without naming the responsible domain.
 
-El Subject Resolver debe devolver un resultado explícito:
+The Subject Resolver must return an explicit result:
 
 ```yaml
 novelty_validation:
@@ -1631,76 +1641,76 @@ novelty_validation:
   decision_source: deterministic_rules
 ```
 
-Reglas de producto:
+Product rules:
 
-* Un LLM puede redactar la propuesta, pero no autoaprobar su suficiencia mediante otra explicación libre.
-* La validación básica debe ser determinista y basada en schema, candidatos mencionados, contraste y evidencia.
-* Una razón insuficiente devuelve los candidatos y solicita corrección; no inventa el Subject por defecto.
-* En cambios no críticos puede permitirse continuar con una colisión pendiente para no bloquear el trabajo.
-* En dominios críticos, la creación puede requerir revisión humana antes de adquirir autoridad normativa.
-* La similitud semántica nunca es prueba de identidad ni motivo suficiente para bloquear permanentemente una creación.
+* An LLM may draft the proposal, but it may not self-approve its sufficiency through another free-form explanation.
+* Basic validation must be deterministic and based on the schema, the candidates mentioned, the contrast, and the evidence.
+* An insufficient reason returns the candidates and asks for a correction; it does not invent the Subject by default.
+* For non-critical changes, continuing with a pending collision may be allowed so work is not blocked.
+* In critical domains, creation may require human review before it acquires normative authority.
+* Semantic similarity is never proof of identity nor a sufficient reason to permanently block a creation.
 
-Durante el piloto se medirán:
+During the pilot the following will be measured:
 
-* Subjects nuevos propuestos.
-* Candidatos similares presentados.
-* Porcentaje de `novelty_reason` rechazadas por ser genéricas.
-* Subjects duplicados detectados posteriormente.
-* Reutilizaciones correctas.
-* Fusiones o splits que tuvieron que revertirse.
-* Tiempo humano añadido por la resolución.
+* New Subjects proposed.
+* Similar candidates presented.
+* Percentage of `novelty_reason` values rejected as generic.
+* Duplicate Subjects detected later.
+* Correct reuses.
+* Merges or splits that had to be reverted.
+* Human time added by resolution.
 
-## 9.3 Promesa realista
+## 9.3 Realistic promise
 
-La v1 promete:
+v1 promises:
 
-> Mantener bindings explícitos, detectar candidatos de relocalización y conservar linaje aprobado.
+> To keep explicit bindings, detect relocation candidates, and preserve approved lineage.
 
-La v1 no promete:
+v1 does not promise:
 
-> Reconstruir automáticamente identidad conceptual perfecta después de cualquier migración entre repositorios, lenguajes o arquitecturas.
+> To automatically reconstruct perfect conceptual identity after any migration across repositories, languages, or architectures.
 
 ---
 
-# 10. Modelo de confianza, procedencia y autoridad
+# 10. Trust, provenance, and authority model
 
 
-Rationale debe separar tres preguntas distintas:
+Rationale must separate three distinct questions:
 
 ```text
-Epistemología: ¿cómo se obtuvo esta afirmación?
-Procedencia: ¿quién o qué la produjo?
-Autoridad: ¿quién podía aprobarla como norma?
+Epistemology: how was this claim obtained?
+Provenance: who or what produced it?
+Authority: who could approve it as a rule?
 ```
 
-## 10.1 Hechos mecánicos
+## 10.1 Mechanical facts
 
-Datos verificables automáticamente:
+Automatically verifiable data:
 
-* Este commit modificó el archivo.
-* Esta función llama otra función según el proveedor.
-* Esta prueba fue ejecutada.
-* Esta dependencia fue eliminada.
-* Esta ruta cambió.
-* Esta tabla fue modificada.
+* This commit modified the file.
+* This function calls another function according to the provider.
+* This test was run.
+* This dependency was removed.
+* This route changed.
+* This table was modified.
 
-Clasificación:
+Classification:
 
 ```yaml
 epistemic_status: observed
 ```
 
-La observación debe registrar proveedor, versión, revisión y cobertura.
+The observation must record provider, version, revision, and coverage.
 
-## 10.2 Afirmaciones humanas
+## 10.2 Human claims
 
-Información expresada explícitamente por una persona:
+Information explicitly stated by a person:
 
 ```text
-El límite de 50 existe porque la API cobra más a partir de 51.
+The limit of 50 exists because the API charges more from 51 on.
 ```
 
-Clasificación:
+Classification:
 
 ```yaml
 epistemic_status: stated
@@ -1709,28 +1719,28 @@ provenance:
   actor: user:rolando
 ```
 
-Esto no significa automáticamente que sea una política aprobada.
+This does not automatically mean it is an approved policy.
 
-## 10.3 Afirmaciones corroboradas
+## 10.3 Corroborated claims
 
-Información respaldada por varias fuentes independientes.
+Information backed by several independent sources.
 
-Ejemplo:
+Example:
 
-* Un issue menciona aislamiento entre entidades.
-* Se añade una prueba de acceso cruzado.
-* La migración elimina permisos globales.
+* An issue mentions isolation between entities.
+* A cross-access test is added.
+* The migration removes global permissions.
 
-Clasificación:
+Classification:
 
 ```yaml
 epistemic_status: corroborated
 confidence: 0.88
 ```
 
-## 10.4 Inferencias
+## 10.4 Inferences
 
-Conclusiones producidas por un agente:
+Conclusions produced by an agent:
 
 ```yaml
 epistemic_status: inferred
@@ -1738,9 +1748,9 @@ confidence: 0.54
 requires_confirmation: true
 ```
 
-Una inferencia jamás debe transformarse automáticamente en una decisión aprobada.
+An inference must never automatically become an approved decision.
 
-## 10.5 Afirmaciones disputadas y desconocidas
+## 10.5 Disputed and unknown claims
 
 ```yaml
 epistemic_status: disputed
@@ -1750,11 +1760,11 @@ epistemic_status: disputed
 epistemic_status: unknown
 ```
 
-El estado `unknown` es una respuesta válida y preferible a una explicación inventada.
+The `unknown` status is a valid answer and preferable to an invented explanation.
 
-## 10.6 Autoridad
+## 10.6 Authority
 
-Estados mínimos:
+Minimum states:
 
 ```text
 unreviewed
@@ -1763,7 +1773,7 @@ policy
 revoked
 ```
 
-Roles de autoridad posibles:
+Possible authority roles:
 
 ```text
 contributor
@@ -1775,7 +1785,7 @@ architecture-owner
 repository-policy
 ```
 
-Ejemplo:
+Example:
 
 ```yaml
 authority:
@@ -1785,9 +1795,9 @@ authority:
   approval_policy: codeowners
 ```
 
-## 10.7 Regla para conocimiento crítico
+## 10.7 Rule for critical knowledge
 
-Una restricción crítica solo puede bloquear si cumple simultáneamente:
+A critical constraint may only block if it simultaneously satisfies:
 
 ```text
 kind = constraint
@@ -1799,18 +1809,18 @@ revision_consistency = exact
 conflict = concrete
 ```
 
-Nunca se bloqueará por:
+It will never block because of:
 
-* Inferencia.
-* Similitud vectorial.
-* Binding stale.
-* Cobertura estructural desconocida.
-* Resumen generado por LLM.
-* Ausencia de una relación en el proveedor.
+* An inference.
+* Vector similarity.
+* A stale binding.
+* Unknown structural coverage.
+* An LLM-generated summary.
+* The absence of a relationship in the provider.
 
 ---
 
-# 11. Estructura de una afirmación
+# 11. Structure of a claim
 
 
 ```yaml
@@ -1865,7 +1875,7 @@ claim:
       - authorization.entity-scoped-staff-access
 ```
 
-Estados epistemológicos posibles:
+Possible epistemic states:
 
 ```text
 observed
@@ -1877,7 +1887,7 @@ disputed
 unknown
 ```
 
-Estados de autoridad:
+Authority states:
 
 ```text
 unreviewed
@@ -1886,15 +1896,15 @@ policy
 revoked
 ```
 
-## 11.1 El texto libre nunca es ejecutable
+## 11.1 Free text is never executable
 
-Todo campo textual debe considerarse contenido no confiable.
+Every text field must be considered untrusted content.
 
-El paquete final debe envolverlo como dato y nunca permitir que instrucciones contenidas en evidencia o explicaciones alteren el comportamiento del agente.
+The final packet must wrap it as data and never allow instructions contained in evidence or explanations to alter the agent's behavior.
 
-## 11.2 Representación declarativa de restricciones
+## 11.2 Declarative representation of constraints
 
-Cuando sea posible, una restricción tendrá una forma estructurada:
+When possible, a constraint will have a structured form:
 
 ```yaml
 constraint_expression:
@@ -1905,29 +1915,29 @@ constraint_expression:
     - actor_type: staff
 ```
 
-Y una explicación humana separada:
+And a separate human explanation:
 
 ```yaml
 rationale: >
   Multi-entity access must not imply global administration.
 ```
 
-La representación declarativa facilita validación y reduce ambigüedad; la explicación conserva el motivo.
+The declarative representation makes validation easier and reduces ambiguity; the explanation keeps the reason.
 
 ---
 
-# 12. Estado multidimensional
+# 12. Multidimensional state
 
 
-Rationale no debe utilizar un único estado general como `possibly-stale`.
+Rationale must not use a single general state such as `possibly-stale`.
 
-Tampoco debe multiplicar estados hasta que cada combinación sea imposible de entender.
+Nor must it multiply states until every combination becomes impossible to understand.
 
-La v1 utilizará cuatro dimensiones mínimas.
+v1 will use four minimum dimensions.
 
-## 12.1 Estado epistemológico
+## 12.1 Epistemic state
 
-Indica qué sabemos sobre la afirmación:
+Indicates what we know about the claim:
 
 ```text
 observed
@@ -1938,9 +1948,9 @@ disputed
 unknown
 ```
 
-## 12.2 Autoridad
+## 12.2 Authority
 
-Indica si la afirmación normativa fue aprobada:
+Indicates whether the normative claim was approved:
 
 ```text
 unreviewed
@@ -1949,9 +1959,9 @@ policy
 revoked
 ```
 
-## 12.3 Aplicabilidad
+## 12.3 Applicability
 
-Indica si la decisión continúa gobernando el sistema:
+Indicates whether the decision still governs the system:
 
 ```text
 active
@@ -1959,11 +1969,11 @@ superseded
 unknown
 ```
 
-`Suspected drift` no será una aplicabilidad permanente. Será una señal o evaluación pendiente.
+`Suspected drift` will not be a permanent applicability. It will be a signal or a pending evaluation.
 
-## 12.4 Estado del enlace
+## 12.4 Link state
 
-Indica la calidad de la conexión con la implementación actual:
+Indicates the quality of the connection to the current implementation:
 
 ```text
 current
@@ -1971,9 +1981,9 @@ stale
 unresolved
 ```
 
-Los detalles `relocated`, `partially-linked`, `degraded` y `orphaned` pueden mantenerse como razones internas, pero no necesitan convertirse en estados públicos separados en la v1.
+The details `relocated`, `partially-linked`, `degraded`, and `orphaned` can be kept as internal reasons, but they do not need to become separate public states in v1.
 
-## 12.5 Consistencia por revisión
+## 12.5 Per-revision consistency
 
 ```text
 exact
@@ -1983,11 +1993,11 @@ assessment-behind
 unresolved
 ```
 
-## 12.6 Atención calculada
+## 12.6 Computed attention
 
-La atención no será un estado persistente.
+Attention will not be a persisted state.
 
-Se calculará:
+It will be computed:
 
 ```text
 attention =
@@ -2000,7 +2010,7 @@ attention =
   × revision_consistency
 ```
 
-Ejemplo:
+Example:
 
 ```yaml
 state:
@@ -2011,158 +2021,158 @@ state:
   revision_consistency: exact
 ```
 
-Una función pudo haberse movido y el binding haberse reparado. Si la decisión continúa activa, la herramienta no debe generar una alerta solo por el movimiento.
+A function may have moved and the binding may have been repaired. If the decision is still active, the tool must not raise an alert just because of the move.
 
 ---
 
-# 13. Clasificación de cambios
+# 13. Change classification
 
-Antes de invalidar o alertar, Rationale debe clasificar el cambio.
+Before invalidating or alerting, Rationale must classify the change.
 
-## 13.1 Cambio cosmético
+## 13.1 Cosmetic change
 
-Ejemplos:
+Examples:
 
-* Formato.
-* Comentarios.
-* Renombre local de variables.
-* Reordenamiento.
-* Cambio de estilo.
+* Formatting.
+* Comments.
+* Local variable renames.
+* Reordering.
+* Style change.
 
-Acción:
+Action:
 
 ```text
-No alertar.
-No modificar aplicabilidad.
+Do not alert.
+Do not modify applicability.
 ```
 
-## 13.2 Refactor estructural
+## 13.2 Structural refactor
 
-Ejemplos:
+Examples:
 
 * Extract Method.
-* Movimiento de función.
-* División de clase.
-* Cambio de archivo.
-* Conversión de función a servicio.
+* Moving a function.
+* Splitting a class.
+* Changing files.
+* Turning a function into a service.
 
-Acción:
+Action:
 
 ```text
-Intentar reconectar las anclas.
-Actualizar linkage.
-No asumir cambio conceptual.
+Try to reconnect the anchors.
+Update linkage.
+Do not assume a conceptual change.
 ```
 
-## 13.3 Cambio local de comportamiento
+## 13.3 Local behavior change
 
-Ejemplos:
+Examples:
 
-* Modificación de una condición.
-* Nuevo caso de error.
-* Ajuste en validación.
-* Cambio de fallback.
+* Modifying a condition.
+* A new error case.
+* A validation adjustment.
+* A fallback change.
 
-Acción:
+Action:
 
 ```text
-Revisar restricciones relacionadas.
-Mostrar aviso solo si existe riesgo suficiente.
+Review related constraints.
+Show a notice only if there is enough risk.
 ```
 
-## 13.4 Cambio de contrato
+## 13.4 Contract change
 
-Ejemplos:
+Examples:
 
-* Entradas o salidas.
-* Respuestas HTTP.
-* Persistencia.
-* Eventos.
-* Autorización.
-* Integraciones externas.
+* Inputs or outputs.
+* HTTP responses.
+* Persistence.
+* Events.
+* Authorization.
+* External integrations.
 
-Acción:
+Action:
 
 ```text
-Marcar decisiones relacionadas para análisis.
-Recomendar validaciones.
+Mark related decisions for analysis.
+Recommend validations.
 ```
 
-## 13.5 Cambio conceptual
+## 13.5 Conceptual change
 
-Ejemplos:
+Examples:
 
 ```text
-Antes: acceso explícito por entidad.
-Ahora: acceso global heredado.
+Before: explicit per-entity access.
+Now: inherited global access.
 ```
 
-Acción:
+Action:
 
 ```text
-Comparar contra decisiones activas.
-Advertir conflicto.
-Bloquear únicamente si existe una restricción crítica confirmada.
+Compare against active decisions.
+Warn about the conflict.
+Block only if there is a confirmed critical constraint.
 ```
 
 ---
 
-# 14. Prevención de fatiga de alertas
+# 14. Preventing alert fatigue
 
 
-Rationale debe evitar que todos los cambios produzcan advertencias.
+Rationale must keep every change from producing warnings.
 
-Principios:
+Principles:
 
-* Los refactors deben procesarse silenciosamente cuando los bindings puedan repararse.
-* Los enlaces stale no siempre deben mostrarse.
-* Las advertencias repetidas deben agruparse.
-* Las alertas deben tener prioridad.
-* Solo las restricciones críticas aprobadas pueden producir bloqueos.
-* Una inferencia nunca debe bloquear un cambio.
-* Un cambio estructural no debe presentarse como violación conceptual.
-* Las alertas deben estar relacionadas con la intención o el diff actual.
-* La inconsistencia de revisión debe mostrarse antes de cualquier conclusión.
-* Una cobertura incompleta no debe convertirse en certeza negativa.
+* Refactors must be processed silently when bindings can be repaired.
+* Stale links must not always be shown.
+* Repeated warnings must be grouped.
+* Alerts must have priority.
+* Only approved critical constraints may produce blocks.
+* An inference must never block a change.
+* A structural change must not be presented as a conceptual violation.
+* Alerts must relate to the intent or to the current diff.
+* Revision inconsistency must be shown before any conclusion.
+* Incomplete coverage must not become negative certainty.
 
-Una advertencia buena sería:
-
-```text
-La intención propuesta puede restaurar acceso global para usuarios de soporte.
-
-Esto contradice una restricción crítica aprobada:
-El acceso multi-entidad debe resolverse mediante asignaciones por entidad.
-
-Autoridad: security-owner.
-Aplicabilidad: activa.
-Revisión estructural: exacta.
-Evidencia: migración, pruebas y decisión aprobada.
-```
-
-Una advertencia mala sería:
+A good warning would be:
 
 ```text
-El archivo authorization.ts cambió.
-Quince memorias pueden estar desactualizadas.
+The proposed intent may restore global access for support users.
+
+This contradicts an approved critical constraint:
+Multi-entity access must be resolved through per-entity assignments.
+
+Authority: security-owner.
+Applicability: active.
+Structural revision: exact.
+Evidence: migration, tests, and approved decision.
 ```
 
-## 14.1 Condición única de bloqueo
+A bad warning would be:
 
-Un cambio solo puede bloquearse cuando:
+```text
+The file authorization.ts changed.
+Fifteen memories may be outdated.
+```
 
-1. Existe una restricción estructurada.
-2. Su severidad es crítica.
-3. Fue aprobada por la autoridad adecuada o declarada por política del repositorio.
-4. Continúa activa.
-5. El binding corresponde a la revisión actual.
-6. La contradicción es concreta y suficientemente determinista.
-7. La salida explica cómo resolver o revisar el conflicto.
+## 14.1 Single blocking condition
 
-Si cualquiera de estas condiciones falla, la respuesta será informativa o advisory, nunca blocking.
+A change can only be blocked when:
 
-## 14.2 Presupuesto de interrupción
+1. A structured constraint exists.
+2. Its severity is critical.
+3. It was approved by the appropriate authority or declared by repository policy.
+4. It is still active.
+5. The binding corresponds to the current revision.
+6. The contradiction is concrete and sufficiently deterministic.
+7. The output explains how to resolve or review the conflict.
 
-Además del presupuesto de tokens, el repositorio puede definir un presupuesto de interrupción:
+If any of these conditions fails, the response will be informative or advisory, never blocking.
+
+## 14.2 Interruption budget
+
+Besides the token budget, the repository can define an interruption budget:
 
 ```yaml
 alert_policy:
@@ -2174,113 +2184,113 @@ alert_policy:
 
 ---
 
-# 15. Captura con baja fricción
+# 15. Low-friction capture
 
 
-## 15.1 Lo que Rationale captura automáticamente
+## 15.1 What Rationale captures automatically
 
 * Diff.
-* Revisión base y revisión final.
-* Estado del working tree.
+* Base revision and final revision.
+* Working tree state.
 * Commits.
-* Archivos.
-* Símbolos.
-* Relaciones reportadas por el proveedor.
-* Cobertura y versión del proveedor.
-* Tests ejecutados.
-* Resultados.
-* Cambios de esquema.
-* Dependencias.
-* Rutas.
-* Issues y PR vinculados.
-* Identidad del agente.
-* Momento de creación.
+* Files.
+* Symbols.
+* Relationships reported by the provider.
+* Provider coverage and version.
+* Tests run.
+* Results.
+* Schema changes.
+* Dependencies.
+* Routes.
+* Linked issues and PRs.
+* Agent identity.
+* Creation time.
 
-## 15.2 Lo que puede proponer el agente
+## 15.2 What the agent can propose
 
-* Problema aparente.
-* Intención.
-* Decisiones.
-* Riesgos.
-* Alternativas.
-* Consecuencias.
-* Posibles supersesiones.
-* Posibles bindings relocalizados.
+* Apparent problem.
+* Intent.
+* Decisions.
+* Risks.
+* Alternatives.
+* Consequences.
+* Possible supersessions.
+* Possible relocated bindings.
 
-Estas propuestas deben comenzar como inferencias o candidatos.
+These proposals must start as inferences or candidates.
 
-## 15.3 Lo que debe confirmar una persona
+## 15.3 What a person must confirm
 
-Solamente las afirmaciones normativas más importantes:
+Only the most important normative claims:
 
-* Motivo principal.
-* Decisión.
-* Restricción crítica.
-* Excepción deliberada.
-* Riesgo no visible en el código.
-* Autoridad o política de aprobación.
-* Supersesión conceptual.
+* Main reason.
+* Decision.
+* Critical constraint.
+* Deliberate exception.
+* Risk not visible in the code.
+* Authority or approval policy.
+* Conceptual supersession.
 
-Ejemplo de confirmación:
-
-```text
-Detecté estas dos nuevas afirmaciones normativas:
-
-1. El acceso multi-entidad no debe implicar administración global.
-2. Los usuarios propietarios son excepciones deliberadas.
-
-¿Las apruebas para el dominio authorization?
-```
-
-No se debe pedir al desarrollador que revise todo el YAML.
-
-## 15.4 Señales de captura de alto valor
-
-Rationale no preguntará por todos los cambios.
-
-Activará captura asistida cuando detecte señales como:
-
-* Autorización.
-* Pagos.
-* Facturación.
-* Seguridad.
-* Migraciones destructivas.
-* Cambios de esquema.
-* Excepciones deliberadas.
-* Procesos irreversibles.
-* Integraciones externas.
-* Corrección de incidentes.
-* Lenguaje normativo en PR o conversación: `must`, `never`, `because`, `avoid`, `do not`.
-* Alternativas descartadas con consecuencias relevantes.
-
-## 15.5 Prevención de confirmación automática
-
-Para reducir el síndrome de “aceptar todo”:
-
-* Una confirmación debe mostrar una sola afirmación por decisión importante.
-* Debe incluir el efecto práctico de aprobarla.
-* Debe permitir corregir el texto antes de aprobar.
-* No debe preseleccionar aprobación para restricciones críticas.
-* Debe registrar cuánto tiempo pasó entre propuesta y confirmación como señal de calidad, sin asumir mala fe.
-* Puede requerir segunda aprobación en dominios de seguridad o dinero.
-
-## 15.6 Captura desde documentos fundacionales
-
-Rationale puede importar ADR, Markdown o documentación existente.
-
-La importación produce:
+Example confirmation:
 
 ```text
-Afirmaciones stated o inferred.
-Autoridad unreviewed.
-Bindings candidatos.
+I detected these two new normative claims:
+
+1. Multi-entity access must not imply global administration.
+2. Owner users are deliberate exceptions.
+
+Do you approve them for the authorization domain?
 ```
 
-Nunca convierte automáticamente un documento completo en restricciones críticas aprobadas.
+The developer must not be asked to review all the YAML.
 
-## 15.7 Detección de cambios fuera del flujo
+## 15.4 High-value capture signals
 
-La primera garantía será barata y síncrona:
+Rationale will not ask about every change.
+
+It will trigger assisted capture when it detects signals such as:
+
+* Authorization.
+* Payments.
+* Billing.
+* Security.
+* Destructive migrations.
+* Schema changes.
+* Deliberate exceptions.
+* Irreversible processes.
+* External integrations.
+* Incident fixes.
+* Normative language in a PR or conversation: `must`, `never`, `because`, `avoid`, `do not`.
+* Discarded alternatives with relevant consequences.
+
+## 15.5 Preventing automatic confirmation
+
+To reduce the "accept everything" syndrome:
+
+* A confirmation must show a single claim per important decision.
+* It must include the practical effect of approving it.
+* It must allow correcting the text before approving.
+* It must not preselect approval for critical constraints.
+* It must record how much time passed between proposal and confirmation as a quality signal, without assuming bad faith.
+* It may require a second approval in security or money domains.
+
+## 15.6 Capture from founding documents
+
+Rationale can import ADRs, Markdown, or existing documentation.
+
+The import produces:
+
+```text
+stated or inferred claims.
+unreviewed authority.
+Candidate bindings.
+```
+
+It never automatically turns a complete document into approved critical constraints.
+
+## 15.7 Detecting changes outside the flow
+
+The first guarantee will be cheap and synchronous:
 
 ```text
 current_git_revision != last_processed_revision
@@ -2292,214 +2302,214 @@ mark related assessments stale or unknown
 serve qualified context or request revalidation
 ```
 
-Opcionalmente, una integración puede ejecutar este paso desde:
+Optionally, an integration can run this step from:
 
 * `post-commit`.
-* Lifecycle hooks del agente.
-* File watcher o daemon local.
-* Inicio de sesión del IDE.
-* Revisión de PR o CI.
+* Agent lifecycle hooks.
+* A file watcher or local daemon.
+* IDE session start.
+* PR review or CI.
 
-Estas integraciones nunca deben bloquear silenciosamente el commit ni asumir que lograron revalidar el significado. Su tarea inicial es **detectar avance y degradar confianza**, no inventar una nueva evaluación.
+These integrations must never silently block the commit or assume that they managed to revalidate the meaning. Their initial job is to **detect progress and degrade confidence**, not to invent a new evaluation.
 
-## 15.8 Captura compartida sin adopción total del equipo
+## 15.8 Shared capture without full team adoption
 
-No todos los desarrolladores necesitan ejecutar Rationale para que el repositorio conserve Records aprobados.
+Not every developer needs to run Rationale for the repository to keep approved Records.
 
-Un colaborador sin la herramienta puede modificar código normalmente. Cuando otra máquina con Rationale consulte el proyecto:
+A collaborator without the tool can modify code normally. When another machine with Rationale queries the project, it:
 
-1. Detectará que Git avanzó.
-2. Comparará el diff desde la última revisión evaluada.
-3. Marcará bindings relacionados como stale.
-4. Evitará presentar assessments anteriores como actuales.
-5. Podrá proponer revalidación o un nuevo delta normativo.
+1. Will detect that Git moved forward.
+2. Will compare the diff since the last evaluated revision.
+3. Will mark related bindings as stale.
+4. Will avoid presenting earlier assessments as current.
+5. May propose revalidation or a new normative delta.
 
-La utilidad aumenta cuando más miembros capturan decisiones, pero la corrección no puede asumir adopción universal.
+Usefulness grows when more members capture decisions, but correctness cannot assume universal adoption.
 
 ---
 
-# 16. Niveles de captura
+# 16. Capture levels
 
 
-## Nivel 0 — Git only
+## Level 0 — Git only
 
-Para:
+For:
 
-* Formato.
-* Renombres.
-* Dependencias menores.
-* Cambios mecánicos.
+* Formatting.
+* Renames.
+* Minor dependencies.
+* Mechanical changes.
 
-No se crea registro.
+No record is created.
 
-## Nivel 1 — Intent
+## Level 1 — Intent
 
-Guarda:
+Stores:
 
-* Objetivo.
-* Sectores modificados.
-* Validación.
-* Revisión base/final.
+* Goal.
+* Modified areas.
+* Validation.
+* Base/final revision.
 
-## Nivel 2 — Decision
+## Level 2 — Decision
 
-Agrega:
+Adds:
 
-* Decisión.
-* Alternativas.
-* Motivo.
+* Decision.
+* Alternatives.
+* Reason.
 * Non-goals.
-* Procedencia.
+* Provenance.
 
-## Nivel 3 — Operational knowledge
+## Level 3 — Operational knowledge
 
-Agrega:
+Adds:
 
-* Riesgos.
-* Restricciones.
+* Risks.
+* Constraints.
 * Rollback.
-* Consecuencias.
-* Incidentes.
-* Sensibilidad.
+* Consequences.
+* Incidents.
+* Sensitivity.
 
-## Nivel 4 — Critical invariant
+## Level 4 — Critical invariant
 
-Conocimiento que ningún agente debe ignorar:
+Knowledge no agent may ignore:
 
 ```text
-Un pago no puede procesarse dos veces.
-El personal no puede recibir super_admin global.
-Una entidad no puede ver datos de otra.
-Una migración no puede borrar auditoría.
+A payment cannot be processed twice.
+Staff cannot receive global super_admin.
+One entity cannot see another entity's data.
+A migration cannot delete the audit trail.
 ```
 
-Requisitos adicionales:
+Additional requirements:
 
-* Autoridad aprobada o policy.
-* Scope explícito.
-* Evidencia.
-* Binding actual.
-* Regla declarativa cuando sea posible.
-* Revisión evaluada.
-* Política de supersesión.
+* Approved or policy authority.
+* Explicit scope.
+* Evidence.
+* Current binding.
+* Declarative rule when possible.
+* Evaluated revision.
+* Supersession policy.
 
-El sistema puede recomendar un nivel según:
+The system can recommend a level based on:
 
-* Autorización.
-* Pagos.
-* Seguridad.
-* Migraciones.
-* Infraestructura.
-* Cambios de esquema.
-* Número de archivos.
-* Reversibilidad.
-* Incidentes.
-* Impacto estructural.
-* Sensibilidad de datos.
+* Authorization.
+* Payments.
+* Security.
+* Migrations.
+* Infrastructure.
+* Schema changes.
+* Number of files.
+* Reversibility.
+* Incidents.
+* Structural impact.
+* Data sensitivity.
 
-## Nivel 5 — Repository policy
+## Level 5 — Repository policy
 
-Reservado para reglas deterministas aprobadas como política del repositorio.
+Reserved for deterministic rules approved as repository policy.
 
-Ejemplos:
+Examples:
 
-* Ninguna migración puede borrar la tabla de auditoría.
-* Los endpoints públicos deben exigir rate limiting.
-* Los cambios en pagos requieren dos aprobaciones.
+* No migration may delete the audit table.
+* Public endpoints must enforce rate limiting.
+* Payment changes require two approvals.
 
-Este nivel puede integrarse con CI, pero no debe contener reglas ambiguas dependientes de interpretación libre del LLM.
+This level can integrate with CI, but it must not contain ambiguous rules that depend on the LLM's free interpretation.
 
 ---
 
-# 17. Cold start y proyectos legacy
+# 17. Cold start and legacy projects
 
 
-Rationale no debe intentar reconstruir automáticamente toda la historia de un monolito antiguo.
+Rationale must not try to automatically reconstruct the whole history of an old monolith.
 
-Debe utilizar una estrategia progresiva.
+It must use a progressive strategy.
 
-## 17.1 Captura hacia adelante
+## 17.1 Forward capture
 
-Desde la instalación:
+From installation on:
 
-* Los nuevos cambios importantes se registran.
-* Las nuevas decisiones se enlazan.
-* Las nuevas restricciones quedan disponibles.
-* Las revisiones y cobertura se registran desde el inicio.
+* New important changes are recorded.
+* New decisions are linked.
+* New constraints become available.
+* Revisions and coverage are recorded from the start.
 
-## 17.2 Arqueología bajo demanda
+## 17.2 On-demand archaeology
 
-Cuando se modifica una zona antigua sin contexto:
+When an old area without context is modified:
 
 ```bash
 rationale investigate src/auth/authorization.ts
 ```
 
-El sistema puede analizar:
+The system can analyze:
 
 * Git blame.
 * Commits.
 * Pull requests.
 * Issues.
-* ADR.
+* ADRs.
 * Tests.
-* Migraciones.
-* Comentarios.
-* Versiones anteriores.
-* Documentación.
-* Historial por símbolo si el proveedor lo expone.
+* Migrations.
+* Comments.
+* Earlier versions.
+* Documentation.
+* Per-symbol history if the provider exposes it.
 
-Resultado:
+Result:
 
 ```text
-Motivo confirmado: desconocido.
+Confirmed reason: unknown.
 
-Evidencia encontrada:
-- La condición apareció en el commit 83af12.
-- El commit referencia AUTH-184.
-- El issue menciona accesos cruzados entre entidades.
-- Se añadió una prueba de aislamiento en el mismo cambio.
+Evidence found:
+- The condition appeared in commit 83af12.
+- The commit references AUTH-184.
+- The issue mentions cross-entity access.
+- An isolation test was added in the same change.
 
-Hipótesis corroborada:
-Esta condición probablemente protege el aislamiento de entidades.
+Corroborated hypothesis:
+This condition probably protects entity isolation.
 
-Confianza: media-alta.
-Autoridad: no revisada.
-Requiere confirmación humana: sí.
+Confidence: medium-high.
+Authority: not reviewed.
+Requires human confirmation: yes.
 ```
 
-## 17.3 Límites de la arqueología
+## 17.3 Limits of archaeology
 
-La herramienta debe declarar:
+The tool must declare:
 
-* Si el clon es shallow.
-* Hasta qué revisión existe historia.
-* Qué fuentes no estaban disponibles.
-* Si PR o issues no pudieron consultarse.
-* Si el símbolo cambió de rango.
-* Si la evidencia es temporalmente incompleta.
+* Whether the clone is shallow.
+* Up to which revision history exists.
+* Which sources were not available.
+* Whether PRs or issues could not be queried.
+* Whether the symbol changed range.
+* Whether the evidence is temporarily incomplete.
 
-La ausencia de evidencia no es evidencia de ausencia.
+Absence of evidence is not evidence of absence.
 
-## 17.4 Priorización
+## 17.4 Prioritization
 
-No todo el repositorio necesita contexto causal.
+Not the whole repository needs causal context.
 
-Prioridad inicial:
+Initial priority:
 
-* Autorización.
-* Pagos.
-* Facturación.
-* Seguridad.
-* Migraciones.
-* Datos.
-* Integraciones externas.
-* Sincronización.
-* Procesos irreversibles.
+* Authorization.
+* Payments.
+* Billing.
+* Security.
+* Migrations.
+* Data.
+* External integrations.
+* Synchronization.
+* Irreversible processes.
 
-## 17.5 Cobertura
+## 17.5 Coverage
 
-Rationale puede mostrar:
+Rationale can show:
 
 ```text
 Authorization      High coverage
@@ -2509,7 +2519,7 @@ Notifications      No coverage
 UI components      Coverage unnecessary
 ```
 
-Debe distinguir entre:
+It must distinguish between:
 
 ```text
 No coverage
@@ -2518,16 +2528,16 @@ Provider gap
 Coverage unnecessary
 ```
 
-El objetivo no es alcanzar 100%.
+The goal is not to reach 100%.
 
-El objetivo es cubrir las áreas donde perder contexto produce consecuencias graves.
+The goal is to cover the areas where losing context has serious consequences.
 
 ---
 
-# 18. Recuperación con presupuesto
+# 18. Budgeted retrieval
 
 
-Cada consulta tendrá un presupuesto explícito.
+Every query will have an explicit budget.
 
 ```json
 {
@@ -2542,9 +2552,9 @@ Cada consulta tendrá un presupuesto explícito.
 }
 ```
 
-## 18.0 Entradas del compilador de contexto
+## 18.0 Context compiler inputs
 
-La calidad del paquete depende de combinar tres fuentes diferentes:
+The quality of the packet depends on combining three different sources:
 
 ```yaml
 task_context:
@@ -2567,11 +2577,11 @@ context_budget:
   max_tokens: 900
 ```
 
-El usuario o agente sigue proporcionando la realidad inmediata de la tarea. Rationale recupera la realidad durable del proyecto.
+The user or agent keeps providing the immediate reality of the task. Rationale retrieves the durable reality of the project.
 
-## 18.1 Orden de prioridad
+## 18.1 Priority order
 
-### Nivel 0 — Salud y consistencia
+### Level 0 — Health and consistency
 
 ```text
 Git revision: def456
@@ -2581,9 +2591,9 @@ Consistency: exact
 Coverage: complete for requested targets
 ```
 
-Si este nivel falla, la salida debe declararlo antes de cualquier conclusión.
+If this level fails, the output must say so before any conclusion.
 
-### Nivel 1 — Restricciones críticas aprobadas
+### Level 1 — Approved critical constraints
 
 ```text
 CRITICAL
@@ -2592,25 +2602,25 @@ CRITICAL
 - Cross-entity access requires an explicit assignment.
 ```
 
-### Nivel 2 — Conflictos con la intención
+### Level 2 — Conflicts with the intent
 
 ```text
 Your proposed change may recreate a previously removed authorization path.
 ```
 
-### Nivel 3 — Razón principal
+### Level 3 — Main reason
 
 ```text
 This behavior was introduced after staff accounts received excessive global privileges.
 ```
 
-### Nivel 4 — Riesgos relevantes
+### Level 4 — Relevant risks
 
 ```text
 Users without valid entity assignments may lose access.
 ```
 
-### Nivel 5 — Estructura
+### Level 5 — Structure
 
 ```text
 Affected:
@@ -2620,7 +2630,7 @@ Affected:
 - 3 tests
 ```
 
-### Nivel 6 — Historia expandible
+### Level 6 — Expandable history
 
 ```text
 4 additional historical records available.
@@ -2629,19 +2639,19 @@ Use trace_rationale for details.
 
 ## 18.2 Progressive disclosure
 
-La respuesta inicial debe ser suficiente para actuar con seguridad, no para contar toda la historia.
+The initial response must be enough to act safely, not to tell the whole story.
 
-El agente puede expandir:
+The agent can expand:
 
-* Evidencia.
-* Alternativas descartadas.
-* Historial de supersesiones.
-* PR e issues.
-* Bindings secundarios.
+* Evidence.
+* Discarded alternatives.
+* Supersession history.
+* PRs and issues.
+* Secondary bindings.
 
-## 18.3 Activación adaptativa
+## 18.3 Adaptive activation
 
-Para cambios triviales, Rationale puede devolver un paquete mínimo:
+For trivial changes, Rationale can return a minimal packet:
 
 ```text
 No approved constraints found for this target.
@@ -2649,16 +2659,16 @@ Structural revision is current.
 No additional context required.
 ```
 
-El costo del preflight debe adaptarse al riesgo.
+The cost of the preflight must adapt to the risk.
 
 ---
 
-# 19. Selección de relevancia
+# 19. Relevance selection
 
 
-No basta con encontrar registros enlazados al mismo símbolo.
+Finding records linked to the same symbol is not enough.
 
-Rationale debe evaluar:
+Rationale must evaluate:
 
 ```text
 relevance =
@@ -2676,15 +2686,15 @@ relevance =
   - provider_uncertainty
 ```
 
-La intención cambia la respuesta.
+The intent changes the answer.
 
-## Renombre
+## Rename
 
 ```text
 Intent: Rename resolveEntityRole.
 ```
 
-Respuesta:
+Answer:
 
 ```text
 The symbol is connected to an active authorization decision.
@@ -2692,13 +2702,13 @@ The proposed rename does not appear to change its behavior.
 Binding repair can be performed silently after the change.
 ```
 
-## Cambio conceptual
+## Conceptual change
 
 ```text
 Intent: Allow support users to access all entities automatically.
 ```
 
-Respuesta:
+Answer:
 
 ```text
 Warning: this intent conflicts with a critical approved constraint.
@@ -2706,39 +2716,39 @@ Warning: this intent conflicts with a critical approved constraint.
 Multi-entity access must not imply global administration.
 ```
 
-## 19.1 Recuperación determinista antes de semántica
+## 19.1 Deterministic retrieval before semantics
 
-Orden recomendado:
+Recommended order:
 
-1. Binding exacto.
-2. Vecindad estructural.
-3. Scope conceptual.
-4. Restricciones críticas.
-5. Aplicabilidad y autoridad.
-6. Búsqueda textual FTS.
-7. Embeddings como fallback futuro.
+1. Exact binding.
+2. Structural neighborhood.
+3. Conceptual scope.
+4. Critical constraints.
+5. Applicability and authority.
+6. FTS text search.
+7. Embeddings as a future fallback.
 
-Las restricciones críticas no deben recuperarse únicamente porque su texto se parece semánticamente a la consulta.
+Critical constraints must not be retrieved only because their text is semantically similar to the query.
 
-## 19.2 Deducción negativa prohibida
+## 19.2 Negative deduction forbidden
 
-La respuesta no debe inferir:
-
-```text
-No existe una decisión.
-```
-
-solo porque no encontró un binding.
-
-Debe responder:
+The response must not infer:
 
 ```text
-No se encontró una decisión vinculada dentro de la cobertura disponible.
+There is no decision.
 ```
 
-## 19.3 Recuperación consciente de workspaces
+only because it found no binding.
 
-En un monorepo, el ranking debe considerar:
+It must answer:
+
+```text
+No linked decision was found within the available coverage.
+```
+
+## 19.3 Workspace-aware retrieval
+
+In a monorepo, ranking must consider:
 
 ```text
 workspace_overlap
@@ -2749,7 +2759,7 @@ explicit_applies_to
 explicit_excludes
 ```
 
-Ejemplo:
+Example:
 
 ```text
 Task target: apps/dashboard/src/users/RoleBadge.tsx
@@ -2762,18 +2772,18 @@ RoleBadge renders the authorization contract exported by @boost/auth-contracts,
 which is governed by the project-level staff authorization Subject.
 ```
 
-No se incluirán todas las reglas del backend por estar en el mismo monorepo. Cada inclusión cruzada debe poder explicar su camino de relevancia.
+Not every backend rule will be included just because it is in the same monorepo. Every cross inclusion must be able to explain its relevance path.
 
 ---
 
-# 20. Integración con Codebase Memory
+# 20. Codebase Memory integration
 
 
-La arquitectura principal será:
+The main architecture will be:
 
 ```text
 ┌─────────────────────────────────────┐
-│        Agente de programación       │
+│            Coding agent             │
 └──────────────────┬──────────────────┘
                    │
                    │ prepare_change
@@ -2804,55 +2814,55 @@ La arquitectura principal será:
 └─────────────────────────────────────┘
 ```
 
-Rationale debe consultar internamente Codebase Memory.
+Rationale must query Codebase Memory internally.
 
-El agente no debería necesitar coordinar manualmente ambas herramientas.
+The agent should not need to coordinate both tools manually.
 
-Flujo:
+Flow:
 
 ```text
-Agente → Rationale → Codebase Memory
+Agent → Rationale → Codebase Memory
 ```
 
-## 20.1 Frontera de responsabilidad
+## 20.1 Responsibility boundary
 
 ### Codebase Memory
 
-* Estructura actual.
-* Símbolos.
-* Llamadas.
-* Dependencias.
-* Rutas.
-* Impacto estructural.
-* Búsqueda y relaciones que su cobertura permita.
-* Historial estructural cuando exista una API pública adecuada.
+* Current structure.
+* Symbols.
+* Calls.
+* Dependencies.
+* Routes.
+* Structural impact.
+* Search and relationships its coverage allows.
+* Structural history when a suitable public API exists.
 
 ### Rationale
 
-* Decisiones normativas.
-* Restricciones.
-* Intención.
-* Procedencia.
-* Autoridad.
-* Evidencia causal.
-* Assessment de aplicabilidad.
-* Comparación contra la intención.
-* Presupuesto de contexto.
-* Política de bloqueo.
+* Normative decisions.
+* Constraints.
+* Intent.
+* Provenance.
+* Authority.
+* Causal evidence.
+* Applicability assessment.
+* Comparison against the intent.
+* Context budget.
+* Blocking policy.
 
-## 20.2 Codebase Memory ya se mueve hacia ADR e historia
+## 20.2 Codebase Memory is already moving toward ADRs and history
 
-La integración debe asumir que Codebase Memory puede incorporar nuevas capacidades como ADR, historial por símbolo o drift.
+The integration must assume that Codebase Memory may add new capabilities such as ADRs, per-symbol history, or drift.
 
-Rationale no debe competir duplicando esas superficies.
+Rationale must not compete by duplicating those surfaces.
 
-Debe consumirlas como evidencia y conservar su diferencial:
+It must consume them as evidence and keep its differentiator:
 
-> Autoridad, aplicabilidad, consistencia por revisión y preflight de intención.
+> Authority, applicability, per-revision consistency, and intent preflight.
 
-## 20.3 Proveedor falible
+## 20.3 Fallible provider
 
-Cada consulta al proveedor debe devolver o registrar:
+Every provider query must return or record:
 
 ```yaml
 provider:
@@ -2868,58 +2878,58 @@ provider:
     - impact
 ```
 
-Si la consulta falla o su cobertura es incompleta, Rationale debe degradar su conclusión.
+If the query fails or its coverage is incomplete, Rationale must degrade its conclusion.
 
-## 20.4 No acoplamiento interno
+## 20.4 No internal coupling
 
-Rationale no leerá directamente la base SQLite interna de Codebase Memory ni dependerá de detalles privados.
+Rationale will not read Codebase Memory's internal SQLite database directly or depend on private details.
 
-Usará:
+It will use:
 
-* MCP público.
-* CLI documentada cuando sea necesario.
-* Adaptador versionado.
-* Negotiación de capacidades.
-* Pruebas contractuales.
+* Public MCP.
+* The documented CLI when necessary.
+* A versioned adapter.
+* Capability negotiation.
+* Contract tests.
 
-## 20.5 Latencia
+## 20.5 Latency
 
-La latencia no debe resolverse con arquitectura distribuida prematura.
+Latency must not be solved with premature distributed architecture.
 
-Medidas:
+Measures:
 
-* Procesos locales.
-* Caché por revisión.
-* Consulta única coordinada desde Rationale.
-* Resultados pequeños.
+* Local processes.
+* Per-revision cache.
+* A single coordinated query from Rationale.
+* Small results.
 * Timeouts.
-* Evitar múltiples tool calls del agente.
-* Invalidación por generación del proveedor.
+* Avoiding multiple tool calls by the agent.
+* Invalidation by provider generation.
 
-El agente debe hacer una llamada principal; Rationale coordina las dependencias internamente.
+The agent must make one main call; Rationale coordinates the dependencies internally.
 
-### 20.5.1 Dos rutas de ejecución
+### 20.5.1 Two execution paths
 
-Rationale debe separar dos perfiles de latencia.
+Rationale must separate two latency profiles.
 
-#### Fast path baseline
+#### Baseline fast path
 
-Se utiliza en superficies de alta frecuencia como lectura, búsqueda, inicio de edición o navegación.
+Used on high-frequency surfaces such as reading, searching, starting an edit, or navigation.
 
-Debe:
+It must:
 
-* Leer únicamente almacenamiento local.
-* Utilizar bindings y scopes ya resueltos.
-* Consultar un índice por revisión o generación.
-* Entregar solo constraints críticas y warnings de consistencia.
-* Evitar embeddings.
-* Evitar llamadas a un LLM.
-* Evitar arqueología e historial profundo.
-* Evitar reconstruir el grafo.
-* Evitar múltiples llamadas MCP encadenadas cuando el cache sea válido.
-* Terminar sin salida cuando no exista contexto de alta prioridad.
+* Read only local storage.
+* Use bindings and scopes that are already resolved.
+* Query an index per revision or generation.
+* Deliver only critical constraints and consistency warnings.
+* Avoid embeddings.
+* Avoid LLM calls.
+* Avoid archaeology and deep history.
+* Avoid rebuilding the graph.
+* Avoid multiple chained MCP calls when the cache is valid.
+* Finish with no output when there is no high-priority context.
 
-Clave conceptual de cache:
+Conceptual cache key:
 
 ```text
 project_id
@@ -2930,28 +2940,28 @@ project_id
 + baseline_budget
 ```
 
-La clave concreta pertenece al documento de arquitectura, pero la consistencia por revisión no es opcional.
+The concrete key belongs to the architecture document, but per-revision consistency is not optional.
 
-#### Full path intent-aware
+#### Intent-aware full path
 
-Se utiliza cuando existe una intención, síntomas, reproducción, resultado esperado o un cambio que necesita análisis profundo.
+Used when there is an intent, symptoms, reproduction, expected result, or a change that needs deep analysis.
 
-Puede:
+It can:
 
-* Consultar impacto estructural.
-* Resolver relaciones cross-workspace.
-* Comparar intención contra decisiones.
-* Evaluar conflictos y aplicabilidad.
-* Buscar mediante FTS.
-* Utilizar embeddings locales como fallback de candidatos.
-* Consultar historial o evidencia adicional.
-* Construir un paquete más rico dentro del presupuesto solicitado.
+* Query structural impact.
+* Resolve cross-workspace relationships.
+* Compare the intent against decisions.
+* Evaluate conflicts and applicability.
+* Search with FTS.
+* Use local embeddings as a candidate fallback.
+* Query history or additional evidence.
+* Build a richer packet within the requested budget.
 
-Esta ruta ocurre en fronteras de cambio, no antes de cada operación de lectura.
+This path runs at change boundaries, not before every read operation.
 
-### 20.5.2 Presupuestos experimentales de latencia
+### 20.5.2 Experimental latency budgets
 
-Los siguientes valores son objetivos iniciales para el piloto, no garantías públicas definitivas:
+The following values are initial targets for the pilot, not final public guarantees:
 
 ```text
 Warm baseline:
@@ -2960,73 +2970,73 @@ P95 <= 150 ms
 hard deadline <= 250 ms
 
 Cold baseline:
-medir por separado; nunca ocultarlo dentro de la distribución warm
+measure separately; never hide it inside the warm distribution
 
 Intent-aware preflight:
-medir por complejidad, cache state y proveedor
+measure by complexity, cache state, and provider
 ```
 
-Si el baseline excede su deadline:
+If the baseline exceeds its deadline:
 
 ```text
 fail open
-no bloquear la operación del agente
-eventualmente devolver ningún contexto
-registrar telemetría local de timeout
-no presentar resultados parciales como completos
+do not block the agent's operation
+possibly return no context
+record local timeout telemetry
+do not present partial results as complete
 ```
 
-`fail open` no significa declarar que no existen restricciones. Significa que la operación original continúa y la falta de contexto queda registrada como una degradación observable.
+`fail open` does not mean declaring that no constraints exist. It means the original operation continues and the missing context is recorded as an observable degradation.
 
-### 20.5.3 Qué debe medirse
+### 20.5.3 What must be measured
 
-Por cada ejecución:
+For every run:
 
-* Latencia total.
-* Tiempo de apertura del índice.
-* Tiempo de lookup.
-* Cache hit o miss.
-* Cold o warm start.
-* Número de llamadas al proveedor.
+* Total latency.
+* Index open time.
+* Lookup time.
+* Cache hit or miss.
+* Cold or warm start.
+* Number of provider calls.
 * Timeout.
-* Tamaño del paquete.
-* Revisión y generación utilizadas.
-* Contexto entregado, omitido o degradado.
+* Packet size.
+* Revision and generation used.
+* Context delivered, omitted, or degraded.
 
-La latencia deberá analizarse junto al costo extremo a extremo. Ahorrar 100 milisegundos en el preflight no justifica aumentar varios minutos la resolución de la tarea, y añadir 300 milisegundos puede ser aceptable si evita una regresión crítica; la política exacta dependerá de la superficie y severidad.
+Latency must be analyzed together with end-to-end cost. Saving 100 milliseconds in the preflight does not justify adding several minutes to solving the task, and adding 300 milliseconds may be acceptable if it avoids a critical regression; the exact policy will depend on the surface and severity.
 
-## 20.6 Hallazgos concretos del repositorio de Codebase Memory
+## 20.6 Concrete findings from the Codebase Memory repository
 
-La revisión previa del repositorio confirmó varios puntos relevantes para el diseño:
+The earlier review of the repository confirmed several points relevant to the design:
 
-* El núcleo está implementado principalmente como un binario local en C.
-* Expone MCP, CLI y un daemon local.
-* Utiliza almacenamiento local y capacidades estructurales amplias.
-* Ya incluye una superficie relacionada con ADR.
-* Existen propuestas para múltiples ADR, historial por símbolo y drift arquitectónico.
-* Existen casos reportados de relaciones falsas, trazas vacías, gaps entre paquetes, resultados silenciosamente vacíos y problemas de recursos en determinados repositorios o lenguajes.
+* The core is implemented mainly as a local binary in C.
+* It exposes MCP, a CLI, and a local daemon.
+* It uses local storage and broad structural capabilities.
+* It already includes an ADR-related surface.
+* There are proposals for multiple ADRs, per-symbol history, and architectural drift.
+* There are reported cases of false relationships, empty traces, gaps between packages, silently empty results, and resource problems in certain repositories or languages.
 
-Esto no invalida Codebase Memory. Confirma dos decisiones:
+This does not invalidate Codebase Memory. It confirms two decisions:
 
-1. Rationale debe apoyarse en él en lugar de duplicarlo.
-2. Rationale debe registrar cobertura, versión, revisión y warnings en lugar de convertir cualquier salida estructural en verdad mecánica absoluta.
+1. Rationale must build on it instead of duplicating it.
+2. Rationale must record coverage, version, revision, and warnings instead of turning any structural output into absolute mechanical truth.
 
-También significa que el adaptador debe diseñarse después de revisar las APIs públicas y capacidades reales de la versión objetivo, no únicamente a partir de una interfaz imaginada.
+It also means the adapter must be designed after reviewing the real public APIs and capabilities of the target version, not only from an imagined interface.
 
-## 20.7 Implicaciones de workspaces y hooks observadas en Codebase Memory
+## 20.7 Workspace and hook implications observed in Codebase Memory
 
-Codebase Memory ya reconoce estructura de paquetes mediante manifests y mantiene propuestas específicas para identidad de workspaces. Su historial reciente también muestra que la resolución entre paquetes puede variar por plataforma, layout, límites internos o versión del proveedor.
+Codebase Memory already recognizes package structure through manifests and keeps specific proposals for workspace identity. Its recent history also shows that cross-package resolution can vary by platform, layout, internal limits, or provider version.
 
-Consecuencia para Rationale:
+Consequence for Rationale:
 
-* Debe consumir workspace y package identity cuando el proveedor la ofrezca.
-* Debe declarar `provider_gap` cuando la relación cruzada no pueda comprobarse.
-* No debe interpretar cero edges como inexistencia de relación.
-* Debe aceptar bindings manuales o contractuales como fallback en el piloto.
+* It must consume workspace and package identity when the provider offers it.
+* It must declare `provider_gap` when the cross relationship cannot be verified.
+* It must not interpret zero edges as the absence of a relationship.
+* It must accept manual or contractual bindings as a fallback in the pilot.
 
-Codebase Memory también implementa un patrón de hook de augmentación no bloqueante, con deadlines, sanitización y salida silenciosa ante errores. Ese patrón valida que puede existir una capa automática de contexto, pero también demuestra que una integración de hooks debe ser best-effort y observable.
+Codebase Memory also implements a non-blocking augmentation hook pattern, with deadlines, sanitization, and silent exit on errors. That pattern validates that an automatic context layer can exist, but it also shows that a hook integration must be best-effort and observable.
 
-Rationale tomará estos principios, no una dependencia interna sobre esa implementación:
+Rationale will take these principles, not an internal dependency on that implementation:
 
 ```text
 non-blocking by default
@@ -3038,7 +3048,7 @@ query-time correctness check
 
 ---
 
-# 21. Interfaz de proveedor estructural
+# 21. Structural provider interface
 
 
 ```rust
@@ -3091,7 +3101,7 @@ pub trait CodeIntelligenceProvider {
 }
 ```
 
-Primera implementación:
+First implementation:
 
 ```rust
 pub struct CodebaseMemoryProvider {
@@ -3099,7 +3109,7 @@ pub struct CodebaseMemoryProvider {
 }
 ```
 
-## 21.1 Resultado con calidad explícita
+## 21.1 Result with explicit quality
 
 ```rust
 pub struct ProviderResult<T> {
@@ -3112,17 +3122,17 @@ pub struct ProviderResult<T> {
 }
 ```
 
-## 21.2 Negociación de capacidades
+## 21.2 Capability negotiation
 
-Rationale no asumirá que todas las versiones ofrecen:
+Rationale will not assume that every version offers:
 
-* Historial por símbolo.
+* Per-symbol history.
 * Cross-repo.
 * Drift.
-* Linaje.
+* Lineage.
 * Framework resolution.
 
-El adaptador debe poder responder:
+The adapter must be able to answer:
 
 ```text
 supported
@@ -3131,7 +3141,7 @@ degraded
 unknown
 ```
 
-## 21.3 Adaptadores futuros
+## 21.3 Future adapters
 
 * Tree-sitter.
 * LSP.
@@ -3139,113 +3149,113 @@ unknown
 * LSIF.
 * Sourcegraph.
 * GitHub.
-* Motores propios.
+* In-house engines.
 
-Estos adaptadores justifican eventualmente un protocolo abierto, pero no son requisito del MVP.
+These adapters eventually justify an open protocol, but they are not an MVP requirement.
 
 ---
 
-# 22. Módulos principales
+# 22. Main modules
 
 
-La arquitectura conceptual conserva las responsabilidades originales, pero la implementación inicial no debe convertir cada “engine” en un servicio o crate independiente.
+The conceptual architecture keeps the original responsibilities, but the initial implementation must not turn every "engine" into an independent service or crate.
 
 ## 22.1 Capture module
 
-Responsable de recopilar:
+Responsible for collecting:
 
 * Diff.
 * Commits.
-* Símbolos.
+* Symbols.
 * Tests.
 * Issues.
-* PR.
-* Señales.
-* Afirmaciones.
-* Cambios de esquema.
-* Revisiones y cobertura.
+* PRs.
+* Signals.
+* Claims.
+* Schema changes.
+* Revisions and coverage.
 
-No decide qué es verdad.
+It does not decide what is true.
 
 ## 22.2 Trust and policy module
 
-Responsable de:
+Responsible for:
 
-* Clasificar afirmaciones.
-* Verificar procedencia.
-* Evaluar autoridad.
-* Verificar evidencia.
-* Detectar contradicciones.
-* Impedir que inferencias se conviertan en hechos.
-* Controlar qué puede bloquear cambios.
-* Aplicar reglas de sensibilidad.
+* Classifying claims.
+* Verifying provenance.
+* Evaluating authority.
+* Verifying evidence.
+* Detecting contradictions.
+* Preventing inferences from becoming facts.
+* Controlling what can block changes.
+* Applying sensitivity rules.
 
 ## 22.3 Concept and linkage module
 
-Responsable de:
+Responsible for:
 
-* Crear sujetos conceptuales.
-* Resolver bindings.
-* Mantener linaje.
-* Proponer reconexiones.
-* Asociar pruebas, tablas, rutas y servicios.
-* Separar identidad conceptual de implementación.
-* Gestionar alias, merge y split.
+* Creating conceptual subjects.
+* Resolving bindings.
+* Keeping lineage.
+* Proposing reconnections.
+* Associating tests, tables, routes, and services.
+* Separating conceptual identity from implementation.
+* Managing aliases, merges, and splits.
 
 ## 22.4 Drift and lifecycle module
 
-Responsable de distinguir:
+Responsible for distinguishing:
 
-* Cambio cosmético.
+* Cosmetic change.
 * Refactor.
-* Movimiento.
-* Cambio de contrato.
-* Cambio conceptual.
-* Posible violación.
-* Posible supersesión.
+* Move.
+* Contract change.
+* Conceptual change.
+* Possible violation.
+* Possible supersession.
 
-No puede invalidar automáticamente una decisión normativa solo por una heurística de IA.
+It cannot automatically invalidate a normative decision based only on an AI heuristic.
 
 ## 22.5 Retrieval module
 
-Responsable de:
+Responsible for:
 
-* Interpretar la intención.
-* Seleccionar registros relevantes.
-* Ordenarlos.
-* Eliminar redundancia.
-* Aplicar presupuesto.
-* Construir el paquete de contexto.
-* Permitir expansión progresiva.
+* Interpreting the intent.
+* Selecting relevant records.
+* Ordering them.
+* Removing redundancy.
+* Applying the budget.
+* Building the context packet.
+* Allowing progressive expansion.
 
 ## 22.6 Revision coordinator
 
-Responsable de:
+Responsible for:
 
-* Comparar Git HEAD, working tree, índice estructural y assessments.
-* Crear snapshots coherentes.
-* Rechazar respuestas inconsistentes.
-* Invalidar cachés por revisión o generación.
-* Diferenciar `exact`, `overlay`, `behind` y `unresolved`.
+* Comparing Git HEAD, the working tree, the structural index, and assessments.
+* Creating coherent snapshots.
+* Rejecting inconsistent responses.
+* Invalidating caches by revision or generation.
+* Distinguishing `exact`, `overlay`, `behind`, and `unresolved`.
 
-## 22.7 Implementación inicial
+## 22.7 Initial implementation
 
-Estos módulos vivirán dentro de un monolito modular.
+These modules will live inside a modular monolith.
 
-No serán microservicios.
+They will not be microservices.
 
-No habrá un proceso independiente por engine.
+There will not be an independent process per engine.
 
-El objetivo será reducir complejidad operacional y validar el producto antes de separar componentes.
+The goal will be to reduce operational complexity and validate the product before separating components.
 
 ---
 
-# 23. Ciclo completo
+# 23. Complete cycle
 
 
-## 23.1 Antes del cambio
+## 23.1 Before the change
 
-Entrada:
+Input:
 
 ```json
 {
@@ -3264,22 +3274,22 @@ Entrada:
 }
 ```
 
-Proceso:
+Process:
 
-1. Resolver repositorio y revisión.
-2. Comprobar el estado del working tree.
-3. Consultar salud, versión, revisión y cobertura de Codebase Memory.
-4. Resolver los símbolos.
-5. Obtener relaciones dentro del presupuesto.
-6. Resolver sujetos relacionados.
-7. Recuperar decisiones y restricciones.
-8. Evaluar estado epistemológico, autoridad, aplicabilidad y linkage.
-9. Comparar intención.
-10. Clasificar riesgos.
-11. Aplicar presupuesto.
-12. Construir respuesta con snapshot de consistencia.
+1. Resolve repository and revision.
+2. Check the working tree state.
+3. Query Codebase Memory health, version, revision, and coverage.
+4. Resolve the symbols.
+5. Get relationships within the budget.
+6. Resolve related subjects.
+7. Retrieve decisions and constraints.
+8. Evaluate epistemic state, authority, applicability, and linkage.
+9. Compare the intent.
+10. Classify risks.
+11. Apply the budget.
+12. Build the response with a consistency snapshot.
 
-Salida:
+Output:
 
 ```json
 {
@@ -3320,9 +3330,9 @@ Salida:
 }
 ```
 
-## 23.2 Durante el cambio
+## 23.2 During the change
 
-Señales temporales:
+Temporary signals:
 
 ```json
 {
@@ -3351,54 +3361,54 @@ Señales temporales:
 }
 ```
 
-Las señales no se convierten automáticamente en registros permanentes.
+Signals do not automatically become permanent records.
 
-## 23.3 Al finalizar
+## 23.3 When finishing
 
-Rationale obtiene:
+Rationale obtains:
 
-* Objetivo.
-* Revisión base y final.
+* Goal.
+* Base and final revision.
 * Diff.
 * Commits.
-* Símbolos.
-* Pruebas.
-* Resultados.
-* Señales.
-* Errores.
-* Decisiones candidatas.
+* Symbols.
+* Tests.
+* Results.
+* Signals.
+* Errors.
+* Candidate decisions.
 
-Después:
+Then it:
 
-1. Verifica que el diff corresponde al preflight o declara la divergencia.
-2. Guarda hechos mecánicos.
-3. Genera propuestas de delta normativo.
-4. Clasifica inferencias.
-5. Solicita confirmación mínima.
-6. Crea o actualiza registros.
-7. Actualiza bindings.
-8. Crea assessments para la revisión final.
-9. Registra supersesiones explícitas.
-10. Redacta o restringe evidencia sensible.
+1. Verifies that the diff matches the preflight, or declares the divergence.
+2. Stores mechanical facts.
+3. Generates normative delta proposals.
+4. Classifies inferences.
+5. Requests minimal confirmation.
+6. Creates or updates records.
+7. Updates bindings.
+8. Creates assessments for the final revision.
+9. Records explicit supersessions.
+10. Redacts or restricts sensitive evidence.
 
-## 23.4 En cambios futuros
+## 23.4 On future changes
 
-Cuando otro agente modifica el sector:
+When another agent modifies the area, it:
 
-1. Resuelve la implementación actual.
-2. Comprueba revisión y cobertura.
-3. Encuentra el sujeto.
-4. Recupera decisiones activas aprobadas.
-5. Evalúa linkage y aplicabilidad.
-6. Selecciona conocimiento relevante.
-7. Construye un paquete compacto.
+1. Resolves the current implementation.
+2. Checks revision and coverage.
+3. Finds the subject.
+4. Retrieves approved active decisions.
+5. Evaluates linkage and applicability.
+6. Selects relevant knowledge.
+7. Builds a compact packet.
 
-## 23.5 Cambios fuera del flujo
+## 23.5 Changes outside the flow
 
-Si el código cambia sin `prepare_change` o `finalize_change`, Rationale lo detectará como máximo en la siguiente frontera de consulta, aunque ningún hook haya funcionado.
+If the code changes without `prepare_change` or `finalize_change`, Rationale will detect it at the next query boundary at the latest, even if no hook worked.
 
 ```text
-La implementación vinculada cambió después de la última evaluación.
+The linked implementation changed after the last evaluation.
 
 Decision state: active, not revalidated.
 Linkage: stale.
@@ -3407,134 +3417,134 @@ Current revision: def456.
 Detection source: query-time revision gate.
 ```
 
-Proceso:
+Process:
 
-1. Comparar `HEAD`, working tree y última revisión procesada.
-2. Obtener targets modificados mediante Git y el proveedor cuando esté disponible.
-3. Marcar únicamente assessments relacionados como `stale` o `unknown`.
-4. Mantener el Record histórico intacto.
-5. Servir baseline constraints con advertencia cuando sea seguro.
-6. Ejecutar revalidación advisory o solicitar revisión cuando el cambio pueda ser conceptual.
+1. Compare `HEAD`, the working tree, and the last processed revision.
+2. Get modified targets through Git and the provider when available.
+3. Mark only related assessments as `stale` or `unknown`.
+4. Keep the historical Record intact.
+5. Serve baseline constraints with a warning when it is safe.
+6. Run advisory revalidation or request review when the change may be conceptual.
 
-Un hook o daemon puede ejecutar los primeros tres pasos antes, pero no es requerido para detectar la inconsistencia.
+A hook or daemon can run the first three steps earlier, but it is not required to detect the inconsistency.
 
-Rationale no declarará automáticamente que la decisión dejó de aplicar.
+Rationale will not automatically declare that the decision stopped applying.
 
 ---
 
-# 24. Herramientas MCP
+# 24. MCP tools
 
 
-La superficie pública de la v1 debe ser pequeña para reducir errores de selección y llamadas innecesarias.
+The v1 public surface must be small to reduce selection errors and unnecessary calls.
 
 ## `prepare_change`
 
-Herramienta principal.
+Main tool.
 
-Entrada:
+Input:
 
-* Objetivo o targets.
-* Intención opcional.
-* Síntomas, reproducción y resultado esperado opcionales.
-* Alcance o workspace.
-* Revisión.
-* Presupuesto.
-* Modo: `baseline` o `intent-aware`.
+* Goal or targets.
+* Optional intent.
+* Optional symptoms, reproduction, and expected result.
+* Scope or workspace.
+* Revision.
+* Budget.
+* Mode: `baseline` or `intent-aware`.
 
-Salida:
+Output:
 
-* Snapshot de consistencia.
-* Restricciones.
-* Conflictos.
-* Decisiones.
-* Riesgos.
-* Relaciones.
-* Autoridad.
-* Confianza.
-* Vigencia.
-* Cobertura.
+* Consistency snapshot.
+* Constraints.
+* Conflicts.
+* Decisions.
+* Risks.
+* Relationships.
+* Authority.
+* Trust.
+* Validity.
+* Coverage.
 
 ---
 
 ## `explain_target`
 
-Responde:
+Answers:
 
-* Por qué existe un objetivo.
-* Qué decisiones lo gobiernan.
-* Qué parte es conocida, inferida o desconocida.
-* Qué evidencia y autoridad existen.
+* Why a target exists.
+* What decisions govern it.
+* What part is known, inferred, or unknown.
+* What evidence and authority exist.
 
 ---
 
 ## `finalize_change`
 
-Consolida el trabajo.
+Consolidates the work.
 
-* Registra hechos mecánicos.
-* Propone decisiones nuevas.
-* Actualiza bindings y assessments.
-* Solicita confirmaciones mínimas.
+* Records mechanical facts.
+* Proposes new decisions.
+* Updates bindings and assessments.
+* Requests minimal confirmations.
 
 ---
 
 ## `review_record`
 
-Permite:
+Allows:
 
-* Aprobar.
-* Corregir.
-* Disputar.
-* Revocar.
-* Superseder.
-* Asignar autoridad y scope.
+* Approving.
+* Correcting.
+* Disputing.
+* Revoking.
+* Superseding.
+* Assigning authority and scope.
 
 ---
 
 ## `trace_rationale`
 
-Recorre:
+Walks:
 
 ```text
-Código
-→ sujeto
-→ registro
-→ problema
-→ decisión
-→ evidencia
-→ aprobación
+Code
+→ subject
+→ record
+→ problem
+→ decision
+→ evidence
+→ approval
 → assessment
-→ historial
+→ history
 ```
 
 ---
 
 ## `health`
 
-Comprueba:
+Checks:
 
 * Git revision.
 * Working tree.
-* Proveedor estructural.
-* Índice y generación.
-* Cobertura.
-* Bindings stale.
-* Assessments atrasados.
-* Errores de schema.
+* Structural provider.
+* Index and generation.
+* Coverage.
+* Stale bindings.
+* Outdated assessments.
+* Schema errors.
 
 ---
 
-## 24.1 Superficies automáticas de contexto
+## 24.1 Automatic context surfaces
 
-La herramienta pública continúa siendo pequeña, pero clientes compatibles pueden invocar internamente un preflight baseline en eventos como:
+The public tool surface stays small, but compatible clients can internally invoke a baseline preflight on events such as:
 
-* Búsqueda de símbolos.
-* Lectura de archivos.
-* Inicio de edición.
-* Generación de diff.
-* Finalización de tarea.
+* Symbol search.
+* File reads.
+* Starting an edit.
+* Diff generation.
+* Task completion.
 
-El paquete baseline debe ser extremadamente pequeño:
+The baseline packet must be extremely small:
 
 ```text
 Target is governed by 1 critical approved constraint.
@@ -3542,25 +3552,25 @@ Staff users must never receive global super_admin.
 Assessment is stale since revision abc123; verify before behavioral changes.
 ```
 
-Cuando exista una intención explícita, el cliente debe preferir `prepare_change` en modo intent-aware.
+When there is an explicit intent, the client must prefer `prepare_change` in intent-aware mode.
 
-La superficie automática debe aplicar estas reglas:
+The automatic surface must apply these rules:
 
-* No ejecutar el Subject Resolver completo.
-* No crear Records ni Subjects.
-* No modificar autoridad o aplicabilidad.
-* No llamar un LLM.
-* No realizar embeddings.
-* No bloquear por timeout o falta de cache.
-* No repetir la misma constraint en cada lectura de una sesión.
-* Deduplicar por target, constraint, revisión y ventana de sesión.
-* Permitir expansión explícita cuando el agente necesite evidencia o historia.
+* Do not run the full Subject Resolver.
+* Do not create Records or Subjects.
+* Do not modify authority or applicability.
+* Do not call an LLM.
+* Do not compute embeddings.
+* Do not block on timeout or missing cache.
+* Do not repeat the same constraint on every read in a session.
+* Deduplicate by target, constraint, revision, and session window.
+* Allow explicit expansion when the agent needs evidence or history.
 
-La capacidad exacta de interceptar eventos depende de cada IDE o agente y no forma parte de la garantía universal del MCP.
+The exact ability to intercept events depends on each IDE or agent and is not part of the universal MCP guarantee.
 
-## 24.2 Operaciones internas o administrativas
+## 24.2 Internal or administrative operations
 
-Las siguientes capacidades continúan existiendo, pero no necesitan exponerse como herramientas públicas independientes al agente:
+The following capabilities still exist, but they do not need to be exposed to the agent as independent public tools:
 
 ```text
 get_constraints
@@ -3573,17 +3583,17 @@ supersede_record
 find_conflicts
 ```
 
-Se implementarán como:
+They will be implemented as:
 
-* Operaciones internas de `prepare_change` o `finalize_change`.
-* Subcomandos CLI administrativos.
-* Funciones de biblioteca.
+* Internal operations of `prepare_change` or `finalize_change`.
+* Administrative CLI subcommands.
+* Library functions.
 
-Esto conserva todas las capacidades originales sin obligar al modelo a coordinar doce herramientas distintas.
+This keeps all the original capabilities without forcing the model to coordinate twelve different tools.
 
 ---
 
-# 25. CLI inicial
+# 25. Initial CLI
 
 
 ```bash
@@ -3628,25 +3638,25 @@ rationale supersede \
   --by decision.new-auth-model
 ```
 
-La CLI no será la interfaz cotidiana principal.
+The CLI will not be the main everyday interface.
 
-Servirá para:
+It will be used for:
 
 * Bootstrap.
-* Diagnóstico.
+* Diagnostics.
 * CI.
-* Administración.
-* Automatización.
-* Recuperación cuando el cliente MCP no esté disponible.
+* Administration.
+* Automation.
+* Recovery when the MCP client is not available.
 
-La interacción humana diaria debe poder realizarse desde el chat del IDE.
+Everyday human interaction must be possible from the IDE chat.
 
 ---
 
-# 26. Almacenamiento
+# 26. Storage
 
 
-Fuente portable para un repositorio, incluido un monorepo:
+Portable source for a repository, including a monorepo:
 
 ```text
 .rationale/
@@ -3660,9 +3670,9 @@ Fuente portable para un repositorio, incluido un monorepo:
 └── config.yaml
 ```
 
-No se requiere una carpeta completa por package. Los scopes y `applies_to` expresan alcance dentro del repositorio. Un package puede contener archivos auxiliares o referencias locales solo cuando exista una razón concreta, pero la fuente canónica permanece en la raíz del proyecto.
+A full folder per package is not required. Scopes and `applies_to` express reach within the repository. A package may contain auxiliary files or local references only when there is a concrete reason, but the canonical source stays at the project root.
 
-Índice local:
+Local index:
 
 ```text
 ~/.cache/rationale/
@@ -3677,40 +3687,40 @@ No se requiere una carpeta completa por package. Los scopes y `applies_to` expre
         └── state.json
 ```
 
-Dos computadoras pueden tener la misma memoria canónica y distintos bindings o coverage reports debido a versiones, plataforma, working tree o estado del índice estructural. Toda respuesta debe declarar esa realidad local.
+Two computers can have the same canonical memory and different bindings or coverage reports because of versions, platform, working tree, or structural index state. Every response must declare that local reality.
 
-## 26.1 Archivos versionados
+## 26.1 Versioned files
 
-* YAML o JSON.
-* Revisables en PR.
-* Compartibles.
-* Portables.
-* Independientes del índice.
-* Un archivo por registro para reducir conflictos.
-* IDs estables.
-* Sin embeddings ni cachés.
+* YAML or JSON.
+* Reviewable in PRs.
+* Shareable.
+* Portable.
+* Independent of the index.
+* One file per record to reduce conflicts.
+* Stable IDs.
+* No embeddings or caches.
 
-## 26.2 Índice derivado
+## 26.2 Derived index
 
 * SQLite.
 * Regenerable.
-* Optimizado.
-* No necesariamente versionado.
-* Invalidado por revisión, schema o generación del proveedor.
+* Optimized.
+* Not necessarily versioned.
+* Invalidated by revision, schema, or provider generation.
 
-## 26.3 Capas de persistencia y colaboración
+## 26.3 Persistence and collaboration layers
 
-| Capa | Contenido | Compartida | Regenerable |
+| Layer | Content | Shared | Regenerable |
 |---|---|---:|---:|
-| Canónica | Subjects, Records, declaraciones de Binding, Approvals, supersesiones | Sí, mediante Git | No |
-| Derivada | Resoluciones de Binding, assessments, FTS, caches | No por defecto | Sí |
-| Efímera | Intención, hipótesis, señales de sesión | No | Sí / descartable |
+| Canonical | Subjects, Records, Binding declarations, Approvals, supersessions | Yes, through Git | No |
+| Derived | Binding resolutions, assessments, FTS, caches | Not by default | Yes |
+| Ephemeral | Intent, hypotheses, session signals | No | Yes / disposable |
 
-Las revisiones de Records y Approvals pueden realizarse mediante PR. La ausencia de Rationale en una computadora no impide modificar el repositorio, pero sí reduce la captura asistida disponible en esa sesión.
+Reviews of Records and Approvals can happen through PRs. Not having Rationale on a computer does not prevent modifying the repository, but it does reduce the assisted capture available in that session.
 
-## 26.4 Declaraciones estables y assessments mutables
+## 26.4 Stable declarations and mutable assessments
 
-Declaración estable:
+Stable declaration:
 
 ```yaml
 record:
@@ -3721,7 +3731,7 @@ record:
   approvals: ...
 ```
 
-Assessment derivado:
+Derived assessment:
 
 ```yaml
 assessment:
@@ -3732,26 +3742,26 @@ assessment:
   provider_generation: 184
 ```
 
-La primera representa la decisión histórica.
+The first represents the historical decision.
 
-La segunda puede recalcularse sin reescribir el significado original.
+The second can be recomputed without rewriting the original meaning.
 
-## 26.5 Visibilidad y sensibilidad
+## 26.5 Visibility and sensitivity
 
 ```yaml
 visibility: repository | local | restricted
 sensitivity: public | internal | confidential | security
 ```
 
-Políticas:
+Policies:
 
-* Secret scanning antes de versionar.
-* Patches sensibles no se almacenan por defecto.
-* Conversaciones completas no se copian.
-* Referencias externas se prefieren a duplicación.
-* Exportación y MCP respetan visibilidad.
+* Secret scanning before versioning.
+* Sensitive patches are not stored by default.
+* Complete conversations are not copied.
+* External references are preferred over duplication.
+* Export and MCP respect visibility.
 
-## 26.6 Referencias externas
+## 26.6 External references
 
 ```yaml
 evidence:
@@ -3762,11 +3772,11 @@ evidence:
   visibility: restricted
 ```
 
-Esto permite conservar procedencia sin publicar el contenido completo.
+This keeps provenance without publishing the full content.
 
 ---
 
-# 27. Ejemplo actualizado de registro
+# 27. Updated record example
 
 
 ```yaml
@@ -3917,7 +3927,7 @@ sensitivity:
   visibility: repository
 ```
 
-Assessment derivado para la revisión actual:
+Derived assessment for the current revision:
 
 ```yaml
 schema_version: rationale-assessment/0.4
@@ -3956,10 +3966,10 @@ assessed_at: 2026-07-24T10:00:00Z
 
 ---
 
-# 28. Arquitectura del repositorio
+# 28. Repository architecture
 
 
-La implementación inicial debe ser un monolito modular en Rust.
+The initial implementation must be a modular monolith in Rust.
 
 ```text
 rationale/
@@ -4011,343 +4021,343 @@ rationale/
     └── legacy-investigation/
 ```
 
-## 28.0 Límite de este documento
+## 28.0 Limit of this document
 
-Esta sección expresa restricciones conceptuales, no cierra todavía decisiones de implementación como:
+This section expresses conceptual constraints; it does not yet close implementation decisions such as:
 
-* Runtime exacto del daemon opcional.
-* Formato de IPC.
-* Estrategia de file watching.
-* Integración concreta con cada IDE.
-* Algoritmo de propagación entre workspaces.
-* Esquema físico final de SQLite.
+* The exact runtime of the optional daemon.
+* The IPC format.
+* The file watching strategy.
+* The concrete integration with each IDE.
+* The propagation algorithm across workspaces.
+* The final physical SQLite schema.
 
-Esas decisiones pertenecerán al documento específico de arquitectura. La v0.4 únicamente exige que la arquitectura futura respete scopes, revisión coherente, capas compartidas/locales y mecanismos que no dependan de hooks para ser correctos.
+Those decisions will belong to the specific architecture document. v0.4 only requires that the future architecture respect scopes, coherent revision, shared/local layers, and mechanisms that do not depend on hooks to be correct.
 
-## 28.1 Lenguaje
+## 28.1 Language
 
-Se recomienda Rust porque ofrece:
+Rust is recommended because it offers:
 
-* Binario local distribuible.
-* Tipado fuerte para estados y schemas.
-* Seguridad de memoria.
-* Buen soporte para SQLite, Git y MCP.
-* Concurrencia controlada.
-* Compatibilidad multiplataforma.
+* A distributable local binary.
+* Strong typing for states and schemas.
+* Memory safety.
+* Good support for SQLite, Git, and MCP.
+* Controlled concurrency.
+* Cross-platform compatibility.
 
-No es necesario utilizar C aunque Codebase Memory esté escrito principalmente en C.
+Using C is not necessary even though Codebase Memory is written mainly in C.
 
-La frontera correcta es el protocolo y el adaptador, no compartir lenguaje o proceso.
+The right boundary is the protocol and the adapter, not sharing a language or a process.
 
-## 28.2 Por qué no once crates
+## 28.2 Why not eleven crates
 
-La arquitectura original separaba cada engine en un crate.
+The original architecture split every engine into a crate.
 
-Eso puede ser útil más adelante, pero agrega:
+That may be useful later, but it adds:
 
-* APIs internas prematuras.
-* Tiempo de compilación.
-* Complejidad de dependencias.
-* Fragmentación del dominio.
-* Dificultad para cambiar el modelo durante el MVP.
+* Premature internal APIs.
+* Compile time.
+* Dependency complexity.
+* Domain fragmentation.
+* Difficulty changing the model during the MVP.
 
-La v1 conservará separación lógica sin separación física excesiva.
+v1 will keep logical separation without excessive physical separation.
 
 ## 28.3 Embeddings
 
-La v1 no dependerá de embeddings propios.
+v1 will not depend on its own embeddings.
 
-Primero utilizará:
+It will first use:
 
-1. Bindings exactos.
-2. Grafo estructural del proveedor.
-3. Scope conceptual.
-4. FTS local.
+1. Exact bindings.
+2. The provider's structural graph.
+3. Conceptual scope.
+4. Local FTS.
 
-Los embeddings se evaluarán después como fallback para recuperación y como señal de candidatos de identidad. Nunca serán la única base para recuperar políticas críticas, fusionar Subjects o decidir scope.
+Embeddings will be evaluated later as a retrieval fallback and as a signal for identity candidates. They will never be the only basis for retrieving critical policies, merging Subjects, or deciding scope.
 
 ---
 
-# 29. Plan de versiones y MVP
+# 29. Version plan and MVP
 
-La versión conceptual de este documento y las versiones de implementación describen cosas distintas. `Documento 0.5` significa que el contrato conceptual fue revisado cinco veces; `producto 0.1`, `0.2` o `0.5` representan hitos futuros del software.
+The conceptual version of this document and the implementation versions describe different things. `Document 0.5` means the conceptual contract was revised five times; `product 0.1`, `0.2`, or `0.5` represent future milestones of the software.
 
 
-## Versión 0.0 — Experimento de validación
+## Version 0.0 — Validation experiment
 
-Objetivo:
+Goal:
 
-> Demostrar que Rationale supera claramente a un ADR tradicional y a Codebase Memory sin Rationale en tareas reales.
+> Demonstrate that Rationale clearly outperforms a traditional ADR and Codebase Memory without Rationale on real tasks.
 
-Debe incluir:
+It must include:
 
-* 20 a 30 cambios históricos.
-* Dos o tres repositorios, incluyendo al menos un monorepo real con varios paquetes.
-* El monorepo laboral seleccionado como piloto controlado, utilizando únicamente información autorizada para la prueba.
-* Casos de autorización, migraciones, pagos, contratos entre paquetes, refactors y regresiones.
-* Registros manuales controlados.
-* Evaluación con y sin preflight.
-* Ground truth por caso preparado antes de evaluar los paquetes.
-* Comparación pareada entre código/Git, documentación tradicional, Codebase Memory y Codebase Memory + Rationale.
-* Condición opcional de prompt escrito por una persona con experiencia del dominio.
-* Varias ejecuciones por condición cuando el costo lo permita.
-* Evaluación ciega de los Context Packets y resultados.
-* Registro de tokens, tool calls, archivos abiertos, latencia, intentos, tests y resultado final.
-* Medición explícita de contexto manual escrito por la persona.
-* Instrumentación local que no envíe código, prompts ni información laboral sin autorización.
-* Análisis de fallos y casos donde Rationale empeoró el resultado.
+* 20 to 30 historical changes.
+* Two or three repositories, including at least one real monorepo with several packages.
+* The work monorepo selected as a controlled pilot, using only information authorized for the test.
+* Cases involving authorization, migrations, payments, contracts between packages, refactors, and regressions.
+* Controlled manual records.
+* Evaluation with and without preflight.
+* Per-case ground truth prepared before evaluating the packets.
+* Paired comparison between code/Git, traditional documentation, Codebase Memory, and Codebase Memory + Rationale.
+* An optional condition with a prompt written by a person with domain experience.
+* Several runs per condition when cost allows.
+* Blind evaluation of the Context Packets and results.
+* Recording of tokens, tool calls, files opened, latency, attempts, tests, and final result.
+* Explicit measurement of the manual context written by the person.
+* Local instrumentation that does not send code, prompts, or work information without authorization.
+* Analysis of failures and of cases where Rationale made the result worse.
 
-No requiere todavía producto distribuible.
+It does not yet require a distributable product.
 
-El objetivo de 0.0 no es optimizar una implementación final. Es responder:
+The goal of 0.0 is not to optimize a final implementation. It is to answer:
 
 ```text
-¿El contexto causal estructurado cambia materialmente la calidad,
-el costo o la seguridad de tareas reales frente a alternativas más simples?
+Does structured causal context materially change the quality,
+cost, or safety of real tasks compared with simpler alternatives?
 ```
 
-Si la respuesta es negativa o marginal, no debe maquillarse mediante la métrica de densidad. Se deberá revisar el retrieval, la captura, el modelo de producto o la necesidad de la herramienta.
+If the answer is negative or marginal, it must not be dressed up with the density metric. The retrieval, the capture, the product model, or the need for the tool will have to be revised.
 
 ---
 
-## Versión 0.1 — Trusted context preflight
+## Version 0.1 — Trusted context preflight
 
-Objetivo:
+Goal:
 
-> Impedir o advertir un cambio peligroso entregando una decisión relevante, aprobada, consistente y compacta.
+> Prevent or warn about a dangerous change by delivering a relevant, approved, consistent, and compact decision.
 
-Debe incluir:
+It must include:
 
-* Integración con Codebase Memory.
-* Health y revisión exacta.
+* Codebase Memory integration.
+* Health and exact revision.
 * Subjects.
-* Records manuales.
-* Bindings estructurales.
+* Manual Records.
+* Structural bindings.
 * Evidence.
 * Approvals.
 * Assessments.
 * `prepare_change`.
 * `explain_target`.
-* Presupuesto de contexto.
-* Sin alertas automáticas agresivas.
-* Soporte conceptual y de retrieval para workspaces/packages dentro de un único repositorio Git.
-* Revision gate en cada consulta para detectar commits fuera del flujo.
-* Modo baseline cuando no exista intención explícita.
-* Memoria canónica compartida y cache local regenerable.
-* Sin embeddings propios.
-* Sin bloqueo de CI.
+* Context budget.
+* No aggressive automatic alerts.
+* Conceptual and retrieval support for workspaces/packages within a single Git repository.
+* A revision gate on every query to detect commits outside the flow.
+* Baseline mode when there is no explicit intent.
+* Shared canonical memory and a regenerable local cache.
+* No embeddings of its own.
+* No CI blocking.
 
-No debe incluir todavía:
+It must not yet include:
 
-* Importación completa de proyectos legacy.
-* Reconstrucción perfecta de linaje.
-* Integraciones con Slack.
-* Inferencia automática de motivos.
-* Sincronización distribuida.
-* Protocolo abierto estable.
+* Full import of legacy projects.
+* Perfect lineage reconstruction.
+* Slack integrations.
+* Automatic inference of reasons.
+* Distributed synchronization.
+* A stable open protocol.
 
 ---
 
-## Versión 0.2 — Assisted capture
+## Version 0.2 — Assisted capture
 
-Agregar:
+Add:
 
-* Captura desde Git.
-* Símbolos modificados.
-* Pruebas ejecutadas.
-* Propuestas de decisiones.
-* Confirmación humana selectiva.
+* Capture from Git.
+* Modified symbols.
+* Tests run.
+* Decision proposals.
+* Selective human confirmation.
 * `finalize_change`.
-* Evidencia mecánica.
-* Subject Resolver obligatorio antes de crear conceptos.
-* Detección de duplicados y `novelty_reason`.
-* Autoridad por dominio.
-* Sensibilidad y redacción.
-* Captura de cambios cruzados entre packages del monorepo.
+* Mechanical evidence.
+* Mandatory Subject Resolver before creating concepts.
+* Duplicate detection and `novelty_reason`.
+* Per-domain authority.
+* Sensitivity and redaction.
+* Capture of cross-package changes in the monorepo.
 
 ---
 
-## Versión 0.3 — Drift and legacy
+## Version 0.3 — Drift and legacy
 
-Agregar:
+Add:
 
-* Clasificación de cambios.
-* Posible drift conceptual.
-* Arqueología bajo demanda.
+* Change classification.
+* Possible conceptual drift.
+* On-demand archaeology.
 * Git blame.
-* Recuperación desde PR e issues.
-* Reparación avanzada de bindings.
-* Linaje por división y movimiento.
-* Declaración de shallow history y gaps.
-* Hooks o daemon opcionales para adelantar la detección de drift.
-* Post-change audit cuando se omitió el preflight.
+* Retrieval from PRs and issues.
+* Advanced binding repair.
+* Lineage through splits and moves.
+* Declaration of shallow history and gaps.
+* Optional hooks or daemon to detect drift earlier.
+* Post-change audit when the preflight was skipped.
 
 ---
 
-## Versión 0.4 — Team workflows
+## Version 0.4 — Team workflows
 
-Agregar:
+Add:
 
-* Integración con PR.
-* Revisión de registros.
-* Reglas por repositorio.
-* CODEOWNERS o políticas de autoridad.
-* Cobertura por sector.
-* Reportes de conflictos.
-* Validaciones sugeridas.
-* Hooks de agentes e IDE cuando existan.
-* Revisión final de diff.
-* Revisión colaborativa de Subjects y colisiones conceptuales.
-* Importación o referencias entre repositorios de forma experimental.
-
----
-
-## Versión 0.5 — Critical policies
-
-Agregar de forma opt-in:
-
-* Reglas deterministas.
-* CI para constraints críticas aprobadas.
-* Dos aprobaciones en dominios configurados.
-* Auditoría de cambios de política.
-* Excepciones temporales.
+* PR integration.
+* Record review.
+* Per-repository rules.
+* CODEOWNERS or authority policies.
+* Coverage per area.
+* Conflict reports.
+* Suggested validations.
+* Agent and IDE hooks where they exist.
+* Final diff review.
+* Collaborative review of Subjects and conceptual collisions.
+* Experimental import or references across repositories.
 
 ---
 
-## Versión 1.0 — Stable context model
+## Version 0.5 — Critical policies
 
-Agregar:
+Add, as opt-in:
 
-* Esquema estable.
+* Deterministic rules.
+* CI for approved critical constraints.
+* Two approvals in configured domains.
+* Audit of policy changes.
+* Temporary exceptions.
+
+---
+
+## Version 1.0 — Stable context model
+
+Add:
+
+* Stable schema.
 * SDK.
 * Conformance tests.
-* Paquetes de contexto portables.
-* Multi-repositorio.
-* Adaptadores externos comprobados.
-* Modelo formal de procedencia y autoridad.
-* Política de compatibilidad.
+* Portable context packets.
+* Multi-repository.
+* Proven external adapters.
+* Formal provenance and authority model.
+* Compatibility policy.
 
-El nombre “Open protocol” solo debe utilizarse cuando exista interoperabilidad real con más de una implementación o consumidor.
+The name "Open protocol" must only be used when there is real interoperability with more than one implementation or consumer.
 
 ---
 
-# 30. Métricas de éxito
+# 30. Success metrics
 
 
-## Utilidad
+## Utility
 
-* Cuántas veces se recuperó una restricción relevante.
-* Cuántos cambios peligrosos fueron advertidos.
-* Cuántas consultas evitaron lectura manual extensa.
-* Cuántas regresiones históricas se evitaron.
+* How many times a relevant constraint was retrieved.
+* How many dangerous changes were warned about.
+* How many queries avoided extensive manual reading.
+* How many historical regressions were avoided.
 
-## Precisión
+## Precision
 
-* Porcentaje de alertas consideradas útiles.
-* Porcentaje de inferencias confirmadas.
-* Número de falsos bloqueos.
-* Número de registros disputados.
-* Porcentaje de conflictos realmente normativos.
+* Percentage of alerts considered useful.
+* Percentage of inferences confirmed.
+* Number of false blocks.
+* Number of disputed records.
+* Percentage of conflicts that were really normative.
 
-## Ruido
+## Noise
 
-* Alertas por cambio.
-* Alertas ignoradas.
-* Refactors procesados silenciosamente.
-* Registros redundantes eliminados del paquete.
-* Confirmaciones solicitadas por cambio.
+* Alerts per change.
+* Ignored alerts.
+* Refactors processed silently.
+* Redundant records removed from the packet.
+* Confirmations requested per change.
 
-## Contexto
+## Context
 
-* Tokens promedio por `prepare_change`.
-* Percentil 95 de tokens.
-* Número de registros candidatos.
-* Número de registros entregados.
-* Reducción frente a recuperar todo el historial.
+* Average tokens per `prepare_change`.
+* 95th percentile of tokens.
+* Number of candidate records.
+* Number of records delivered.
+* Reduction compared with retrieving the whole history.
 
-## Costo extremo a extremo
+## End-to-end cost
 
-* Tokens totales hasta resolver la tarea.
-* Número de archivos abiertos.
-* Número de tool calls.
-* Tiempo hasta solución.
-* Intentos fallidos.
-* Correcciones posteriores.
+* Total tokens until the task is solved.
+* Number of files opened.
+* Number of tool calls.
+* Time to solution.
+* Failed attempts.
+* Later corrections.
 
-## Fricción
+## Friction
 
-* Tiempo humano requerido por registro.
-* Número promedio de confirmaciones.
-* Porcentaje de cambios sin interacción humana.
-* Porcentaje de registros abandonados.
-* Tiempo entre propuesta y aprobación.
+* Human time required per record.
+* Average number of confirmations.
+* Percentage of changes with no human interaction.
+* Percentage of abandoned records.
+* Time between proposal and approval.
 
-## Vigencia
+## Validity
 
-* Bindings reparados automáticamente.
-* Registros sin binding.
-* Decisiones superseded correctamente.
-* Tiempo entre cambio conceptual y revisión.
-* Assessments atrasados.
+* Bindings repaired automatically.
+* Records without a binding.
+* Decisions correctly superseded.
+* Time between a conceptual change and its review.
+* Outdated assessments.
 
-## Autoridad
+## Authority
 
-* Restricciones críticas sin aprobación.
-* Aprobaciones por dominio.
-* Conflictos entre autoridades.
-* Políticas revocadas correctamente.
+* Critical constraints without approval.
+* Approvals per domain.
+* Conflicts between authorities.
+* Policies correctly revoked.
 
-## Consistencia
+## Consistency
 
-* Respuestas servidas con revisión exacta.
-* Consultas degradadas por índice atrasado.
-* Casos donde se evitó una respuesta stale.
-* Errores por incompatibilidad de proveedor.
+* Responses served with an exact revision.
+* Queries degraded by a lagging index.
+* Cases where a stale response was avoided.
+* Errors caused by provider incompatibility.
 
-## Seguridad
+## Security
 
-* Registros rechazados por schema.
-* Intentos de prompt injection neutralizados.
-* Secretos detectados antes de versionar.
-* Evidencia restringida excluida del paquete.
+* Records rejected by schema.
+* Prompt injection attempts neutralized.
+* Secrets detected before versioning.
+* Restricted evidence excluded from the packet.
 
-## Monorepo y continuidad
+## Monorepo and continuity
 
-* Restricciones cruzadas recuperadas correctamente entre packages.
-* Porcentaje de inclusiones cross-workspace con camino de relevancia explicable.
-* Contexto irrelevante introducido por herencia de scope.
-* Commits fuera del flujo detectados en la siguiente consulta.
-* Subjects duplicados prevenidos o enviados a revisión.
-* Tiempo para reconstruir el índice local desde la capa canónica compartida.
+* Cross constraints correctly retrieved between packages.
+* Percentage of cross-workspace inclusions with an explainable relevance path.
+* Irrelevant context introduced by scope inheritance.
+* Commits outside the flow detected on the next query.
+* Duplicate Subjects prevented or sent to review.
+* Time to rebuild the local index from the shared canonical layer.
 
-## Calidad del contexto
+## Context quality
 
-* Densidad de contexto útil por token.
-* Información crítica omitida.
-* Registros incluidos sin cambiar la decisión del agente.
-* Comparación entre baseline e intent-aware.
-* Reducción de líneas de prompt manual repetitivo.
+* Useful context density per token.
+* Critical information omitted.
+* Records included without changing the agent's decision.
+* Comparison between baseline and intent-aware.
+* Reduction of repetitive manual prompt lines.
 
-## Objetivos iniciales del piloto
+## Initial pilot targets
 
-* Al menos 90% de restricciones críticas recuperadas.
-* Cero bloqueos falsos durante el piloto.
-* Más de 80% de advertencias valoradas como útiles.
-* Menos de 90 segundos humanos para aprobar un registro importante.
-* Una o dos confirmaciones como máximo por cambio.
-* Menos de 600 tokens de mediana.
-* Menos de 1,000 tokens en percentil 95.
-* Nunca servir un resultado como actual cuando el índice esté atrasado.
+* At least 90% of critical constraints retrieved.
+* Zero false blocks during the pilot.
+* More than 80% of warnings rated as useful.
+* Less than 90 human seconds to approve an important record.
+* One or two confirmations per change at most.
+* Less than 600 tokens at the median.
+* Less than 1,000 tokens at the 95th percentile.
+* Never serve a result as current when the index is behind.
 
-## 30.1 Protocolo de evaluación empírica
+## 30.1 Empirical evaluation protocol
 
-La evaluación de Rationale debe ser reproducible, auditable y capaz de refutar la hipótesis del producto.
+Rationale's evaluation must be reproducible, auditable, and able to refute the product hypothesis.
 
-La unidad principal de evaluación será el **Context Packet exacto entregado a un agente para una tarea concreta**, no el número total de Records ni la calidad percibida del documento completo.
+The main unit of evaluation will be the **exact Context Packet delivered to an agent for a concrete task**, not the total number of Records or the perceived quality of the whole document.
 
-### 30.1.1 Unidad experimental
+### 30.1.1 Experimental unit
 
-Cada caso debe fijar:
+Every case must fix:
 
 ```yaml
 case:
@@ -4374,11 +4384,11 @@ case:
     timeout_seconds: null
 ```
 
-La tarea debe comenzar desde la misma revisión y condiciones comparables para todas las variantes.
+The task must start from the same revision and comparable conditions for all variants.
 
-### 30.1.2 Ground truth del caso
+### 30.1.2 Case ground truth
 
-Antes de evaluar los paquetes, se preparará una ficha de referencia:
+Before evaluating the packets, a reference sheet will be prepared:
 
 ```yaml
 ground_truth:
@@ -4407,24 +4417,24 @@ ground_truth:
     - statement: Support users require a global role for multi-entity access.
 ```
 
-El ground truth puede construirse mediante:
+The ground truth can be built from:
 
-* Diff de la solución histórica.
-* Issue o requerimiento original.
-* Pull request y comentarios.
+* The diff of the historical solution.
+* The original issue or requirement.
+* The pull request and its comments.
 * Commits.
-* Tests y migraciones.
-* Incidentes.
-* Documentación disponible en ese momento.
-* Revisión de una persona con conocimiento del dominio.
+* Tests and migrations.
+* Incidents.
+* Documentation available at the time.
+* Review by a person with domain knowledge.
 
-Debe registrar incertidumbre y desacuerdo. Si dos expertos no coinciden, el caso no se fuerza artificialmente a una única verdad; se marca como disputado o se excluye de métricas que requieren certeza.
+It must record uncertainty and disagreement. If two experts do not agree, the case is not artificially forced into a single truth; it is marked as disputed or excluded from metrics that require certainty.
 
-El ground truth no debe filtrarse al agente fuera de la condición experimental correspondiente.
+The ground truth must not leak to the agent outside the corresponding experimental condition.
 
-### 30.1.3 Fórmula operacional de Context Utility Density
+### 30.1.3 Operational formula for Context Utility Density
 
-Para un paquete `P` con elementos `i`:
+For a packet `P` with items `i`:
 
 ```text
 utility(i) =
@@ -4441,118 +4451,118 @@ context_utility_density(P) =
     1000 × sum(utility(i)) / max(tokens(P), 1)
 ```
 
-El resultado se interpreta como **utilidad ponderada por cada mil tokens**.
+The result is interpreted as **weighted utility per thousand tokens**.
 
-La multiplicación es deliberadamente estricta: un elemento muy relevante pero falso, obsoleto o no accionable no debe conservar una puntuación alta. Durante el piloto también se guardarán los componentes por separado para comprobar que la fórmula no oculta el motivo de un resultado.
+The multiplication is deliberately strict: a highly relevant but false, obsolete, or non-actionable item must not keep a high score. During the pilot the components will also be stored separately to check that the formula does not hide the reason for a result.
 
-Esta fórmula no es una ley universal. Sus pesos y escalas son una hipótesis inicial que deberá someterse a análisis de sensibilidad.
+This formula is not a universal law. Its weights and scales are an initial hypothesis that must be subjected to sensitivity analysis.
 
-### 30.1.4 Escalas de puntuación
+### 30.1.4 Scoring scales
 
-#### Relevancia
+#### Relevance
 
-Pregunta:
+Question:
 
-> ¿Este elemento era necesario o directamente útil para resolver la tarea?
-
-```text
-1.00  necesario para una solución segura o correcta
-0.75  muy útil y reduce materialmente la búsqueda
-0.50  útil, pero no esencial
-0.25  relación débil o contextual
-0.00  irrelevante
-```
-
-La relevancia se evalúa contra el caso y su ground truth, no únicamente mediante similitud semántica.
-
-#### Confiabilidad
-
-Pregunta:
-
-> ¿El contenido es correcto y está respaldado para este caso?
-
-Valores iniciales orientativos:
+> Was this item necessary or directly useful to solve the task?
 
 ```text
-1.00  observado mecánicamente y verificado para la revisión
-1.00  política aprobada y confirmada como correcta
-0.90  afirmación humana aprobada y respaldada
-0.75  corroborada por fuentes independientes
-0.40  inferencia razonable
-0.15  hipótesis
-0.00  falsa, contradicha o fabricada
+1.00  necessary for a safe or correct solution
+0.75  very useful and materially reduces the search
+0.50  useful, but not essential
+0.25  weak or contextual relationship
+0.00  irrelevant
 ```
 
-La procedencia no garantiza corrección. Una afirmación humana aprobada puede recibir una puntuación inferior si el caso demuestra que estaba equivocada o dejó de aplicar.
+Relevance is evaluated against the case and its ground truth, not only through semantic similarity.
 
-#### Accionabilidad
+#### Reliability
 
-Pregunta:
+Question:
 
-> ¿Este elemento cambia o mejora una acción concreta del agente?
+> Is the content correct and backed for this case?
+
+Initial guideline values:
 
 ```text
-1.00  determina una restricción, solución o validación necesaria
-0.75  reduce considerablemente el espacio de soluciones
-0.50  orienta una investigación útil
-0.25  aporta comprensión general sin cambiar la acción
-0.00  no afecta ninguna decisión
+1.00  mechanically observed and verified for the revision
+1.00  approved policy confirmed as correct
+0.90  approved and backed human claim
+0.75  corroborated by independent sources
+0.40  reasonable inference
+0.15  hypothesis
+0.00  false, contradicted, or fabricated
 ```
 
-#### Aplicabilidad o frescura
+Provenance does not guarantee correctness. An approved human claim can receive a lower score if the case shows that it was wrong or stopped applying.
 
-No significa antigüedad cronológica.
+#### Actionability
 
-Pregunta:
+Question:
 
-> ¿Continúa gobernando la revisión evaluada?
+> Does this item change or improve a concrete action of the agent?
 
 ```text
-1.00  confirmada para la revisión actual
-0.75  probablemente activa con linkage parcialmente degradado
-0.50  aplicabilidad desconocida
-0.25  señales de supersesión o drift
-0.00  superseded, inválida o fuera de scope
+1.00  determines a necessary constraint, solution, or validation
+0.75  considerably narrows the solution space
+0.50  guides a useful investigation
+0.25  provides general understanding without changing the action
+0.00  does not affect any decision
 ```
 
-#### Importancia
+#### Applicability or freshness
+
+It does not mean chronological age.
+
+Question:
+
+> Does it still govern the evaluated revision?
 
 ```text
-1.00  constraint crítica o riesgo severo
-0.80  decisión normativa importante
-0.60  riesgo operacional
-0.40  razón histórica útil
-0.20  contexto auxiliar
+1.00  confirmed for the current revision
+0.75  probably active with partially degraded linkage
+0.50  unknown applicability
+0.25  signs of supersession or drift
+0.00  superseded, invalid, or out of scope
 ```
 
-La importancia debe provenir del ground truth o una rúbrica preparada antes de observar qué condición produjo el paquete.
-
-#### Unicidad
-
-Penaliza repetición y parafraseo redundante:
+#### Importance
 
 ```text
-1.00  aporta información nueva
-0.50  solapa parcialmente con otro elemento
-0.10  casi totalmente redundante
-0.00  duplicado exacto
+1.00  critical constraint or severe risk
+0.80  important normative decision
+0.60  operational risk
+0.40  useful historical reason
+0.20  auxiliary context
 ```
 
-### 30.1.5 Segmentación del Context Packet
+Importance must come from the ground truth or a rubric prepared before observing which condition produced the packet.
 
-Para puntuar de forma consistente, el paquete se descompone en unidades semánticas mínimas:
+#### Uniqueness
 
-* Una constraint.
-* Una decisión.
-* Un riesgo.
-* Una advertencia de consistencia.
-* Una afirmación causal.
-* Una validación sugerida.
-* Una relación estructural accionable.
+Penalizes repetition and redundant paraphrasing:
 
-No se debe dividir una misma afirmación en muchas frases para inflar la suma de utilidad.
+```text
+1.00  provides new information
+0.50  partially overlaps with another item
+0.10  almost entirely redundant
+0.00  exact duplicate
+```
 
-La instrumentación conservará:
+### 30.1.5 Context Packet segmentation
+
+To score consistently, the packet is broken down into minimal semantic units:
+
+* One constraint.
+* One decision.
+* One risk.
+* One consistency warning.
+* One causal claim.
+* One suggested validation.
+* One actionable structural relationship.
+
+A single claim must not be split into many sentences to inflate the utility sum.
+
+The instrumentation will keep:
 
 ```yaml
 context_item_evaluation:
@@ -4568,44 +4578,44 @@ context_item_evaluation:
   evaluator_notes: Prevents the historical regression directly.
 ```
 
-### 30.1.6 Condiciones de comparación
+### 30.1.6 Comparison conditions
 
-Como mínimo, el mismo caso se probará en:
+At a minimum, the same case will be tested under:
 
-#### Condición A — Código y Git
+#### Condition A — Code and Git
 
-Acceso normal al repositorio y sus herramientas básicas.
+Normal access to the repository and its basic tools.
 
-#### Condición B — Documentación tradicional
+#### Condition B — Traditional documentation
 
-Código, Git, `AGENTS.md`, ADR y documentación disponible.
+Code, Git, `AGENTS.md`, ADRs, and available documentation.
 
-#### Condición C — Codebase Memory
+#### Condition C — Codebase Memory
 
-Código, Git y contexto estructural recuperado mediante Codebase Memory.
+Code, Git, and structural context retrieved through Codebase Memory.
 
-#### Condición D — Codebase Memory + Rationale
+#### Condition D — Codebase Memory + Rationale
 
-La experiencia completa propuesta.
+The complete proposed experience.
 
-#### Condición E — Prompt humano experto, opcional
+#### Condition E — Expert human prompt, optional
 
-Una persona con conocimiento del dominio entrega manualmente el contexto que normalmente explicaría al agente.
+A person with domain knowledge manually provides the context they would normally explain to the agent.
 
-Esta condición no es un competidor trivial. Sirve como aproximación a cuánto conocimiento institucional valioso logra conservar Rationale y cuánto todavía depende de una persona concreta.
+This condition is not a trivial competitor. It serves as an approximation of how much valuable institutional knowledge Rationale manages to keep and how much still depends on a specific person.
 
-Las condiciones deben usar:
+The conditions must use:
 
-* El mismo modelo y versión.
-* La misma revisión inicial.
-* La misma tarea.
-* Configuraciones equivalentes.
-* Presupuestos comparables.
-* Reinicio o aislamiento de memoria entre ejecuciones.
+* The same model and version.
+* The same initial revision.
+* The same task.
+* Equivalent configurations.
+* Comparable budgets.
+* Memory reset or isolation between runs.
 
-Cuando no sea posible igualar exactamente una variable, debe registrarse como limitación.
+When a variable cannot be matched exactly, it must be recorded as a limitation.
 
-### 30.1.7 Capa 1: calidad del contexto
+### 30.1.7 Layer 1: context quality
 
 #### Critical Constraint Recall
 
@@ -4615,7 +4625,7 @@ critical_constraint_recall =
     / critical constraints required
 ```
 
-Esta métrica tiene prioridad sobre la densidad promedio. Omitir una única regla crítica puede invalidar un paquete aparentemente eficiente.
+This metric takes priority over average density. Omitting a single critical rule can invalidate a seemingly efficient packet.
 
 #### Context Precision
 
@@ -4649,48 +4659,48 @@ redundancy_rate =
     / total context tokens
 ```
 
-También se registrarán:
+The following will also be recorded:
 
-* Información crítica omitida.
-* Contexto verdadero pero inútil.
-* Evidencia no disponible.
-* Items cuyo assessment estaba stale.
-* Tokens consumidos por metadata de confianza y autoridad.
+* Critical information omitted.
+* True but useless context.
+* Evidence not available.
+* Items whose assessment was stale.
+* Tokens consumed by trust and authority metadata.
 
-### 30.1.8 Capa 2: resultado de la tarea
+### 30.1.8 Layer 2: task outcome
 
-La calidad del paquete no es suficiente. Cada ejecución debe evaluarse por:
+Packet quality is not enough. Every run must be evaluated by:
 
-* Solución correcta o incorrecta.
-* Restricciones respetadas.
-* Bug histórico reintroducido.
-* Tests existentes aprobados.
-* Nuevas pruebas adecuadas.
-* Intentos necesarios.
-* Archivos abiertos.
+* Correct or incorrect solution.
+* Constraints respected.
+* Historical bug reintroduced.
+* Existing tests passed.
+* Appropriate new tests.
+* Attempts needed.
+* Files opened.
 * Tool calls.
-* Tokens de entrada y salida totales.
-* Tiempo hasta una solución aceptable.
-* Correcciones posteriores.
-* Intervenciones humanas.
+* Total input and output tokens.
+* Time to an acceptable solution.
+* Later corrections.
+* Human interventions.
 
-Métrica central de costo:
+Central cost metric:
 
 ```text
 total_tokens_to_successful_completion
 ```
 
-No solamente:
+Not only:
 
 ```text
 tokens_returned_by_prepare_change
 ```
 
-Cuando una ejecución no logra una solución correcta dentro del límite establecido, debe registrarse como censurada o fallida; no se puede comparar su bajo consumo de tokens como una victoria.
+When a run does not reach a correct solution within the set limit, it must be recorded as censored or failed; its low token consumption cannot be counted as a win.
 
-### 30.1.9 Reducción de contexto manual
+### 30.1.9 Manual context reduction
 
-La promesa del producto incluye reducir cuánto conocimiento institucional debe repetir la persona.
+The product promise includes reducing how much institutional knowledge the person must repeat.
 
 ```text
 manual_context_reduction_tokens =
@@ -4704,28 +4714,28 @@ manual_fact_reduction =
     - project facts manually supplied with Rationale
 ```
 
-También se medirán:
+The following will also be measured:
 
-* Tiempo preparando el prompt.
-* Número de aclaraciones.
-* Cantidad de veces que la persona tuvo que señalar un archivo o módulo.
-* Cantidad de restricciones que tuvo que repetir.
-* Contexto manual que Rationale suministró correctamente.
-* Contexto que Rationale no podía conocer y debió seguir aportando la persona.
+* Time preparing the prompt.
+* Number of clarifications.
+* Number of times the person had to point to a file or module.
+* Number of constraints they had to repeat.
+* Manual context that Rationale supplied correctly.
+* Context that Rationale could not know and the person still had to provide.
 
-La meta no es eliminar el prompt. La persona continúa expresando qué quiere conseguir, síntomas nuevos, prioridades y restricciones no registradas.
+The goal is not to eliminate the prompt. The person keeps expressing what they want to achieve, new symptoms, priorities, and unrecorded constraints.
 
-### 30.1.10 Continuidad respecto al conocimiento senior
+### 30.1.10 Continuity with respect to senior knowledge
 
-Para casos adecuados, una persona experimentada del dominio preparará una lista independiente de:
+For suitable cases, an experienced person in the domain will prepare an independent list of:
 
-* Precauciones.
-* Restricciones.
-* Componentes que investigaría.
-* Pruebas que exigiría.
-* Errores históricos que evitaría.
+* Precautions.
+* Constraints.
+* Components they would investigate.
+* Tests they would require.
+* Historical mistakes they would avoid.
 
-Después se medirá:
+Then the following will be measured:
 
 ```text
 senior_context_recall =
@@ -4739,11 +4749,11 @@ unsupported_advice_rate =
     / total Rationale recommendations
 ```
 
-Esto no afirma que la lista capture toda la mente de una persona senior. Evalúa cuánto conocimiento verificable y transferible logra preservar el proyecto.
+This does not claim that the list captures a senior person's whole mind. It evaluates how much verifiable, transferable knowledge the project manages to preserve.
 
-### 30.1.11 Instrumentación mínima
+### 30.1.11 Minimum instrumentation
 
-Cada ejecución debe producir un registro local estructurado:
+Every run must produce a structured local record:
 
 ```yaml
 experiment_run:
@@ -4786,53 +4796,53 @@ experiment_run:
     evaluator_score: null
 ```
 
-La implementación exacta del harness pertenece al documento del experimento, pero el contrato conceptual exige capturar estos datos.
+The exact implementation of the harness belongs to the experiment document, but the conceptual contract requires capturing this data.
 
-### 30.1.12 Privacidad del piloto
+### 30.1.12 Pilot privacy
 
-Para un repositorio laboral:
+For a work repository:
 
-* Solo se usarán datos y revisiones autorizadas.
-* La telemetría será local por defecto.
-* No se enviará código, prompts, diffs, Records ni resultados a servicios adicionales sin autorización.
-* Los reportes podrán utilizar IDs y métricas agregadas.
-* Los casos sensibles podrán conservar únicamente hashes, categorías y resultados.
-* El dataset público futuro deberá construirse con repositorios abiertos o casos sintéticos equivalentes.
+* Only authorized data and revisions will be used.
+* Telemetry will be local by default.
+* No code, prompts, diffs, Records, or results will be sent to additional services without authorization.
+* Reports may use IDs and aggregated metrics.
+* Sensitive cases may keep only hashes, categories, and results.
+* A future public dataset must be built with open repositories or equivalent synthetic cases.
 
-### 30.1.13 Evaluación ciega y reducción de sesgo
+### 30.1.13 Blind evaluation and bias reduction
 
-Cuando sea posible:
+When possible:
 
-* Los paquetes se presentarán sin indicar qué condición los produjo.
-* Los evaluadores usarán una rúbrica común.
-* Dos evaluadores puntuarán una muestra.
-* Se medirán desacuerdos y acuerdo interevaluador.
-* El ground truth se cerrará antes de observar resultados agregados.
-* Los casos no se seleccionarán únicamente porque favorecen a Rationale.
-* Se conservarán también los resultados negativos.
+* Packets will be presented without indicating which condition produced them.
+* Evaluators will use a common rubric.
+* Two evaluators will score a sample.
+* Disagreements and inter-rater agreement will be measured.
+* The ground truth will be closed before observing aggregated results.
+* Cases will not be selected only because they favor Rationale.
+* Negative results will also be kept.
 
-La persona que construyó un Rationale Record no debería ser la única evaluadora de su utilidad.
+The person who built a Rationale Record should not be the only evaluator of its usefulness.
 
-### 30.1.14 Análisis estadístico
+### 30.1.14 Statistical analysis
 
-Con 20 a 30 casos, el piloto no probará universalmente que Rationale funciona para toda clase de repositorio.
+With 20 to 30 cases, the pilot will not universally prove that Rationale works for every kind of repository.
 
-Debe utilizar:
+It must use:
 
-* Comparaciones pareadas sobre las mismas tareas.
-* Medianas y percentiles, no solo promedios.
-* Intervalos de confianza mediante bootstrap cuando sea apropiado.
-* Distribuciones por tipo de cambio.
-* Resultados separados para monorepo y repositorios simples.
-* Resultados separados para baseline e intent-aware.
-* Análisis de sensibilidad de pesos de CUD.
-* Reporte de tamaños de efecto prácticos.
+* Paired comparisons on the same tasks.
+* Medians and percentiles, not only averages.
+* Bootstrap confidence intervals when appropriate.
+* Distributions by type of change.
+* Separate results for monorepos and simple repositories.
+* Separate results for baseline and intent-aware.
+* Sensitivity analysis of the CUD weights.
+* Reporting of practical effect sizes.
 
-No debe utilizar una diferencia estadísticamente ruidosa como afirmación comercial definitiva.
+It must not use a statistically noisy difference as a definitive commercial claim.
 
-### 30.1.15 Criterios iniciales de éxito
+### 30.1.15 Initial success criteria
 
-Objetivos del piloto:
+Pilot targets:
 
 ```text
 critical_constraint_recall >= 90%
@@ -4845,380 +4855,380 @@ p95_context_packet <= 1000 tokens
 manual_prompt_context_reduction >= 50%
 ```
 
-Además:
+In addition:
 
-* `total_tokens_to_successful_completion` debe mejorar materialmente frente a una o más condiciones de control, o justificar cualquier aumento mediante una mejora clara de seguridad o éxito.
-* La tasa de éxito de tarea debe superar de forma práctica a alternativas simples en los casos donde existe contexto causal relevante.
-* La latencia baseline debe respetar el presupuesto experimental definido.
-* No debe servirse un assessment stale como exacto.
-* Los beneficios deben persistir en el monorepo piloto y no únicamente en casos artificiales pequeños.
+* `total_tokens_to_successful_completion` must improve materially against one or more control conditions, or justify any increase through a clear improvement in safety or success.
+* The task success rate must practically exceed simple alternatives in cases where relevant causal context exists.
+* Baseline latency must respect the defined experimental budget.
+* A stale assessment must not be served as exact.
+* The benefits must persist in the pilot monorepo and not only in small artificial cases.
 
-Estos umbrales pueden ajustarse antes de comenzar el piloto, pero no después de observar resultados solo para declarar victoria.
+These thresholds may be adjusted before the pilot starts, but not after observing results just to declare victory.
 
-### 30.1.16 Reglas de falsificación
+### 30.1.16 Falsification rules
 
-Rationale no supera el piloto cuando ocurre alguna de estas condiciones:
+Rationale does not pass the pilot when any of these conditions occurs:
 
-* Recupera mucho contexto correcto, pero no mejora decisiones ni resultados.
-* Reduce tokens del paquete, pero aumenta tokens totales o tool calls sin beneficio material.
-* Omite constraints críticas con frecuencia.
-* Introduce falsedades o reglas superseded.
-* Requiere tanto trabajo humano de mantenimiento como el contexto que pretende ahorrar.
-* Funciona únicamente cuando su creador prepara manualmente cada caso perfecto.
-* La documentación tradicional ofrece resultados equivalentes con mucha menos complejidad.
-* El baseline añade una latencia perceptible sin aportar contexto utilizado.
+* It retrieves a lot of correct context but does not improve decisions or results.
+* It reduces packet tokens but increases total tokens or tool calls without material benefit.
+* It frequently omits critical constraints.
+* It introduces falsehoods or superseded rules.
+* It requires as much human maintenance work as the context it aims to save.
+* It only works when its creator manually prepares every perfect case.
+* Traditional documentation offers equivalent results with much less complexity.
+* The baseline adds perceptible latency without providing context that is used.
 
-Un resultado negativo no invalida necesariamente el problema. Puede indicar que el modelo de captura, retrieval, integración o producto debe simplificarse.
+A negative result does not necessarily invalidate the problem. It may indicate that the capture, retrieval, integration, or product model must be simplified.
 
-### 30.1.17 Interpretación final
+### 30.1.17 Final interpretation
 
-Rationale solo podrá declararse superior a ADR, `AGENTS.md` o Codebase Memory aislado si sus paquetes:
+Rationale may only be declared superior to ADRs, `AGENTS.md`, or Codebase Memory alone if its packets:
 
-1. Recuperan más conocimiento crítico correcto.
-2. Entregan menos ruido y menos falsedades.
-3. Producen soluciones mejores o más seguras.
-4. Reducen el costo total o el contexto manual requerido.
-5. Mantienen una latencia aceptable para la superficie donde se utilizan.
+1. Retrieve more correct critical knowledge.
+2. Deliver less noise and fewer falsehoods.
+3. Produce better or safer solutions.
+4. Reduce the total cost or the manual context required.
+5. Keep an acceptable latency for the surface where they are used.
 
-La densidad de utilidad es una explicación de **por qué** un paquete fue eficiente. El resultado de la tarea determina **si realmente lo fue**.
+Utility density is an explanation of **why** a packet was efficient. The task outcome determines **whether it really was**.
 
 ---
 
-# 31. Riesgos del proyecto
+# 31. Project risks
 
 
-## Riesgo: explicaciones falsas
+## Risk: false explanations
 
-Mitigación:
+Mitigation:
 
-* Inferencias claramente marcadas.
-* Evidencia obligatoria.
-* Confirmación selectiva.
-* Nunca bloquear con conocimiento inferido.
-* Permitir estado `unknown`.
+* Clearly marked inferences.
+* Mandatory evidence.
+* Selective confirmation.
+* Never block with inferred knowledge.
+* Allow the `unknown` state.
 
-## Riesgo: autoridad incorrecta
+## Risk: wrong authority
 
-Mitigación:
+Mitigation:
 
-* Separar procedencia de autoridad.
-* Approval policy por dominio.
-* CODEOWNERS o configuración explícita.
-* Revocación y auditoría.
-* Doble aprobación en dominios críticos.
+* Separate provenance from authority.
+* Per-domain approval policy.
+* CODEOWNERS or explicit configuration.
+* Revocation and audit.
+* Double approval in critical domains.
 
-## Riesgo: fatiga de alertas
+## Risk: alert fatigue
 
-Mitigación:
+Mitigation:
 
-* Estado multidimensional reducido.
-* Clasificación de cambios.
-* Reparación silenciosa.
-* Alertas basadas en intención.
-* Bloqueos únicamente críticos.
-* Presupuesto de interrupción.
+* Reduced multidimensional state.
+* Change classification.
+* Silent repair.
+* Intent-based alerts.
+* Only critical blocks.
+* Interruption budget.
 
-## Riesgo: fatiga de confirmación
+## Risk: confirmation fatigue
 
-Mitigación:
+Mitigation:
 
-* Confirmar solo deltas normativos.
-* Una afirmación concreta por interacción.
-* No preaprobar restricciones críticas.
-* Permitir edición y rechazo.
-* No crear registro si el motivo es desconocido.
+* Confirm only normative deltas.
+* One concrete claim per interaction.
+* Do not pre-approve critical constraints.
+* Allow editing and rejection.
+* Do not create a record if the reason is unknown.
 
-## Riesgo: demasiada fricción
+## Risk: too much friction
 
-Mitigación:
+Mitigation:
 
-* Captura automática.
-* Confirmaciones mínimas.
-* Permitir motivo desconocido.
-* Niveles de captura.
-* No documentar cambios triviales.
+* Automatic capture.
+* Minimal confirmations.
+* Allow an unknown reason.
+* Capture levels.
+* Do not document trivial changes.
 
-## Riesgo: repositorios legacy
+## Risk: legacy repositories
 
-Mitigación:
+Mitigation:
 
-* Captura hacia adelante.
-* Arqueología bajo demanda.
-* Priorización.
-* Cobertura parcial aceptada.
-* Declaración de shallow history y gaps.
+* Forward capture.
+* On-demand archaeology.
+* Prioritization.
+* Accepted partial coverage.
+* Declaration of shallow history and gaps.
 
-## Riesgo: fragilidad de símbolos
+## Risk: symbol fragility
 
-Mitigación:
+Mitigation:
 
-* Identidad conceptual.
-* Múltiples bindings.
-* Linaje.
+* Conceptual identity.
+* Multiple bindings.
+* Lineage.
 * Git.
 * Tests.
-* Tablas.
-* Rutas.
-* Linkage separado de aplicabilidad.
+* Tables.
+* Routes.
+* Linkage separate from applicability.
 
-## Riesgo: duplicación conceptual
+## Risk: conceptual duplication
 
-Mitigación:
+Mitigation:
 
-* Alias.
-* Candidatos de merge.
-* Split explícito.
-* No fusionar automáticamente.
-* Historial de identidad.
+* Aliases.
+* Merge candidates.
+* Explicit split.
+* No automatic merging.
+* Identity history.
 
-## Riesgo: saturación de contexto
+## Risk: context saturation
 
-Mitigación:
+Mitigation:
 
 * Context budget.
 * Ranking.
-* Deduplicación.
+* Deduplication.
 * Progressive disclosure.
-* Resúmenes por prioridad.
+* Priority-based summaries.
 
-## Riesgo: inconsistencia por revisión
+## Risk: revision inconsistency
 
-Mitigación:
+Mitigation:
 
 * Revision coordinator.
-* Snapshot obligatorio.
-* Rechazar o degradar resultados.
-* Caché por revisión y generación.
+* Mandatory snapshot.
+* Reject or degrade results.
+* Per-revision and per-generation cache.
 * Health tool.
 
-## Riesgo: errores o gaps de Codebase Memory
+## Risk: Codebase Memory errors or gaps
 
-Mitigación:
+Mitigation:
 
-* Registrar versión, cobertura y warnings.
-* No asumir que ausencia significa inexistencia.
-* Fallback a Git o source cuando corresponda.
-* Pruebas contractuales del adaptador.
-* Capabilities negotiation.
+* Record version, coverage, and warnings.
+* Do not assume absence means nonexistence.
+* Fall back to Git or source when appropriate.
+* Adapter contract tests.
+* Capability negotiation.
 
-## Riesgo: prompt injection en registros
+## Risk: prompt injection in records
 
-Mitigación:
+Mitigation:
 
-* Tratar contenido como dato no ejecutable.
-* Schema estricto.
-* Campos declarativos.
-* Sanitización del paquete.
-* Separación de evidencia e instrucciones.
-* Límites de texto libre.
+* Treat content as non-executable data.
+* Strict schema.
+* Declarative fields.
+* Packet sanitization.
+* Separation of evidence and instructions.
+* Free-text limits.
 
-## Riesgo: secretos e información sensible
+## Risk: secrets and sensitive information
 
-Mitigación:
+Mitigation:
 
-* Clasificación de sensibilidad.
-* Visibilidad.
+* Sensitivity classification.
+* Visibility.
 * Secret scanning.
-* Referencias externas.
-* Redacción.
-* No cachear patches sensibles por defecto.
+* External references.
+* Redaction.
+* Do not cache sensitive patches by default.
 
-## Riesgo: el agente no llama Rationale
+## Risk: the agent does not call Rationale
 
-Mitigación:
+Mitigation:
 
-* Baseline target context en integraciones compatibles.
-* `prepare_change` intent-aware.
-* Instrucciones del cliente.
-* Hooks opcionales y no bloqueantes.
-* Revision gate independiente del hook.
-* Revisión del diff al finalizar.
-* CI solo para políticas críticas deterministas.
-* Health check antes de operar en dominios configurados.
+* Baseline target context in compatible integrations.
+* Intent-aware `prepare_change`.
+* Client instructions.
+* Optional, non-blocking hooks.
+* Revision gate independent of the hook.
+* Diff review when finishing.
+* CI only for deterministic critical policies.
+* Health check before operating in configured domains.
 
-## Riesgo: no ahorrar tokens
+## Risk: not saving tokens
 
-Mitigación:
+Mitigation:
 
-* Activación adaptativa.
-* Paquetes pequeños.
-* Medición extremo a extremo.
-* Comparación contra ADR y lectura directa.
-* No usar Rationale para cambios triviales.
+* Adaptive activation.
+* Small packets.
+* End-to-end measurement.
+* Comparison against ADRs and direct reading.
+* Do not use Rationale for trivial changes.
 
-## Riesgo: Codebase Memory absorbe la función
+## Risk: Codebase Memory absorbs the function
 
-Mitigación:
+Mitigation:
 
-* Diferenciarse en autoridad, procedencia, aplicabilidad y preflight.
-* Consumir ADR e historia del proveedor como evidencia.
-* Mantener modelo portable.
-* Soportar proveedores futuros.
+* Differentiate on authority, provenance, applicability, and preflight.
+* Consume the provider's ADRs and history as evidence.
+* Keep a portable model.
+* Support future providers.
 
-## Riesgo: fuga de scope en monorepos
+## Risk: scope leakage in monorepos
 
-Mitigación:
+Mitigation:
 
-* Scopes jerárquicos explícitos.
-* `applies_to` y `excludes`.
-* Camino de relevancia en cada inclusión cruzada.
-* Métricas de contexto irrelevante.
-* Tests con frontend, backend y packages compartidos.
+* Explicit hierarchical scopes.
+* `applies_to` and `excludes`.
+* Relevance path on every cross inclusion.
+* Irrelevant context metrics.
+* Tests with frontend, backend, and shared packages.
 
-## Riesgo: depender de hooks para la corrección
+## Risk: depending on hooks for correctness
 
-Mitigación:
+Mitigation:
 
-* Revision gate en cada consulta.
-* Hooks y daemon únicamente como aceleradores.
-* Estado observable cuando una integración no se ejecutó.
-* CI como verificación posterior, no sustituto de la frescura local.
+* Revision gate on every query.
+* Hooks and daemon only as accelerators.
+* Observable state when an integration did not run.
+* CI as later verification, not a substitute for local freshness.
 
-## Riesgo: deduplicación semántica incorrecta
+## Risk: wrong semantic deduplication
 
-Mitigación:
+Mitigation:
 
-* Resolución determinista primero.
-* Embeddings solo como candidatos.
+* Deterministic resolution first.
+* Embeddings only as candidates.
 * `novelty_reason`.
-* Merge y split auditables.
-* Nunca bloquear por similitud aislada.
+* Auditable merge and split.
+* Never block on isolated similarity.
 
-## Riesgo: assessments diferentes entre computadoras
+## Risk: different assessments across computers
 
-Mitigación:
+Mitigation:
 
-* Capa canónica separada de la derivada.
-* Snapshot con versión y cobertura local.
-* Assessments regenerables.
-* No versionar conclusiones dependientes de un índice incompleto como hechos globales.
+* Canonical layer separate from the derived one.
+* Snapshot with local version and coverage.
+* Regenerable assessments.
+* Do not version conclusions that depend on an incomplete index as global facts.
 
-## Riesgo: contexto abundante pero poco útil
+## Risk: abundant but barely useful context
 
-Mitigación:
+Mitigation:
 
 * Context utility density.
-* Baseline pequeño.
+* Small baseline.
 * Intent-aware retrieval.
 * Progressive disclosure.
-* Evals de omisión y ruido, no solo conteo de tokens.
+* Evals for omission and noise, not just token counts.
 
-## Riesgo: prometer reemplazar experiencia senior
+## Risk: promising to replace senior experience
 
-Mitigación:
+Mitigation:
 
-* Definir el producto como continuidad institucional.
-* Mantener autoridad humana.
-* Mostrar desconocidos.
-* No inferir prioridades empresariales.
-* Evaluar reducción de arqueología y regresiones, no “nivel senior” abstracto.
+* Define the product as institutional continuity.
+* Keep human authority.
+* Show unknowns.
+* Do not infer business priorities.
+* Evaluate reduction of archaeology and regressions, not an abstract "senior level".
 
-## Riesgo: optimizar para la métrica
+## Risk: optimizing for the metric
 
-Un sistema podría aumentar artificialmente `context_utility_density` entregando paquetes mínimos que omiten información difícil, segmentando items para inflar la suma o calibrando pesos después de observar resultados.
+A system could artificially increase `context_utility_density` by delivering minimal packets that omit hard information, splitting items to inflate the sum, or calibrating weights after observing results.
 
-Mitigación:
+Mitigation:
 
-* Ground truth previo.
-* Métricas de recall y harmful context separadas.
-* Segmentación semántica definida.
-* Análisis de sensibilidad.
-* Congelar umbrales antes del piloto.
-* Dar prioridad al resultado real de la tarea.
+* Ground truth prepared in advance.
+* Separate recall and harmful context metrics.
+* Defined semantic segmentation.
+* Sensitivity analysis.
+* Freeze thresholds before the pilot.
+* Give priority to the real task outcome.
 
-## Riesgo: sesgo del ground truth
+## Risk: ground truth bias
 
-La persona que conoce la solución histórica puede incluir solamente el conocimiento que Rationale ya modela o confundir la solución final con la única solución válida.
+The person who knows the historical solution may include only the knowledge Rationale already models, or confuse the final solution with the only valid solution.
 
-Mitigación:
+Mitigation:
 
-* Múltiples fuentes.
-* Revisión independiente.
-* Estados disputados.
-* Evaluación ciega.
-* Conservar soluciones alternativas válidas.
-* Excluir casos donde no pueda establecerse una referencia razonable.
+* Multiple sources.
+* Independent review.
+* Disputed states.
+* Blind evaluation.
+* Keep valid alternative solutions.
+* Exclude cases where a reasonable reference cannot be established.
 
-## Riesgo: `novelty_reason` genérica
+## Risk: generic `novelty_reason`
 
-Un agente puede aprender a superar el control escribiendo justificaciones vacías o fabricando diferencias.
+An agent can learn to pass the check by writing empty justifications or fabricating differences.
 
-Mitigación:
+Mitigation:
 
-* Schema estructurado.
-* Candidatos comparados obligatorios.
-* Contraste explícito.
-* Evidencia cuando exista similitud alta.
-* Validación determinista básica.
-* Revisión humana en dominios críticos.
-* Medir duplicados descubiertos posteriormente.
+* Structured schema.
+* Mandatory compared candidates.
+* Explicit contrast.
+* Evidence when there is high similarity.
+* Basic deterministic validation.
+* Human review in critical domains.
+* Measure duplicates discovered later.
 
-## Riesgo: latencia del baseline
+## Risk: baseline latency
 
-Una inyección útil pero lenta puede interrumpir búsquedas y lecturas frecuentes hasta que los desarrolladores desactiven la herramienta.
+A useful but slow injection can interrupt frequent searches and reads until developers disable the tool.
 
-Mitigación:
+Mitigation:
 
-* Fast path local separado.
-* Cache por revisión y generación.
-* Sin LLM ni embeddings.
-* Deadline estricto.
+* Separate local fast path.
+* Per-revision and per-generation cache.
+* No LLM or embeddings.
+* Strict deadline.
 * Fail open.
-* Deduplicación por sesión.
-* Telemetría local de P50, P95, cold start y timeouts.
+* Per-session deduplication.
+* Local telemetry for P50, P95, cold start, and timeouts.
 
-## Riesgo: contaminación entre condiciones experimentales
+## Risk: contamination between experimental conditions
 
-El agente o evaluador puede recordar información de una ejecución anterior y favorecer condiciones posteriores.
+The agent or evaluator can remember information from an earlier run and favor later conditions.
 
-Mitigación:
+Mitigation:
 
-* Sesiones aisladas.
-* Orden aleatorio o contrabalanceado.
-* Reinicio de memoria.
-* Evaluación ciega.
-* Identificar explícitamente cualquier contaminación inevitable.
+* Isolated sessions.
+* Random or counterbalanced order.
+* Memory reset.
+* Blind evaluation.
+* Explicitly identify any unavoidable contamination.
 
-## Riesgo: sobrearquitectura
+## Risk: over-architecture
 
-Mitigación:
+Mitigation:
 
-* Experimento 0.0 antes de producto completo.
-* Seis entidades persistidas.
-* Seis herramientas públicas.
-* Cuatro crates.
-* Monolito modular.
-* Sin embeddings propios inicialmente.
+* Experiment 0.0 before the full product.
+* Six persisted entities.
+* Six public tools.
+* Four crates.
+* Modular monolith.
+* No embeddings of its own initially.
 
 ---
 
-# 32. Criterio definitivo de éxito
+# 32. Definitive success criterion
 
 
-Rationale será exitoso si ocurre lo siguiente:
+Rationale will be successful if the following happens:
 
-1. Un agente nuevo abre un repositorio sin conocer conversaciones anteriores.
-2. Intenta modificar un sistema de autorización.
-3. Rationale comprueba que Git, Codebase Memory y assessments corresponden a una revisión coherente.
-4. Identifica el comportamiento conceptual relacionado.
-5. Recupera una decisión aprobada por la autoridad adecuada.
-6. Le muestra una restricción crítica.
-7. Explica por qué existe y qué evidencia la respalda.
-8. Detecta que la intención propuesta puede reintroducir un problema anterior.
-9. Entrega el contexto en menos de aproximadamente mil tokens.
-10. No le muestra quince registros históricos irrelevantes.
-11. No genera una advertencia por un simple renombre.
-12. No bloquea por una inferencia o por un índice incompleto.
-13. El agente puede continuar con una solución mejor informada.
-14. El costo total de resolver la tarea mejora frente a no usar Rationale.
-15. Una restricción de backend relevante puede recuperarse al modificar un package frontend conectado, mostrando el camino de relevancia.
-16. Un commit humano directo vuelve stale el assessment correspondiente en la siguiente consulta, aunque no exista hook.
-17. Un agente no puede crear silenciosamente un Subject casi duplicado sin reutilizarlo o justificar su novedad.
-18. Una máquina nueva puede reconstruir el contexto local desde los archivos canónicos versionados.
-19. Si el agente no declara intención, recibe un baseline pequeño sin que Rationale invente el objetivo.
-20. La herramienta reduce contexto manual repetitivo sin reemplazar los síntomas y requisitos específicos de la tarea.
+1. A new agent opens a repository without knowing earlier conversations.
+2. It tries to modify an authorization system.
+3. Rationale checks that Git, Codebase Memory, and assessments correspond to a coherent revision.
+4. It identifies the related conceptual behavior.
+5. It retrieves a decision approved by the appropriate authority.
+6. It shows a critical constraint.
+7. It explains why it exists and what evidence backs it.
+8. It detects that the proposed intent may reintroduce an earlier problem.
+9. It delivers the context in fewer than roughly a thousand tokens.
+10. It does not show fifteen irrelevant historical records.
+11. It does not raise a warning for a simple rename.
+12. It does not block because of an inference or an incomplete index.
+13. The agent can continue with a better-informed solution.
+14. The total cost of solving the task improves compared with not using Rationale.
+15. A relevant backend constraint can be retrieved when modifying a connected frontend package, showing the relevance path.
+16. A direct human commit makes the corresponding assessment stale on the next query, even without a hook.
+17. An agent cannot silently create a near-duplicate Subject without reusing it or justifying its novelty.
+18. A new machine can rebuild the local context from the versioned canonical files.
+19. If the agent does not declare an intent, it receives a small baseline without Rationale inventing the goal.
+20. The tool reduces repetitive manual context without replacing the task's specific symptoms and requirements.
 
-La experiencia ideal sería:
+The ideal experience would be:
 
 ```text
 You are modifying entity authorization.
@@ -5248,7 +5258,7 @@ Additional history:
 2 records available.
 ```
 
-## 32.0 Caso de éxito cross-workspace
+## 32.0 Cross-workspace success case
 
 ```text
 Task:
@@ -5275,41 +5285,43 @@ Context path:
 RoleBadge → @boost/auth-contracts → authorization subject → approved constraint
 ```
 
-El paquete no incluye toda la memoria del backend. Incluye la única decisión cruzada que cambia cómo debe resolverse la tarea.
+The packet does not include the whole backend memory. It includes the single cross decision that changes how the task must be solved.
 
-## 32.1 Comparación mínima para justificar el producto
+## 32.1 Minimum comparison to justify the product
 
-Rationale debe superar de forma clara a:
+Rationale must clearly outperform:
 
-1. Agente sin memoria.
-2. `AGENTS.md` o ADR tradicionales.
-3. Codebase Memory con ADR o historia, sin Rationale.
-4. Lectura manual de commits y PR.
+1. An agent without memory.
+2. Traditional `AGENTS.md` or ADRs.
+3. Codebase Memory with ADRs or history, without Rationale.
+4. Manual reading of commits and PRs.
 
-Si no ofrece una mejora clara en seguridad, precisión, fricción o costo total, la arquitectura completa no se justifica.
+If it does not offer a clear improvement in safety, precision, friction, or total cost, the complete architecture is not justified.
 
 ---
 
-# 33. Definición pública
+# 33. Public definition
 
 
-## Descripción corta
+## Short description
 
 **Rationale is an open-source project-context compiler and provenance layer for AI coding agents. It turns shared decisions, constraints, risks, and structural bindings into the smallest reliable context packet needed for a specific code change.**
 
-## Descripción en español
+## Spanish description
+
+The product copy used for Spanish-speaking audiences:
 
 **Rationale es un compilador open source de contexto del proyecto y una capa de procedencia para agentes de programación. Convierte decisiones, restricciones, riesgos y bindings estructurales compartidos en el paquete de contexto confiable más pequeño que necesita un cambio específico.**
 
-## Relación con Codebase Memory
+## Relationship with Codebase Memory
 
 **Codebase Memory understands what is connected. Rationale tells the agent which decisions still govern those connections—and why they are trusted.**
 
-## Relación con Git
+## Relationship with Git
 
 **Git records what changed. Rationale preserves why the change still matters and whether the decision remains applicable.**
 
-## Frases centrales
+## Central phrases
 
 > **Git remembers what changed. Rationale remembers why it still matters.**
 
@@ -5319,16 +5331,16 @@ Si no ofrece una mejora clara en seguridad, precisión, fricción o costo total,
 
 > **No explanation is better than a false explanation.**
 
-## Definición técnica
+## Technical definition
 
-> **Rationale es un compilador de contexto y preflight de decisiones de software con scopes, procedencia, autoridad, bindings estructurales y consistencia por revisión.**
+> **Rationale is a context compiler and software decision preflight with scopes, provenance, authority, structural bindings, and per-revision consistency.**
 
 ---
 
-# 34. Visión de largo plazo
+# 34. Long-term vision
 
 
-Rationale será el primer producto concreto dentro de una visión más amplia:
+Rationale will be the first concrete product within a broader vision:
 
 ```text
 Project Cognition Protocol
@@ -5339,11 +5351,11 @@ Project Cognition Protocol
 
 ## Rationale
 
-Producto inicial enfocado en cambios de software.
+Initial product focused on software changes.
 
 ## Rationale Context Model
 
-Modelo portable para:
+Portable model for:
 
 * Subjects.
 * Records.
@@ -5351,138 +5363,138 @@ Modelo portable para:
 * Evidence.
 * Approvals.
 * Assessments.
-* Snapshots de revisión.
+* Revision snapshots.
 
 ## Context Provenance Model
 
-Modelo más general que define:
+A more general model that defines:
 
-* Origen.
-* Transformaciones.
-* Autoridad.
-* Confianza.
-* Vigencia.
-* Evidencia.
-* Invalidación.
-* Sensibilidad.
+* Origin.
+* Transformations.
+* Authority.
+* Trust.
+* Validity.
+* Evidence.
+* Invalidation.
+* Sensitivity.
 
 ## Project Cognition Protocol
 
-Visión futura para preservar conocimiento operativo más amplio:
+Future vision for preserving broader operational knowledge:
 
-* Decisiones.
-* Incidentes.
-* Experimentos.
-* Migraciones.
-* Suposiciones.
-* Consecuencias.
-* Linaje.
+* Decisions.
+* Incidents.
+* Experiments.
+* Migrations.
+* Assumptions.
+* Consequences.
+* Lineage.
 
-## Condición para llamarlo protocolo
+## Condition for calling it a protocol
 
-No se declarará estable hasta contar con:
+It will not be declared stable until it has:
 
-* Al menos dos consumidores o proveedores independientes.
+* At least two independent consumers or providers.
 * Conformance tests.
-* Versionado y migraciones.
-* Casos multi-repositorio reales.
-* Política de compatibilidad.
+* Versioning and migrations.
+* Real multi-repository cases.
+* A compatibility policy.
 
-La implementación debe comenzar con el problema específico.
+The implementation must start with the specific problem.
 
-No con la ambición de modelar todo.
+Not with the ambition of modeling everything.
 
-## 34.1 Registro de decisiones de la versión 0.4
+## 34.1 Decision log for version 0.4
 
-| Propuesta evaluada | Decisión | Razón |
+| Proposal evaluated | Decision | Reason |
 |---|---|---|
-| Subjects globales y bindings locales para monorepos | Adoptada con scopes jerárquicos | El problema es alcance e herencia, no crear una base separada por package |
-| Embeddings obligatorios antes de crear Subject | Adoptada parcialmente | Se usarán como señal de candidato; la resolución determinista tiene prioridad |
-| Justificación al no reutilizar concepto similar | Adoptada | `novelty_reason` vuelve auditable la creación |
-| Daemon o `post-commit` obligatorio | Rechazada como garantía | Puede omitirse; query-time revision gate es la frontera correcta |
-| Hook o daemon opcional para detectar antes | Adoptada | Reduce la ventana stale sin bloquear el flujo |
-| IDE intercepta siempre la intención | Rechazada como promesa universal | Las capacidades varían y la intención puede no estar expresada |
-| Baseline automático por target | Adoptada | Protege constraints críticas aun sin intención completa |
-| Preflight explícito intent-aware | Conservado | Es necesario para comparar el cambio propuesto contra decisiones |
-| “Mientras más contexto, mejor” | Reformulado | Más contexto enfocado ayuda; ruido y posición pueden perjudicar |
-| Visión similar a una persona senior | Reformulada | Continuidad institucional sí; reemplazo del juicio senior no |
-| Memoria compartida aunque CBM sea local | Adoptada | Records canónicos viven en Git; índices y assessments se reconstruyen localmente |
+| Global Subjects and local bindings for monorepos | Adopted with hierarchical scopes | The problem is scope and inheritance, not creating a separate database per package |
+| Mandatory embeddings before creating a Subject | Partially adopted | They will be used as a candidate signal; deterministic resolution takes priority |
+| Justification when not reusing a similar concept | Adopted | `novelty_reason` makes creation auditable |
+| Mandatory daemon or `post-commit` | Rejected as a guarantee | It can be skipped; the query-time revision gate is the right boundary |
+| Optional hook or daemon to detect earlier | Adopted | It shortens the stale window without blocking the flow |
+| IDE always intercepts the intent | Rejected as a universal promise | Capabilities vary and the intent may not be expressed |
+| Automatic per-target baseline | Adopted | It protects critical constraints even without a complete intent |
+| Explicit intent-aware preflight | Kept | It is needed to compare the proposed change against decisions |
+| "The more context, the better" | Reformulated | More focused context helps; noise and position can hurt |
+| Vision similar to a senior person | Reformulated | Institutional continuity, yes; replacing senior judgment, no |
+| Shared memory even though CBM is local | Adopted | Canonical records live in Git; indexes and assessments are rebuilt locally |
 
-Esta adjudicación debe preservarse para evitar que futuras iteraciones reintroduzcan supuestos ya descartados.
+This adjudication must be preserved so future iterations do not reintroduce assumptions that were already discarded.
 
-## 34.2 Registro de decisiones de la versión 0.5
+## 34.2 Decision log for version 0.5
 
-| Propuesta evaluada | Decisión | Razón |
+| Proposal evaluated | Decision | Reason |
 |---|---|---|
-| Medir CUD únicamente con percepción subjetiva | Rechazada | La utilidad debe compararse contra ground truth y resultados reales |
-| Utilidad por cada mil tokens | Adoptada como métrica diagnóstica | Hace comparable la eficiencia de paquetes de tamaños distintos |
-| CUD como única métrica de éxito | Rechazada | Puede ocultar omisiones críticas, falsedades o tareas fallidas |
-| Multiplicar relevancia, confiabilidad, accionabilidad, aplicabilidad, importancia y unicidad | Adoptada como hipótesis inicial | Penaliza estrictamente items débiles, pero requiere sensibilidad y validación |
-| Ground truth por caso | Adoptado | Permite evaluar recall, precisión y falsedades de forma reproducible |
-| Comparar solo contra ejecución sin memoria | Rechazada | Debe incluir documentación tradicional, Codebase Memory y, cuando sea posible, contexto experto |
-| Medir solo tokens de `prepare_change` | Rechazada | El costo válido es extremo a extremo hasta una solución correcta |
-| Medir reducción del prompt humano | Adoptada | Representa una promesa central del producto |
-| Declarar “visión senior” por similitud de estilo | Rechazada | Se medirá únicamente recall de conocimiento verificable identificado por una persona experimentada |
-| `novelty_reason` en texto libre | Rechazada como única defensa | Se requiere contraste estructurado, candidatos y evidencia |
-| Baseline ejecutando el pipeline completo | Rechazado | Las superficies de alta frecuencia necesitan un fast path precomputado |
-| Baseline bloqueante | Rechazado | Debe tener deadline, fail open y degradación observable |
-| Publicar umbrales después de ver resultados | Rechazado | Los criterios deben congelarse antes del piloto para evitar metric gaming |
-| Ignorar resultados donde Rationale empeora | Rechazado | Los fallos son necesarios para validar o corregir la hipótesis |
+| Measure CUD only through subjective perception | Rejected | Utility must be compared against ground truth and real results |
+| Utility per thousand tokens | Adopted as a diagnostic metric | It makes the efficiency of packets of different sizes comparable |
+| CUD as the only success metric | Rejected | It can hide critical omissions, falsehoods, or failed tasks |
+| Multiply relevance, reliability, actionability, applicability, importance, and uniqueness | Adopted as an initial hypothesis | It strictly penalizes weak items, but requires sensitivity analysis and validation |
+| Per-case ground truth | Adopted | It makes it possible to evaluate recall, precision, and falsehoods reproducibly |
+| Compare only against a run without memory | Rejected | It must include traditional documentation, Codebase Memory, and, when possible, expert context |
+| Measure only `prepare_change` tokens | Rejected | The valid cost is end to end until a correct solution |
+| Measure reduction of the human prompt | Adopted | It represents a central product promise |
+| Declare a "senior vision" by stylistic similarity | Rejected | Only recall of verifiable knowledge identified by an experienced person will be measured |
+| Free-text `novelty_reason` | Rejected as the only defense | Structured contrast, candidates, and evidence are required |
+| Baseline running the full pipeline | Rejected | High-frequency surfaces need a precomputed fast path |
+| Blocking baseline | Rejected | It must have a deadline, fail open, and observable degradation |
+| Publish thresholds after seeing results | Rejected | Criteria must be frozen before the pilot to avoid metric gaming |
+| Ignore results where Rationale makes things worse | Rejected | Failures are necessary to validate or correct the hypothesis |
 
-Esta versión se considera semidefinitiva para comenzar el experimento, no evidencia de que el producto ya funciona.
+This version is considered near-final for starting the experiment, not evidence that the product already works.
 
 ---
 
-# 35. Conclusión
+# 35. Conclusion
 
 
-Rationale no debe ser una base de datos llena de explicaciones históricas.
+Rationale must not be a database full of historical explanations.
 
-Tampoco debe convertirse en una herramienta que interrumpe a los desarrolladores cada vez que una función cambia.
+Nor must it become a tool that interrupts developers every time a function changes.
 
-Su valor estará en encontrar el equilibrio entre:
+Its value will lie in finding the balance between:
 
-* Memoria y olvido.
-* Automatización y confirmación.
-* Estructura y concepto.
-* Historia y relevancia.
-* Advertencia y ruido.
-* Confianza y humildad.
-* Procedencia y autoridad.
-* Declaraciones históricas y assessments actuales.
-* Utilidad y costo operacional.
-* Memoria compartida y estado local.
-* Contexto suficiente y ruido.
-* Alcance global y scopes de paquetes.
-* Automatización best-effort y garantías verificables.
-* Densidad del paquete y resultado real de la tarea.
-* Ahorro de contexto y costo extremo a extremo.
-* Hipótesis atractivas y evidencia capaz de refutarlas.
+* Memory and forgetting.
+* Automation and confirmation.
+* Structure and concept.
+* History and relevance.
+* Warning and noise.
+* Trust and humility.
+* Provenance and authority.
+* Historical declarations and current assessments.
+* Utility and operational cost.
+* Shared memory and local state.
+* Sufficient context and noise.
+* Global reach and package scopes.
+* Best-effort automation and verifiable guarantees.
+* Packet density and real task outcome.
+* Context savings and end-to-end cost.
+* Attractive hypotheses and evidence able to refute them.
 
-La definición definitiva del proyecto es:
+The definitive definition of the project is:
 
-> **Rationale es un compilador local de contexto causal y una capa de procedencia, autoridad y vigencia para agentes de programación. Conserva como memoria canónica compartida por qué se realizaron cambios importantes, qué decisiones y restricciones gobiernan los comportamientos del sistema, quién podía aprobarlas y qué evidencia las respalda. En cada computadora utiliza motores estructurales como Codebase Memory para resolver scopes y las resoluciones locales de bindings en la revisión actual, y compila únicamente el contexto confiable, relevante y accionable que una tarea necesita.**
+> **Rationale is a local causal context compiler and a provenance, authority, and validity layer for coding agents. As shared canonical memory, it keeps why important changes were made, which decisions and constraints govern the system's behaviors, who could approve them, and what evidence backs them. On each computer it uses structural engines such as Codebase Memory to resolve scopes and local binding resolutions at the current revision, and it compiles only the trustworthy, relevant, and actionable context a task needs.**
 
-La mejor versión del producto no es la que recuerda más. Tampoco es la que obtiene la puntuación interna más alta. Es la que demuestra que su contexto ayuda a completar tareas reales con mayor seguridad, menos repetición humana y un costo total razonable.
+The best version of the product is not the one that remembers the most. Nor is it the one with the highest internal score. It is the one that shows its context helps complete real tasks more safely, with less human repetition and a reasonable total cost.
 
 
-Es la que sabe:
+It is the one that knows:
 
-* Qué no sabe.
-* Qué fue inferido.
-* Qué fue aprobado.
-* Qué evidencia puede estar incompleta.
-* Qué revisión está observando.
-* Cuándo debe guardar silencio.
-* Cuándo una decisión es suficientemente crítica para detener un cambio.
+* What it does not know.
+* What was inferred.
+* What was approved.
+* What evidence may be incomplete.
+* Which revision it is observing.
+* When it must stay silent.
+* When a decision is critical enough to stop a change.
 
-Rationale tampoco busca reemplazar el prompt específico de la tarea ni convertir al agente en una persona senior completa. Busca conservar la continuidad técnica que normalmente desaparece cuando una conversación termina o una persona abandona el proyecto.
+Rationale also does not seek to replace the task-specific prompt or turn the agent into a complete senior person. It seeks to keep the technical continuity that usually disappears when a conversation ends or a person leaves the project.
 
-Rationale no busca que una inteligencia artificial recuerde todo lo ocurrido en un proyecto.
+Rationale does not seek to make an artificial intelligence remember everything that happened in a project.
 
-Busca que nunca destruya una decisión importante únicamente porque nadie logró explicarle por qué existía.
+It seeks to ensure it never destroys an important decision just because nobody managed to explain why it existed.
 
-Y, al mismo tiempo, busca que nunca preserve una explicación falsa únicamente porque sonaba convincente.
+And, at the same time, it seeks to ensure it never preserves a false explanation just because it sounded convincing.
 
 ---
 

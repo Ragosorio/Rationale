@@ -1,37 +1,45 @@
 # Rationale
 
-Rationale es memoria causal local para agentes de programación. Antes de que un
-agente cambie tu código, le entrega las reglas, decisiones y relaciones que
-gobiernan ese código; después del cambio, el conocimiento que sigue siendo
-cierto vuelve a tu repositorio — de forma automática, y con las reglas que fijas
-fuera del alcance de cualquier agente.
+Rationale is local causal memory for coding agents. Before an agent changes your
+code, Rationale hands it the rules, decisions, and relationships that govern that
+code. After the change, the knowledge that stays true is written back to your
+repository automatically, and the rules you pin stay out of any agent's reach.
 
 > Git remembers what changed. Rationale remembers why it still matters.
 
-## Elige tu recorrido
+Website and documentation, in English and Spanish:
+[rationale-pearl.vercel.app](https://rationale-pearl.vercel.app).
 
-- **Solo quiero usarlo:** empieza por [Quickstart](docs/quickstart.md).
-- **Quiero conectarlo a un agente:** sigue [Agentes y MCP](docs/user-guide/agents-and-mcp.md).
-- **Quiero ver qué hacen mis agentes:** abre el [Control Room](docs/user-guide/control-room.md).
-- **Quiero contribuir:** lee [CONTRIBUTING.md](CONTRIBUTING.md).
-- **Quiero investigar una decisión:** consulta [Conceptos](docs/user-guide/concepts.md) y los [ADRs](docs/adr/).
-- **Tengo un problema:** abre un issue siguiendo [SUPPORT.md](SUPPORT.md).
+## Choose your path
 
-## Estado actual
+- **I just want to use it:** start with the [quickstart](docs/quickstart.md).
+- **I want to connect an agent:** read [Agents and MCP](docs/user-guide/agents-and-mcp.md).
+- **I want my agents to follow a complete playbook:** see the [`rationale` skill](docs/user-guide/skills.md).
+- **I want to see what my agents are doing:** open the [Control Room](docs/user-guide/control-room.md).
+- **I want to contribute:** read [CONTRIBUTING.md](CONTRIBUTING.md).
+- **I want to investigate a decision:** see [Concepts](docs/user-guide/concepts.md) and the [ADRs](docs/adr/).
+- **I have a problem:** open an issue following [SUPPORT.md](SUPPORT.md).
 
-`v1.0.0` es la primera Release estable. El ciclo completo — contexto antes del
-cambio, captura autónoma después, autoridad humana sobre las reglas fijadas y el
-Control Room en vivo — está implementado, probado y en uso sobre el propio
-repositorio de Rationale. Qué se verificó y qué sigue abierto:
+## Status
+
+`v1.0.0` is the first stable release. The full loop is implemented, tested, and
+used on Rationale's own repository: context before the change, autonomous
+capture after it, human authority over pinned rules, and the live Control Room.
+What was verified and what is still open is recorded in
 [`docs/work-items/v1.0-release-verification.md`](docs/work-items/v1.0-release-verification.md)
-y [`CHANGELOG.md`](CHANGELOG.md).
+and [`CHANGELOG.md`](CHANGELOG.md).
 
-## Instalación rápida
+`main` also carries changes that are not in a release yet, listed under
+*Unreleased* in the changelog. The largest is the `rationale` Agent Skill, which
+`rationale install-agent` installs starting with the next release. You can
+install the skill from `main` today with `npx skills add Ragosorio/Rationale`.
 
-### macOS y Linux
+## Quick install
+
+### macOS and Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash   # recomendado
+curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash   # recommended
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh
 rationale --version
@@ -46,7 +54,7 @@ Invoke-WebRequest https://github.com/Ragosorio/Rationale/releases/latest/downloa
 rationale.exe --version
 ```
 
-Después, desde la raíz del proyecto que quieres proteger:
+Then, from the root of the project you want to protect:
 
 ```bash
 rationale init
@@ -54,121 +62,164 @@ rationale health
 rationale ui
 ```
 
-El instalador verifica SHA-256, usa el canal `stable`, registra el servidor MCP
-en los agentes detectados y nunca toca `.rationale/` al actualizar o
-desinstalar. La guía completa está en [`docs/runbooks/install.md`](docs/runbooks/install.md).
+The installer verifies SHA-256 checksums, uses the `stable` channel, registers
+the MCP server for the agents it detects, and never touches `.rationale/` when
+updating or uninstalling. The full guide is in
+[`docs/runbooks/install.md`](docs/runbooks/install.md).
 
-## El ciclo en cinco pasos
+## Get started
 
-1. **Localizar.** El agente encuentra el código con Codebase Memory.
-2. **Preparar.** Llama a `prepare_change(target, intent)` y recibe un packet
-   acotado: constraints y decisiones que gobiernan el target (con autoridad y
-   procedencia), relaciones explicadas con su estado estructural, la vecindad
-   del código y conflictos con su intención.
-3. **Cambiar.** Hace el cambio mínimo coherente con ese contexto.
-4. **Capturar.** Llama a `finalize_change` con solo el conocimiento durable.
-   Rationale descarta ruido y duplicados y escribe el resto como Records
-   canónicos en la misma llamada. No hay cola de aprobación.
-5. **Fijar.** Tú fijas con `rationale pin` las reglas que ningún agente puede
-   reemplazar. Si uno lo intenta, no se escribe nada: recibes un conflicto que
-   resuelves con `rationale resolve`.
+1. **Install** Codebase Memory (recommended) and Rationale with the commands above.
+2. **Initialize** your repository with `rationale init`. It creates the canon in
+   `.rationale/` and writes the invocation protocol for Claude Code, Codex, or
+   Cursor.
+3. **Restart your agent.** In Claude Code, run `/rationale-health`. In Codex,
+   ask "Check Rationale health."
+4. **Ask for a real change.** The agent prepares with `prepare_change`, makes the
+   change, and captures what stays true with `finalize_change`.
+5. **Pin the rules that must not move** with `rationale pin <record-id>`.
+6. **Watch it happen** with `rationale ui`.
 
-El recorrido guiado está en [`docs/quickstart.md`](docs/quickstart.md); el flujo
-diario en [`docs/user-guide/daily-workflow.md`](docs/user-guide/daily-workflow.md).
+## The loop in five steps
 
-## Cómo funciona
+1. **Locate.** The agent finds the code with Codebase Memory.
+2. **Prepare.** It calls `prepare_change(target, intent)` and receives a bounded
+   packet: the constraints and decisions that govern the target (with authority
+   and provenance), explained relationships with their structural state, the
+   code's neighborhood, and conflicts with its intent.
+3. **Change.** It makes the smallest change consistent with that context.
+4. **Capture.** It calls `finalize_change` with only durable knowledge.
+   Rationale discards noise and duplicates and writes the rest as canonical
+   Records in the same call. There is no approval queue.
+5. **Pin.** You pin the rules no agent may replace with `rationale pin`. If an
+   agent tries, nothing is written: you get a conflict to settle with
+   `rationale resolve`.
 
-```text
-Codebase Memory (dónde/cómo) ─┐
-Git (qué/cuándo) ─────────────┼─> compilador de contexto ─> packet ─> agente
-Canon .rationale (por qué) ───┘
+The guided walkthrough is in [`docs/quickstart.md`](docs/quickstart.md), and the
+day-to-day flow in [`docs/user-guide/daily-workflow.md`](docs/user-guide/daily-workflow.md).
 
-agente cambia código ─> finalize_change ─> gate de captura ─> Records canónicos
-                                               │
-                              choque con una regla fijada ─> decisión humana
+## The `rationale` skill
 
-actividad y operaciones locales ─> rationale ui (solo lectura, 127.0.0.1)
+Rationale ships an [Agent Skill](https://agentskills.io) in
+[`skills/rationale/`](skills/rationale/). A short `SKILL.md` routes the agent to
+one playbook per operation, loaded only when the task needs it:
+
+| Operation | When the agent uses it |
+|---|---|
+| `preflight` | Before changing non-trivial code |
+| `explain` | Before simplifying code that looks redundant or odd |
+| `capture` | After a change, to write back what stays true |
+| `conflicts` | When a candidate collides with a pinned rule |
+| `health` | When tools are missing or results look degraded |
+| `adopt` | When setting Rationale up and seeding the first Records |
+| `maintain` | When bindings go stale or `rationale doctor` reports findings |
+
+The skill also carries a guide to writing Records that the capture gate keeps, a
+validator that mirrors the gate (`scripts/check_candidates.py`), report
+templates, Codex metadata, and evals. Agent-facing text is written in English
+and tells the agent to reply in the user's language.
+
+```bash
+npx skills add Ragosorio/Rationale   # any agent that reads Agent Skills, from main
+rationale install-agent              # Claude Code and Codex, starting with the next release
 ```
 
-Codebase Memory es un proveedor estructural opcional. Sin él, Rationale sigue
-funcionando con cobertura degradada y lo informa; nunca lee la base interna del
-proveedor ni lo trata como fuente de autoridad.
+## How it works
 
-Rationale no es otro indexador de código, no reemplaza Git, no es un SaaS, no
-guarda conversaciones, no usa embeddings remotos y no decide por sí solo el
-significado de una afirmación.
+```text
+Codebase Memory (where/how) ─┐
+Git (what/when) ─────────────┼─> context compiler ─> packet ─> agent
+Canon .rationale (why) ──────┘
 
-## Comandos y MCP
+agent changes code ─> finalize_change ─> capture gate ─> canonical Records
+                                             │
+                          collision with a pinned rule ─> human decision
 
-| Necesidad | CLI | MCP |
+local activity and operations ─> rationale ui (read-only, 127.0.0.1)
+```
+
+Codebase Memory is an optional structural provider. Without it, Rationale keeps
+working with degraded coverage and says so; it never reads the provider's
+internal database or treats it as a source of authority.
+
+Rationale is not another code indexer, does not replace Git, is not a SaaS, does
+not store conversations, does not use remote embeddings, and does not decide on
+its own what a statement means.
+
+## Commands and MCP
+
+| Need | CLI | MCP |
 |---|---|---|
-| Inicializar | `rationale init` | — |
-| Salud | `rationale health` | `health` |
-| Preparar contexto | `rationale prepare <target>` | `prepare_change` |
-| Explicar un target | — | `explain_target` |
-| Capturar conocimiento | — | `finalize_change` |
-| Ver el trabajo en vivo | `rationale ui` | — |
-| Fijar / desfijar una regla | `rationale pin` / `unpin` | — |
-| Decidir un conflicto | `rationale conflicts` / `resolve` | `resolve_conflict` (con la respuesta literal de la persona) |
-| Lifecycle de un Record | `rationale review-record <id>` | — |
-| Migrar propuestas pre-1.0 | `rationale migrate` | — |
-| Integridad del canon | `rationale doctor` | — |
-| Registrar / revertir agentes | `install-agent` / `uninstall-agent` | — |
+| Initialize | `rationale init` | — |
+| Health | `rationale health` | `health` |
+| Prepare context | `rationale prepare <target>` | `prepare_change` |
+| Explain a target | — | `explain_target` |
+| Capture knowledge | — | `finalize_change` |
+| Watch work live | `rationale ui` | — |
+| Pin / unpin a rule | `rationale pin` / `unpin` | — |
+| Decide a conflict | `rationale conflicts` / `resolve` | `resolve_conflict` (with the person's literal answer) |
+| Record lifecycle | `rationale review-record <id>` | — |
+| Migrate pre-1.0 proposals | `rationale migrate` | — |
+| Canon integrity | `rationale doctor` | — |
+| Register / revert agents | `install-agent` / `uninstall-agent` | — |
 
-Los agentes escriben memoria; las personas conservan la autoridad. Fijar,
-desfijar y reemplazar una regla fijada exigen una terminal interactiva y un
-actor declarado en `.rationale/config.yaml`.
+Agents write memory; people keep authority. Pinning, unpinning, and replacing a
+pinned rule require an interactive terminal and an actor declared in
+`.rationale/config.yaml`.
 
-## Documentos fundacionales
+## Foundational documents
 
-1. [`Rationale_v0.5.md`](Rationale_v0.5.md) — contrato de producto: problema,
-   entidades, confianza y roadmap.
+1. [`Rationale_v0.5.md`](Rationale_v0.5.md) — product contract: problem,
+   entities, trust, and roadmap.
 2. [`Rationale_Arquitectura_Conceptual_v0.1.md`](Rationale_Arquitectura_Conceptual_v0.1.md)
-   — fronteras técnicas y decisiones de arquitectura.
+   — conceptual architecture: technical boundaries and architecture decisions.
 3. [`Rationale_Proceso_Construccion_Agentes_v0.1.md`](Rationale_Proceso_Construccion_Agentes_v0.1.md)
-   — proceso de trabajo, revisión cruzada y gates de calidad.
+   — agent build process: workflow, cross-review, and quality gates.
 
-La 1.0 reemplazó la cola de aprobación de esos documentos por captura autónoma
-con autoridad humana sobre las reglas fijadas; el detalle está en
+The file names keep their original form so existing links keep working. Release
+1.0 replaced the approval queue these documents describe with autonomous capture
+under human authority over pinned rules; the details are in
 [`docs/work-items/vnext-implementation-plan.md`](docs/work-items/vnext-implementation-plan.md).
 
-## Datos, privacidad y archivos
+## Data, privacy, and files
 
-| Capa | Ubicación | Git |
+| Layer | Location | In Git |
 |---|---|---|
-| Records, Subjects y configuración | `<proyecto>/.rationale/` | Sí |
-| Actividad, operaciones y conflictos pendientes | `<proyecto>/.rationale-local/` | No (excluido automáticamente) |
-| Cache SQLite de búsqueda | `~/.cache/rationale/projects/<id>/` | No |
-| Binario | `~/.local/bin/rationale` o destino configurado | No |
+| Records, Subjects, and configuration | `<project>/.rationale/` | Yes |
+| Protocol blocks and skills | `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/`, `.claude/skills/`, `.agents/skills/` | Yes |
+| Activity, operations, and pending conflicts | `<project>/.rationale-local/` | No (excluded automatically) |
+| SQLite search cache | `~/.cache/rationale/projects/<id>/` | No |
+| Binary | `~/.local/bin/rationale` or the configured directory | No |
 
-Rationale es local-first: no sube código, prompts, Records ni secretos. La
-actividad local guarda identificadores y una intención de una línea, nunca el
-contenido de un Record (ADR-0017); `RATIONALE_ACTIVITY=off` la desactiva. Revisa
-[`docs/user-guide/configuration.md`](docs/user-guide/configuration.md) antes de
-usarlo en repositorios con datos sensibles.
+Rationale is local-first: it does not upload code, prompts, Records, or secrets.
+Local activity stores identifiers and a one-line intent, never the content of a
+Record (ADR-0017); `RATIONALE_ACTIVITY=off` disables it. Read
+[`docs/user-guide/configuration.md`](docs/user-guide/configuration.md) before
+using it in repositories with sensitive data.
 
-## Documentación
+## Documentation
 
-El índice por audiencia está en [`docs/README.md`](docs/README.md). El sitio
-publica la misma documentación en inglés y español.
+The index by audience is [`docs/README.md`](docs/README.md). Documentation in
+this repository is written in English; the website publishes the user
+documentation in English and Spanish.
 
-- [Quickstart](docs/quickstart.md) — primera ejecución.
-- [Guía de usuario](docs/user-guide/) — conceptos, flujo diario, Control Room, CLI, MCP y configuración.
-- [Runbooks](docs/runbooks/) — instalación, diagnóstico, proveedor, cache y release.
-- [Arquitectura factual](docs/architecture/code-map.md) — módulos y flujos reales.
-- [ADRs](docs/adr/) — decisiones y estado de aprobación.
-- [Seguridad](docs/security/) — límites y baseline.
-- [Investigación Codebase Memory](docs/research/codebase-memory/) — integración y límites.
+- [Quickstart](docs/quickstart.md) — first run.
+- [User guide](docs/user-guide/) — concepts, daily workflow, the skill, Control Room, CLI, MCP, and configuration.
+- [Runbooks](docs/runbooks/) — install, diagnostics, provider, cache, and release.
+- [Factual architecture](docs/architecture/code-map.md) — real modules and flows.
+- [ADRs](docs/adr/) — decisions and their approval status.
+- [Security](docs/security/) — limits and baseline.
+- [Codebase Memory research](docs/research/codebase-memory/) — integration and limits.
 
-## Contribuir y obtener ayuda
+## Contributing and help
 
-- Contribuciones: [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- Vulnerabilidades: [`SECURITY.md`](SECURITY.md).
-- Soporte y bugs: [`SUPPORT.md`](SUPPORT.md).
-- Conducta comunitaria: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
-- Historial de cambios: [`CHANGELOG.md`](CHANGELOG.md).
-- Avisos de terceros: [`THIRD_PARTY.md`](THIRD_PARTY.md).
+- Contributions: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- Vulnerabilities: [`SECURITY.md`](SECURITY.md).
+- Support and bugs: [`SUPPORT.md`](SUPPORT.md).
+- Community conduct: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+- Change history: [`CHANGELOG.md`](CHANGELOG.md).
+- Third-party notices: [`THIRD_PARTY.md`](THIRD_PARTY.md).
 
-## Licencia
+## License
 
-MIT. Ver [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).

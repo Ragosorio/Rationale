@@ -1,64 +1,68 @@
 # Release runbook
 
-Las Releases se construyen directamente desde `main` a partir de un tag
-`vMAJOR.MINOR.PATCH`; la versión del binario sale del tag. `docs/RELEASE_VERSION`
-es la única fuente de la versión pública en la documentación y
-`scripts/check-docs.sh` falla si alguna mención se desvía. Los tags `alpha`,
-`beta` y `dogfood.*` son historia de antes de 1.0.
+Releases are built directly from `main` from a `vMAJOR.MINOR.PATCH` tag; the
+binary's version comes from the tag. `docs/RELEASE_VERSION` is the single source
+of the public version in the documentation, and `scripts/check-docs.sh` fails
+when any mention drifts from it. `alpha`, `beta`, and `dogfood.*` tags are
+history from before 1.0.
 
-## Antes del tag
+## Before the tag
 
-- PR o commit directo a `main` con CI verde.
+- A pull request or direct commit to `main` with green CI.
 - `cargo fmt --check`.
 - `cargo clippy --all-targets -- -D warnings`.
-- `cargo test --release`.
+- `cargo test --release` (it includes the `rationale` skill bundle checks).
 - `cargo audit`.
 - `npm --prefix ui ci && npm --prefix ui run typecheck && npm --prefix ui test && npm --prefix ui run build`.
 - `npm --prefix site ci && npm --prefix site run check`.
 - `./scripts/check-docs.sh`.
-- security baseline sin P0/P1 abiertos.
-- dogfood interno y sus casos registrados.
-- matriz de instaladores y smoke de máquina limpia.
+- Security baseline with no open P0/P1 findings.
+- Internal dogfood with its cases recorded.
+- Installer matrix and clean-machine smoke test.
+- `CHANGELOG.md`: move *Unreleased* under the new version, and update
+  `docs/RELEASE_VERSION` and any "starting with the release after …" wording in
+  the documentation.
 
-## Tag y publicación
+## Tag and publish
 
-Antes de etiquetar, confirmar que el commit que va a recibir el tag es
-exactamente el que pasó CI. Un tag apunta a un commit, no a una rama: si el
-árbol está sucio o `HEAD` se adelantó a `origin/main`, el artefacto publicado
-no correspondería al código verificado.
+Before tagging, confirm that the commit receiving the tag is exactly the one
+that passed CI. A tag points at a commit, not a branch: if the tree is dirty or
+`HEAD` moved past `origin/main`, the published artifact would not match the
+verified code.
 
 ```bash
 git fetch origin
-git status --short                 # debe estar vacío
-git rev-parse HEAD                 # debe coincidir...
-git rev-parse origin/main          # ...con este
+git status --short                 # must be empty
+git rev-parse HEAD                 # must match...
+git rev-parse origin/main          # ...this one
 ```
 
-Solo entonces:
+Only then:
 
 ```bash
 git tag -a v1.0.0 -m "Rationale 1.0.0"
 git push origin v1.0.0
 ```
 
-`release.yml` marca `--prerelease` únicamente para `-alpha.`, `-rc.` y
-`-dogfood.`. Un tag `beta` o final se publica como Release completa y por tanto
-puede ser «latest», que es lo que resuelve el canal `stable` de los
-instaladores (ADR-0010). Después de publicar, comprobarlo:
+`release.yml` marks `--prerelease` only for `-alpha.`, `-rc.`, and `-dogfood.`.
+A `beta` or final tag is published as a full release and can therefore become
+"latest", which is what the installers' `stable` channel resolves (ADR-0010).
+After publishing, check it:
 
 ```bash
 gh api repos/Ragosorio/Rationale/releases/latest --jq .tag_name
 ```
 
-La workflow [`release.yml`](../../.github/workflows/release.yml) construye el
-Control Room (`ui/dist`) y falla si no existe — un binario sin él serviría la
-página de fallback de `rationale ui` —, construye los targets, crea archives y
-ZIP, calcula SHA-256, publica instaladores y genera attestation. También publica
-`rationale-update.sh` y `rationale-update.ps1`, que quedan junto al binario para
-que `rationale update` pueda actualizar una instalación existente. Nunca se suben `.rationale-local/`, caches ni secretos.
+The [`release.yml`](../../.github/workflows/release.yml) workflow builds the
+Control Room (`ui/dist`) and fails if it is missing — a binary without it would
+serve the `rationale ui` fallback page — builds the targets, creates archives
+and ZIPs, computes SHA-256, publishes installers, and generates attestations. It
+also publishes `rationale-update.sh` and `rationale-update.ps1`, which sit next
+to the binary so `rationale update` can update an existing installation.
+`.rationale-local/`, caches, and secrets are never uploaded.
 
 ## Rollback
 
-Si falla un smoke test o aparece un hallazgo de seguridad, no se promueve la
-Release. Para un usuario ya instalado, reinstalar una versión anterior con
-`RATIONALE_VERSION` devuelve el binario sin tocar `.rationale/`.
+If a smoke test fails or a security finding appears, the release is not
+promoted. For a user who already installed it, reinstalling an earlier version
+with `RATIONALE_VERSION` restores the binary without touching `.rationale/`.

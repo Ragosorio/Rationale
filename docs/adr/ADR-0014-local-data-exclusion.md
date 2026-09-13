@@ -1,22 +1,21 @@
 # ADR-0014: Local data exclusion in consumer projects
 
-**Status:** proposed — pendiente de revisión cruzada independiente y aprobación humana antes de `accepted`.
+**Status:** proposed — pending independent cross-review and human approval before `accepted`.
 **Date:** 2026-07-28
-**Deciders:** Claude Code (análisis e implementación); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** propone reemplazar la garantía de exclusión local de ADR-0012. Mientras ambos sigan en `proposed`, este ADR **no** supersede formalmente a aquel — una propuesta sin aprobar no adquiere autoridad sobre otra propuesta.
+**Deciders:** Claude Code (analysis and implementation); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** proposes replacing ADR-0012's local-exclusion guarantee. While both remain `proposed`, this ADR does **not** formally supersede that one — an unapproved proposal gains no authority over another proposal.
 
 ## Context
 
-ADR-0012 fijó que toda la telemetría de Rationale es local-only, y presentó
-como evidencia que `.rationale-local/` «ya está en `.gitignore` desde Fase A».
-Esa verificación se hizo dentro del repo de Rationale, donde ese `.gitignore`
-está escrito a mano, y se generalizó a los proyectos consumidores sin
-comprobarlo.
+ADR-0012 established that all of Rationale's telemetry is local-only, and
+presented as evidence that `.rationale-local/` "has been in `.gitignore` since
+Phase A". That check was made inside Rationale's repository, where that
+`.gitignore` is written by hand, and it was generalized to consumer projects
+without verification.
 
-La migración de `alpha.7` a `main` sobre copias de Monorepo y BoostAPI
-demostró que la generalización era falsa (`ADR-0012 §Validation update —
-2026-07-28`). En ambos pilotos, tres archivos están versionados y presentes en
-`origin/main`:
+The migration from `alpha.7` to `main` on copies of Monorepo and BoostAPI showed
+that the generalization was false (`ADR-0012 §Validation update — 2026-07-28`).
+In both pilots, three files are versioned and present on `origin/main`:
 
 ```
 .rationale-local/installed-agent-files.json
@@ -24,252 +23,251 @@ demostró que la generalización era falsa (`ADR-0012 §Validation update —
 .rationale-local/runs/vertical-slice.ndjson
 ```
 
-Ni `init` ni `install-agent` escriben nunca una exclusión en el proyecto del
-usuario. Dos de dos pilotos reprodujeron el defecto: es el flujo normal del
-producto, no un accidente de un repo.
+Neither `init` nor `install-agent` ever writes an exclusion into the user's
+project. Two of two pilots reproduced the defect: it is the product's normal
+flow, not one repository's accident.
 
-Este ADR decide cómo Rationale protege sus datos locales en un repo ajeno.
-**La resolución del ejecutable en `.mcp.json` queda explícitamente fuera de
-alcance** y se decide en ADR-0015: es un tradeoff distinto (herencia de `PATH`
-en clientes MCP lanzados como app gráfica) y mezclarlos bloquearía este ADR
-contra un problema sin resolver.
+This ADR decides how Rationale protects its local data in someone else's
+repository. **The resolution of the executable in `.mcp.json` is explicitly out
+of scope** and is decided in ADR-0015: it is a different trade-off (`PATH`
+inheritance in MCP clients launched as graphical apps), and mixing them would
+block this ADR on an unresolved problem.
 
 ## Decision
 
-1. **`.rationale-local/` es dato estrictamente local y nunca debe quedar
-   versionado en un proyecto consumidor.** Incluye la telemetría NDJSON de
-   `runs/` y el manifest `installed-agent-files.json`, que almacena rutas
-   absolutas bajo el `$HOME` del usuario.
+1. **`.rationale-local/` is strictly local data and must never be versioned in
+   a consumer project.** It includes the NDJSON telemetry in `runs/` and the
+   `installed-agent-files.json` manifest, which stores absolute paths under the
+   user's `$HOME`.
 
-2. **La exclusión se instala en `.git/info/exclude`, no en `.gitignore`.**
-   `.gitignore` es un archivo compartido y versionado del proyecto ajeno;
-   escribir ahí es una modificación visible del repo que Rationale no tiene
-   por qué imponer al equipo. `info/exclude` es local al clon, logra el mismo
-   efecto, y cada persona que corra `init` o `install-agent` obtiene la
-   exclusión en su propio clon.
+2. **The exclusion is installed in `.git/info/exclude`, not in `.gitignore`.**
+   `.gitignore` is a shared, versioned file of someone else's project; writing
+   there is a visible modification of the repository that Rationale has no
+   reason to impose on the team. `info/exclude` is local to the clone, achieves
+   the same effect, and every person who runs `init` or `install-agent` gets the
+   exclusion in their own clone.
 
-3. **La exclusión se escribe *antes* de crear cualquier contenido bajo
-   `.rationale-local/`**, y de forma idempotente: si la entrada ya existe, no
-   se duplica ni se reescribe el archivo.
+3. **The exclusion is written *before* creating any content under
+   `.rationale-local/`**, idempotently: if the entry already exists, it is
+   neither duplicated nor is the file rewritten.
 
-4. **El gitdir se resuelve de verdad, no se asume `<root>/.git/info/exclude`.**
-   En submódulos y worktrees, `.git` es un *archivo* con un puntero `gitdir:`,
-   no un directorio. La ruta correcta se obtiene resolviendo ese puntero (o
-   vía `git rev-parse --git-common-dir`, que en un worktree apunta al
-   directorio común compartido — que es donde `info/exclude` debe vivir para
-   aplicar a todos los worktrees).
+4. **The gitdir is resolved for real, not assumed to be `<root>/.git/info/exclude`.**
+   In submodules and worktrees, `.git` is a *file* with a `gitdir:` pointer, not
+   a directory. The correct path comes from resolving that pointer (or through
+   `git rev-parse --git-common-dir`, which in a worktree points to the shared
+   common directory — where `info/exclude` must live to apply to every
+   worktree).
 
-5. **Fuera de un repositorio Git, Rationale no falla ni bloquea.** Si no hay
-   gitdir, no hay nada que excluir: se omite el paso en silencio y el resto de
-   la instalación procede igual.
+5. **Outside a Git repository, Rationale neither fails nor blocks.** Without a
+   gitdir there is nothing to exclude: the step is skipped silently and the rest
+   of the installation proceeds as usual.
 
-6. **Rationale detecta si `.rationale-local/` ya está seguido por Git y
-   advierte, pero nunca toca el índice.** Modificar el estado versionado de un
-   proyecto ajeno no es una decisión del instalador. La advertencia nombra el
-   comando exacto y deja la ejecución al humano:
+6. **Rationale detects whether `.rationale-local/` is already tracked by Git and
+   warns, but never touches the index.** Modifying the versioned state of
+   someone else's project is not the installer's decision. The warning names the
+   exact command and leaves running it to the human:
 
    ```
-   aviso: .rationale-local/ contiene archivos seguidos por Git.
-   Rationale no modificará el índice automáticamente.
-   Para dejar de versionarlos:
+   notice: .rationale-local/ contains files tracked by Git.
+   Rationale will not modify the index automatically.
+   To stop versioning them:
        git rm -r --cached .rationale-local
    ```
 
-7. **El manifest solo puede contener rutas relativas al proyecto.** Hoy guarda
-   absolutas (`/Users/<quien-sea>/Desktop/BoostAPI/CLAUDE.md`). Aunque la
-   exclusión impida que se versione, una ruta absoluta en un archivo que ya
-   viajó dos veces es un dato que no necesitaba existir. La ruta relativa es
-   suficiente para lo único que el manifest hace: saber qué archivos
-   administra y si siguen intactos.
+7. **The manifest may contain only project-relative paths.** Today it stores
+   absolute ones (`/Users/<whoever>/Desktop/BoostAPI/CLAUDE.md`). Even if the
+   exclusion prevents it from being versioned, an absolute path in a file that
+   has already traveled twice is data that did not need to exist. A relative path
+   is enough for the only thing the manifest does: know which files it
+   administers and whether they are still intact.
 
-8. **La validación es un test de regresión, no una inspección manual.** Un
-   test crea un repo Git temporal, corre `install-agent`, y falla si
-   `git status --porcelain` reporta cualquier ruta bajo `.rationale-local/`
-   como seguida o sin ignorar. La inspección manual fue exactamente lo que
-   falló en ADR-0012.
+8. **Validation is a regression test, not a manual inspection.** A test creates
+   a temporary Git repository, runs `install-agent`, and fails if
+   `git status --porcelain` reports any path under `.rationale-local/` as
+   tracked or not ignored. Manual inspection was exactly what failed in
+   ADR-0012.
 
-9. **`install-agent` normaliza las entradas heredadas del manifest cuyo
-   destino es reconocible.** No basta con que las entradas *nuevas* sean
-   relativas: un proyecto de `alpha.7` que se haya movido o copiado conserva
-   rutas absolutas apuntando a la ubicación anterior, la guarda las rechaza
-   —correctamente— y el rechazo aborta `uninstall-agent` entero.
+9. **`install-agent` normalizes legacy manifest entries whose destination is
+   recognizable.** It is not enough for *new* entries to be relative: an
+   `alpha.7` project that was moved or copied keeps absolute paths pointing at
+   the earlier location, the guard rejects them — correctly — and the rejection
+   aborts `uninstall-agent` entirely.
 
-   La normalización **no relaja la guarda**. Solo reescribe una entrada cuando
-   su ruta termina en un destino administrado conocido (`CLAUDE.md`,
-   `AGENTS.md`, `.mcp.json`, la regla de Cursor, o un `SKILL.md` bajo el
-   directorio de skills), derivados de `TARGETS` y `prompts::ACTIONS` como
-   fuente única. Una ruta arbitraria —`~/Documents/notas.md`— no coincide con
-   ninguno, se conserva intacta, y la guarda la sigue rechazando. El destino
-   resultante queda siempre dentro del `project_root` por ser relativo.
+   Normalization **does not relax the guard**. It rewrites an entry only when
+   its path ends in a known managed destination (`CLAUDE.md`, `AGENTS.md`,
+   `.mcp.json`, the Cursor rule, or a `SKILL.md` under the skills directory),
+   derived from `TARGETS` and `prompts::ACTIONS` as the single source. An
+   arbitrary path — `~/Documents/notes.md` — matches none of them, is kept
+   intact, and the guard still rejects it. The resulting destination always
+   stays inside the `project_root` because it is relative.
 
-   Esto es lo que hace que `install-agent` sea de verdad la vía de migración:
-   repara el estado administrativo, no solo los bloques. Sin ello, un piloto
-   movido quedaría permanentemente sin poder desinstalarse.
+   This is what makes `install-agent` truly the migration path: it repairs the
+   administrative state, not only the blocks. Without it, a moved pilot would be
+   permanently unable to uninstall.
 
-   **Radio de acción declarado:** si el manifest heredado apuntaba al
-   `CLAUDE.md` de *otro* proyecto, tras normalizar apunta al de éste. No es una
-   escalada de privilegio: `uninstall` solo extirpa el bloque delimitado de
-   Rationale, y si este proyecto está instalado ese archivo ya tenía su propia
-   entrada. Se declara en vez de dejarlo implícito.
+   **Declared blast radius:** if the legacy manifest pointed at *another*
+   project's `CLAUDE.md`, after normalizing it points at this one's. It is not a
+   privilege escalation: `uninstall` only removes Rationale's delimited block,
+   and if this project is installed that file already had its own entry. It is
+   stated rather than left implicit.
 
-   Queda **fuera** de esta decisión que una entrada irreconocible siga
-   abortando la operación entera en vez de saltarse. Con la normalización, ese
-   caso deja de producirse por mover un proyecto y pasa a señalar un manifest
-   corrupto o manipulado, donde fallar ruidosamente es defendible.
+   It remains **outside** this decision that an unrecognizable entry still aborts
+   the whole operation instead of being skipped. With normalization, that case
+   is no longer produced by moving a project and instead signals a corrupted or
+   tampered manifest, where failing loudly is defensible.
 
 ## Evidence
 
-- **Reproducción en dos pilotos reales**, sobre copias, sin tocar los
-  originales: `install-agent` corrido dos veces sobre Monorepo y BoostAPI.
-  Ambos partían de `.rationale-local/` ya versionado con los mismos tres
-  archivos, y ambos lo dejaron modificado en el árbol de trabajo.
-- **Exposición efectiva, no potencial**: `git branch -r --contains` sitúa los
-  commits que introdujeron esos archivos en `origin/main` de ambos repos
-  (`812f7fe`, `b78357d` en Monorepo; `0346b91`, `bcfc9fe` en BoostAPI).
-- **Ninguno de los dos proyectos tenía entrada `rationale` en su
-  `.gitignore`** — confirmado por inspección directa. Nada en el producto la
-  escribe.
-- **El contenido filtrado incluye dato conductual**: `review-decisions.ndjson`
-  registra `time_to_confirm_ms` por Record (hasta ~300 s) y la decisión tomada.
-  `installed-agent-files.json` registra rutas absolutas bajo `$HOME`.
-- **La migración en sí es correcta y no está en cuestión**: las dos pasadas de
-  `install-agent` dejaron `CLAUDE.md`, `AGENTS.md` y `.mcp.json` byte-idénticos
-  entre sí, con un solo bloque administrado y sin borrados. El defecto es
-  exclusivamente de exclusión de datos locales.
+- **Reproduction in two real pilots**, on copies, without touching the
+  originals: `install-agent` run twice on Monorepo and BoostAPI. Both started
+  from a `.rationale-local/` already versioned with the same three files, and
+  both left it modified in the working tree.
+- **Real exposure, not potential**: `git branch -r --contains` places the
+  commits that introduced those files on `origin/main` in both repositories
+  (`812f7fe`, `b78357d` in Monorepo; `0346b91`, `bcfc9fe` in BoostAPI).
+- **Neither project had a `rationale` entry in its `.gitignore`** — confirmed
+  by direct inspection. Nothing in the product writes it.
+- **The leaked content includes behavioral data**: `review-decisions.ndjson`
+  records `time_to_confirm_ms` per Record (up to ~300 s) and the decision taken.
+  `installed-agent-files.json` records absolute paths under `$HOME`.
+- **The migration itself is correct and not in question**: the two passes of
+  `install-agent` left `CLAUDE.md`, `AGENTS.md`, and `.mcp.json` byte-identical
+  to each other, with a single managed block and no deletions. The defect is
+  exclusively about excluding local data.
 
 ## Alternatives considered
 
-- **Escribir la entrada en el `.gitignore` del proyecto.** Descartado: es una
-  modificación visible y versionada de un archivo compartido del equipo, para
-  resolver un problema que es local a cada clon. Rationale impondría un cambio
-  de repo para proteger sus propios artefactos. `info/exclude` obtiene el mismo
-  resultado sin tocar nada compartido. Queda como opción si aparece un caso
-  donde la exclusión deba propagarse a quien nunca corre Rationale — hoy no
-  existe: sin correr Rationale no hay `.rationale-local/` que excluir.
-- **Ejecutar `git rm -r --cached .rationale-local` automáticamente al detectar
-  archivos seguidos.** Descartado: altera el estado versionado de un proyecto
-  ajeno sin consentimiento, y en un producto cuya tesis es «no derribes una
-  valla sin saber por qué está ahí», hacerlo en silencio sería contradictorio.
-  Se advierte y se entrega el comando.
-- **No escribir nada bajo `.rationale-local/` hasta que exista exclusión.**
-  Descartado como política general: convertiría un problema de higiene en un
-  bloqueo funcional, y ADR-0012 §Decision ya establece que la instrumentación
-  no se pospone. La Decision #3 de este ADR (excluir *antes* de escribir)
-  consigue el efecto sin bloquear nada.
-- **Dejar de emitir `review_decision`.** Descartado: es dato legítimo para las
-  métricas de `v0.5 §30`. El problema no era que se generara, sino que se
-  publicara — y que nunca pasara el filtro de campos permitidos de ADR-0012.
-  Que ese filtro se aplique a todo emisor, no solo a `RunLog`, es trabajo de la
-  revisión de ADR-0012, no de este ADR.
+- **Writing the entry into the project's `.gitignore`.** Discarded: it is a
+  visible, versioned modification of a file the team shares, to solve a problem
+  local to each clone. Rationale would impose a repository change to protect its
+  own artifacts. `info/exclude` gets the same result without touching anything
+  shared. It remains an option if a case appears where the exclusion must reach
+  someone who never runs Rationale — none exists today: without running
+  Rationale there is no `.rationale-local/` to exclude.
+- **Running `git rm -r --cached .rationale-local` automatically when tracked
+  files are detected.** Discarded: it changes the versioned state of someone
+  else's project without consent, and in a product whose thesis is "do not tear
+  down a fence without knowing why it is there", doing it silently would be
+  contradictory. It warns and hands over the command.
+- **Writing nothing under `.rationale-local/` until an exclusion exists.**
+  Discarded as a general policy: it would turn a hygiene problem into a
+  functional block, and ADR-0012 §Decision already establishes that
+  instrumentation is not postponed. This ADR's Decision #3 (exclude *before*
+  writing) achieves the effect without blocking anything.
+- **Stopping the `review_decision` emission.** Discarded: it is legitimate data
+  for the metrics in `v0.5 §30`. The problem was not that it was generated but
+  that it was published — and that it never passed ADR-0012's allowed-fields
+  filter. Applying that filter to every emitter, not only `RunLog`, is work for
+  the review of ADR-0012, not for this ADR.
 
 ## Consequences
 
-- Cualquier emisor nuevo de datos bajo `.rationale-local/` hereda la protección
-  sin decisión adicional: la exclusión cubre el directorio, no archivos
-  concretos.
-- Los repos piloto ya afectados **no se arreglan solos**. Requieren remediación
-  manual con `git rm -r --cached .rationale-local`, una vez por repo. Los datos
-  históricos permanecen en commits anteriores; ver ADR-0012 §Validation update
-  para por qué no se reescribe el historial.
-- Rationale escribe dentro de `.git/`, lo cual no hacía antes. Se limita a
-  `info/exclude` y es la única escritura permitida ahí.
-- El manifest cambia de formato (rutas relativas). `uninstall-agent` lee ese
-  archivo: debe tolerar manifests antiguos con rutas absolutas o los pilotos ya
-  instalados perderían la capacidad de desinstalar limpiamente.
+- Any new emitter of data under `.rationale-local/` inherits the protection
+  without an additional decision: the exclusion covers the directory, not
+  specific files.
+- The pilot repositories already affected **do not fix themselves**. They
+  require manual remediation with `git rm -r --cached .rationale-local`, once
+  per repository. The historical data remains in earlier commits; see ADR-0012
+  §Validation update for why history is not rewritten.
+- Rationale writes inside `.git/`, which it did not do before. It is limited to
+  `info/exclude`, the only write allowed there.
+- The manifest changes format (relative paths). `uninstall-agent` reads that
+  file: it must tolerate old manifests with absolute paths, or the pilots already
+  installed would lose the ability to uninstall cleanly.
 
 ## Risks
 
-- **`info/exclude` no se propaga.** Alguien que clone y nunca corra `init` ni
-  `install-agent` no tendrá la exclusión. Mitigación: tampoco tendrá
-  `.rationale-local/`, porque solo Rationale lo crea. El riesgo es nulo en la
-  práctica y se vuelve real solo si alguien copia el directorio a mano — el
-  mismo caso que ADR-0012 §Risks ya contempla.
-- **Un `.git` inesperado.** Repos con `core.worktree`, submódulos anidados o
-  setups no estándar podrían resolver un gitdir que no es el esperado.
-  Mitigación: si la resolución no produce un directorio escribible, se omite y
-  se advierte, nunca se falla la instalación.
-- **La advertencia se ignora.** El humano puede no correr el `git rm --cached`
-  y quedarse con los archivos seguidos indefinidamente. Mitigación aceptada: la
-  alternativa es actuar sobre el índice ajeno, que es peor. La advertencia se
-  repite en cada ejecución mientras la condición persista.
+- **`info/exclude` does not propagate.** Someone who clones and never runs
+  `init` or `install-agent` will not have the exclusion. Mitigation: they will
+  not have `.rationale-local/` either, because only Rationale creates it. The
+  risk is nil in practice and becomes real only if someone copies the directory
+  by hand — the same case ADR-0012 §Risks already considers.
+- **An unexpected `.git`.** Repositories with `core.worktree`, nested
+  submodules, or non-standard setups could resolve a gitdir other than the
+  expected one. Mitigation: if resolution does not produce a writable directory,
+  the step is skipped with a warning; installation never fails.
+- **The warning is ignored.** The human may not run `git rm --cached` and keep
+  the tracked files indefinitely. Accepted mitigation: the alternative is acting
+  on someone else's index, which is worse. The warning repeats on every run while
+  the condition persists.
 
-- **Un manifest con rutas absolutas fuera del proyecto aborta `uninstall-agent`
-  entero.** Observado al verificar este ADR sobre una copia de BoostAPI: si el
-  proyecto se movió o copió después de instalar, las entradas absolutas del
-  manifest apuntan a la ubicación anterior, `resolve_managed_entry_path` las
-  rechaza —correctamente, es la guarda que impide que un manifest manipulado
-  haga tocar archivos arbitrarios— y el rechazo **cancela toda la
-  desinstalación**, incluidas las entradas legítimas.
+- **A manifest with absolute paths outside the project aborts `uninstall-agent`
+  entirely.** Observed while verifying this ADR on a copy of BoostAPI: if the
+  project was moved or copied after installing, the manifest's absolute entries
+  point at the earlier location, `resolve_managed_entry_path` rejects them —
+  correctly; it is the guard that prevents a tampered manifest from touching
+  arbitrary files — and the rejection **cancels the whole uninstall**, legitimate
+  entries included.
 
-  Es un defecto **preexistente**, no introducido por este ADR: la guarda y su
-  comportamiento de aborto son anteriores. Este ADR lo reduce hacia adelante
-  (una ruta relativa sobrevive a mover el proyecto) pero no lo elimina para los
-  manifests ya escritos. Se documenta aquí en vez de darlo por cubierto: la
-  Consequence de este ADR afirma compatibilidad de `uninstall-agent` con
-  manifests heredados, y esa afirmación es cierta solo mientras el proyecto no
-  se haya movido. Dar por buena una compatibilidad sin acotarla sería
-  exactamente el error que ADR-0012 cometió.
+  It is a **pre-existing** defect, not introduced by this ADR: the guard and its
+  abort behavior predate it. This ADR reduces it going forward (a relative path
+  survives moving the project) but does not remove it for manifests already
+  written. It is documented here instead of being taken as covered: this ADR's
+  Consequence claims `uninstall-agent` compatibility with legacy manifests, and
+  that claim holds only while the project has not been moved. Accepting a
+  compatibility claim without bounding it would be exactly the mistake ADR-0012
+  made.
 
-  **Resuelto por la Decision #9**, añadida después de detectar esto: en vez de
-  tocar la guarda, `install-agent` normaliza las entradas heredadas cuyo
-  destino es reconocible, de modo que el caso «proyecto movido» deja de
-  producir entradas externas. Verificado end-to-end sobre una copia de BoostAPI
-  con el manifest apuntando a la ubicación original.
+  **Resolved by Decision #9**, added after detecting this: instead of touching
+  the guard, `install-agent` normalizes legacy entries whose destination is
+  recognizable, so the "moved project" case no longer produces external entries.
+  Verified end to end on a copy of BoostAPI with the manifest pointing at the
+  original location.
 
-  Lo que **no** se resolvió, deliberadamente: una entrada irreconocible sigue
-  abortando la operación entera. Tras la Decision #9 ese caso ya no lo produce
-  un proyecto movido, sino un manifest corrupto o manipulado, donde fallar
-  ruidosamente es la respuesta defendible. Si aparece un caso real de entrada
-  irreconocible legítima, se reabre.
+  What was deliberately **not** resolved: an unrecognizable entry still aborts
+  the whole operation. After Decision #9 that case is no longer produced by a
+  moved project but by a corrupted or tampered manifest, where failing loudly is
+  the defensible response. If a real case of a legitimate unrecognizable entry
+  appears, it is reopened.
 
 ## Validation
 
-Implementado y verificado. Siete tests de regresión en `src/agents.rs`, todos
-sobre repositorios Git temporales reales:
+Implemented and verified. Regression tests in `src/agents.rs`, all on real
+temporary Git repositories:
 
-1. `install_leaves_no_local_data_visible_to_git` — falla si `git status
-   --porcelain --untracked-files=all` reporta cualquier ruta bajo
-   `.rationale-local/` tras instalar (Decision #8).
-2. `exclude_entry_is_idempotent_and_preserves_existing_rules` — segunda pasada
-   sin reescritura, entrada sin duplicar, reglas previas del usuario intactas.
-3. `exclude_resolves_the_real_gitdir_in_a_worktree` — worktree real, `.git`
-   como archivo con puntero, exclusión aterrizando en el directorio común.
-4. `install_warns_when_local_data_is_already_tracked` — advertencia con el
-   comando exacto, y comprobación de que el índice **no** se modificó.
+1. `install_leaves_no_local_data_visible_to_git` — fails if `git status
+   --porcelain --untracked-files=all` reports any path under
+   `.rationale-local/` after installing (Decision #8).
+2. `exclude_entry_is_idempotent_and_preserves_existing_rules` — a second pass
+   without rewriting, the entry not duplicated, the user's earlier rules intact.
+3. `exclude_resolves_the_real_gitdir_in_a_worktree` — a real worktree, `.git`
+   as a file with a pointer, the exclusion landing in the common directory.
+4. `install_warns_when_local_data_is_already_tracked` — a warning with the exact
+   command, and a check that the index was **not** modified.
 5. `install_outside_a_git_repository_does_not_fail` (Decision #5).
-6. `manifest_stores_project_relative_paths` — ninguna ruta absoluta.
-7. `uninstall_still_reads_a_legacy_absolute_path_manifest` — compatibilidad
-   hacia atrás.
+6. `manifest_stores_project_relative_paths` — no absolute path.
+7. `uninstall_still_reads_a_legacy_absolute_path_manifest` — backward
+   compatibility.
 8. `install_migrates_a_moved_projects_legacy_manifest_and_uninstall_then_works`
-   — el escenario completo de Decision #9: `uninstall` falla antes de migrar,
-   `install-agent` normaliza, `uninstall` completa.
-9. `migration_never_normalizes_an_arbitrary_path` — `~/Documents/notas.md` se
-   conserva intacta y la guarda la sigue rechazando.
-10. `migration_recognizes_every_managed_destination` — recorre `TARGETS` y
-    `prompts::ACTIONS` para que un agente o acción nuevos no queden fuera de la
-    normalización sin que nadie lo note.
+   — the full scenario of Decision #9: `uninstall` fails before migrating,
+   `install-agent` normalizes, `uninstall` completes.
+9. `migration_never_normalizes_an_arbitrary_path` — `~/Documents/notas.md` is
+   kept intact and the guard still rejects it.
+10. `migration_recognizes_every_managed_destination` — walks `TARGETS` and
+    `prompts::ACTIONS` so a new agent or action cannot be left out of the
+    normalization without anyone noticing.
 
-**Desviación deliberada respecto al plan original de validación**, que pedía
-fixtures estáticos en `tests/fixtures/alpha7-consumer/`: se descartaron a favor
-de construir los repos con `git init` dentro de cada test. Un fixture estático
-no puede llevar un `.git/` real versionado dentro de este repositorio, así que
-no podría reproducir lo único que importa aquí —qué archivos están *seguidos
-por el índice*— que es precisamente la condición que falló en los pilotos. Los
-tests programáticos cubren ese estado; los fixtures no podían.
+**A deliberate deviation from the original validation plan**, which asked for
+static fixtures in `tests/fixtures/alpha7-consumer/`: they were discarded in
+favor of building the repositories with `git init` inside each test. A static
+fixture cannot carry a real versioned `.git/` inside this repository, so it
+could not reproduce the only thing that matters here — which files are *tracked
+by the index* — which is precisely the condition that failed in the pilots. The
+programmatic tests cover that state; the fixtures could not.
 
-Verificación end-to-end adicional, fuera de la suite: `install-agent` corrido
-dos veces sobre copias frescas de Monorepo y BoostAPI. Bloques byte-idénticos
-entre pasadas, exclusión sin duplicar, cero rutas absolutas en `CLAUDE.md` y
-`AGENTS.md`, advertencia emitida en ambos por los tres archivos ya seguidos.
+Additional end-to-end verification, outside the suite: `install-agent` run twice
+on fresh copies of Monorepo and BoostAPI. Blocks byte-identical between passes,
+the exclusion not duplicated, zero absolute paths in `CLAUDE.md` and
+`AGENTS.md`, and the warning emitted in both for the three already-tracked
+files.
 
-**Explícitamente, la validación no puede consistir en inspección manual del
-repo de Rationale.** Ese fue el error de ADR-0012: verificar en el repo de
-desarrollo y generalizar a los consumidores.
+**Explicitly, validation cannot consist of manually inspecting Rationale's
+repository.** That was ADR-0012's mistake: verifying in the development
+repository and generalizing to consumers.
 
 ## Revisit trigger
 
-Reabrir si aparece un consumidor donde `info/exclude` no sea suficiente —
-por ejemplo, un flujo donde `.rationale-local/` deba compartirse
-deliberadamente entre miembros de un equipo (debugging conjunto, auditoría de
-decisiones). Eso requeriría una decisión explícita sobre qué campos son
-publicables, no una relajación silenciosa de esta exclusión.
+Reopen if a consumer appears where `info/exclude` is not enough — for example, a
+flow where `.rationale-local/` must be shared deliberately among team members
+(joint debugging, decision audits). That would require an explicit decision about
+which fields are publishable, not a silent relaxation of this exclusion.

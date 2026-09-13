@@ -1,63 +1,64 @@
-# Conceptos esenciales
+# Core concepts
 
-Rationale separa la memoria que escriben los agentes, la autoridad que conservan
-las personas y el estado estructural que informa el proveedor.
+Rationale separates the memory agents write, the authority people keep, and the
+structural state the provider reports.
 
-## Entidades
+## Entities
 
-- **Record:** una pieza de conocimiento durable — `constraint`, `decision`,
-  `risk` o `exception` — con statement, rationale que da la causa, severidad,
-  bindings, evidencia y lifecycle. Una decisión por Record.
-- **Binding:** ata un Record al código que gobierna: archivo o símbolo. Los
-  símbolos los confirma el proveedor y se guardan con id portable. Los que nacen
-  de código sin commitear quedan `provisional`.
-- **Relationship binding:** explica por qué existe una relación entre dos nodos.
-- **Subject:** identidad conceptual de un comportamiento o frontera, para que
-  una decisión no quede atada accidentalmente a un solo archivo.
-- **Evidence:** referencia verificable que respalda la afirmación.
-- **Assessment:** evaluación derivada de epistemología, autoridad,
-  aplicabilidad, linkage y consistencia de revisión.
-- **Operation:** lo que abre `prepare_change` y cierra `finalize_change`, con un
-  snapshot local de lo considerado y lo seleccionado.
-- **Conflict:** un candidato que intentó reemplazar un Record fijado. No se
-  escribe hasta que una persona decide.
+- **Record:** one durable piece of knowledge — a `constraint`, `decision`,
+  `risk`, or `exception` — with a statement, a rationale that gives the cause, a
+  severity, bindings, evidence, and a lifecycle. One decision per Record.
+- **Binding:** ties a Record to the code it governs: a file or a symbol. The
+  provider confirms symbols, and they are stored with a portable id. Bindings
+  created from uncommitted code are `provisional`.
+- **Relationship binding:** explains why a relationship between two nodes
+  exists.
+- **Subject:** the conceptual identity of a behavior or boundary, so that a
+  decision is not tied to a single file by accident.
+- **Evidence:** a verifiable reference that supports the statement.
+- **Assessment:** a derived evaluation of epistemic status, authority,
+  applicability, linkage, and revision consistency.
+- **Operation:** what `prepare_change` opens and `finalize_change` closes, with a
+  local snapshot of what was considered and selected.
+- **Conflict:** a candidate that tried to replace a pinned Record. It is not
+  written until a person decides.
 
-## Procedencia y autoridad
+## Provenance and authority
 
-Cada Record declara su **procedencia**: `agent_asserted` (con cliente, sesión y
-operación), `human_stated` o `migrated` (del flujo de aprobación anterior a
-1.0). Nunca se asciende en silencio.
+Every Record declares its **provenance**: `agent_asserted` (with client,
+session, and operation), `human_stated`, or `migrated` (from the pre-1.0
+approval workflow). It is never upgraded silently.
 
-Y su **autoridad**: `normal` por defecto, o `pinned` cuando el proyecto la fijó.
-Un Record `pinned` gobierna igual que uno normal, pero ningún agente puede
-reemplazarlo: el intento se vuelve un conflicto. La precedencia es `pinned`
-sobre `normal`, y un `supersedes` explícito sobre la coexistencia; los SHAs de
-Git nunca se ordenan.
+It also declares its **authority**: `normal` by default, or `pinned` when the
+project fixed it. A `pinned` Record governs like a normal one, but no agent can
+replace it: the attempt becomes a conflict. Precedence is `pinned` over
+`normal`, and an explicit `supersedes` over coexistence; Git SHAs are never
+used to order Records.
 
-## Estado estructural de las relaciones
+## Structural state of relationships
 
-| Estado | Significado |
+| State | Meaning |
 |---|---|
-| `observed` | La relación directa existe en el índice actual. |
-| `indirect` | Ya no es directa, pero un camino acotado sigue conectando los extremos. |
-| `orphaned` | No se puede localizar; la explicación puede estar obsoleta. Nunca se borra. |
-| `unknown` | El proveedor no pudo verificarla. La ausencia no es prueba. |
+| `observed` | The direct relationship exists in the current index. |
+| `indirect` | It is no longer direct, but a bounded path still connects both ends. |
+| `orphaned` | It cannot be located; the explanation may be stale. It is never deleted. |
+| `unknown` | The provider could not verify it. Absence is not proof. |
 
-## Canon y derivados
+## Canon and derived data
 
-El canon versionado vive en `.rationale/`. La cache SQLite, los snapshots de
-operación y la actividad local son derivados o locales y se pueden borrar sin
-perder decisiones. Borrar un Record sí elimina historia: revócalo o reemplázalo
-con `rationale review-record` para que el lifecycle conserve el motivo.
+The versioned canon lives in `.rationale/`. The SQLite cache, operation
+snapshots, and local activity are derived or local and can be deleted without
+losing decisions. Deleting a Record does erase history: revoke or supersede it
+with `rationale review-record` so the lifecycle keeps the reason.
 
-## Responsabilidades
+## Responsibilities
 
-- Codebase Memory aporta ubicación, símbolos y relaciones estructurales.
-- Rationale aporta por qué importa, qué debe seguir siendo cierto y quién puede
-  moverlo.
-- El agente prepara contexto y captura conocimiento durable.
-- La persona fija las reglas que importan y decide los conflictos.
+- Codebase Memory provides location, symbols, and structural relationships.
+- Rationale provides why it matters, what must stay true, and who may move it.
+- The agent prepares context and captures durable knowledge, following the
+  protocol and the [`rationale` skill](skills.md).
+- The person pins the rules that matter and decides conflicts.
 
-Consulta el contrato original en [`Rationale_v0.5.md`](../../Rationale_v0.5.md)
-y el cambio de modelo de la 1.0 en
+Read the original contract in [`Rationale_v0.5.md`](../../Rationale_v0.5.md)
+and the 1.0 model change in
 [`docs/work-items/vnext-implementation-plan.md`](../work-items/vnext-implementation-plan.md).

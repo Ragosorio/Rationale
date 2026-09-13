@@ -1,39 +1,60 @@
 # Rust — style guide
 
-Aplica a todo código Rust del repositorio (`spikes/language/rust/` hoy; el núcleo de Fase D en adelante). Complementa, no repite, `AGENTS.md`.
+Applies to all Rust code in the repository (the core in `src/` and the
+throwaway spike in `spikes/language/rust/`). It complements, and does not
+repeat, `AGENTS.md`.
 
-## Herramientas obligatorias
+## Required tools
 
 ```bash
-export PATH="$HOME/.cargo/bin:$PATH"   # necesario en shells no interactivos, ver docs/environment/
-cargo fmt --check                       # formato (rustfmt.toml en la raíz del repo)
-cargo clippy --all-targets -- -D warnings   # lint, cero warnings tolerados
+export PATH="$HOME/.cargo/bin:$PATH"   # needed in non-interactive shells, see docs/environment/
+cargo fmt --check                       # formatting (rustfmt.toml at the repository root)
+cargo clippy --all-targets -- -D warnings   # lint, zero warnings tolerated
 ```
 
-Ningún commit debe introducir código que falle `cargo fmt --check` o que produzca un warning nuevo de clippy. Ambos deben correr antes de cerrar cualquier work item (`AGENTS.md §Quality gates`).
+No commit may introduce code that fails `cargo fmt --check` or produces a new
+Clippy warning. Both must run before closing any work item
+(`AGENTS.md §Quality gates`).
 
-## Convenciones
+## Conventions
 
-- **Edition 2021**, toolchain `stable` (no nightly) — fijado por ADR-0001; no usar features nightly-only.
-- **`panic = "abort"` en release** (ya configurado en `Cargo.toml` del spike): evita el overhead de unwind en el binario distribuido; el desarrollo/test sigue usando unwind por defecto.
-- Nombrar funciones que implementan un paso de un contrato externo con el mismo vocabulario del contrato (ej. `op1_read_record` en el spike, mapeado 1:1 a `spike-protocol.md`) — facilita la trazabilidad para revisión cruzada.
-- Preferir `Result<T, E>` explícito sobre `.unwrap()`/`.expect()` en código de producción (Fase D en adelante). El spike usa `.expect()` liberalmente porque es código de investigación de corta vida, no producción — esto **no** es el estándar para Fase D.
-- Comentarios solo cuando expliquen un porqué no obvio (invariante, workaround, decisión de diseño) — igual que la política general del proyecto. No repetir en comentarios lo que el nombre de la función ya dice.
+- **Edition 2021**, `stable` toolchain (not nightly) — set by ADR-0001; do not
+  use nightly-only features.
+- The spike's `Cargo.toml` sets `panic = "abort"` for release builds to avoid
+  unwinding overhead in a distributed binary. The core does not: the MCP server
+  relies on `catch_unwind` to turn a tool panic into `isError` without ending the
+  session.
+- Name functions that implement a step of an external contract with that
+  contract's vocabulary (for example `op1_read_record` in the spike, mapped 1:1
+  to `spike-protocol.md`). It makes traceability easier during cross-review.
+- Prefer an explicit `Result<T, E>` over `.unwrap()`/`.expect()` in production
+  code. The spike used `.expect()` liberally because it is short-lived research
+  code; that is **not** the standard for the core.
+- Comments only when they explain a non-obvious why (an invariant, a
+  workaround, a design decision) — the project's general policy. Do not repeat
+  in a comment what the function name already says. Existing code comments are
+  in Spanish; follow the surrounding file.
+- Text an agent reads (skills, pre-made actions, MCP tool descriptions) is
+  written in English and asks the agent to reply in the user's language.
 
-## Dependencias
+## Dependencies
 
-Antes de añadir una dependencia nueva, seguir `docs/dependencies/inventory.yaml` y `Rationale_Proceso_Construccion_Agentes_v0.1.md §19`: ¿es necesaria?, ¿tiene alternativa en std?, ¿licencia compatible?, ¿mantenida?, ¿compila en los tres SO objetivo?
+Before adding a dependency, follow `docs/dependencies/inventory.yaml` and
+`Rationale_Proceso_Construccion_Agentes_v0.1.md §19`: is it necessary? Is there
+an alternative in `std`? Is the license compatible? Is it maintained? Does it
+build on the three target operating systems?
 
-Dependencias ya validadas en el spike (`docs/research/language/candidates.md`), disponibles como punto de partida para Fase D, no como decisión final:
+Dependencies validated in the spike (`docs/research/language/candidates.md`)
+were a starting point for Phase D, not a final decision:
 
-| Crate | Propósito | Nota |
+| Crate | Purpose | Note |
 |---|---|---|
-| `rusqlite` (feature `bundled`) | SQLite embebido | Vendoriza su propio SQLite en C — sin dependencia del sistema |
-| `serde` + `serde_json` | Serialización JSON | Estándar de facto del ecosistema |
-| `serde_yaml` | Parseo de Records YAML | Marcado `deprecated` upstream (mantenimiento reducido) — evaluar alternativa (`serde_yml`, `yaml-rust2`) antes de Fase D si esto se confirma como riesgo real |
+| `rusqlite` (feature `bundled`) | Embedded SQLite | Vendors its own SQLite in C — no system dependency |
+| `serde` + `serde_json` | JSON serialization | The ecosystem's de facto standard |
+| `serde_yaml` | Parsing YAML Records | Marked `deprecated` upstream; ADR-0003 replaced it with `yaml_serde` in the core |
 
-## Referencias
+## References
 
-- [The Rust Book](https://doc.rust-lang.org/book/) (oficial)
+- [The Rust Book](https://doc.rust-lang.org/book/) (official)
 - [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
-- `rustfmt.toml` en la raíz del repo — configuración de formato vigente
+- `rustfmt.toml` at the repository root — the current formatting configuration

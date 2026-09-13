@@ -1,112 +1,115 @@
-# Inventario de dependencias — legible por máquina.
+# Dependency inventory — machine-readable.
 #
-# Política (Rationale_Arquitectura_Conceptual_v0.1.md §18.4, Proceso §19):
-# cada dependencia debe registrar licencia, versión, tamaño, riesgo, motivo,
-# alternativas consideradas, CVEs conocidas, si puede vendorizarse, si
-# requiere runtime, y si agrega llamadas externas.
+# Policy (Rationale_Arquitectura_Conceptual_v0.1.md §18.4, Proceso §19):
+# every dependency must record its license, version, size, risk, purpose,
+# alternatives considered, known CVEs, whether it can be vendored, whether it
+# needs a runtime, and whether it adds external calls.
 #
-# ADR-0001 (Rust, estado "proposed") ya está implementado en el Cargo.toml
-# raíz. Las dependencias abajo reflejan el estado REAL del crate `rationale`
-# tras Fase E completa (modelo canónico, capa derivada SQLite+FTS, Context
-# Compiler, superficie MCP) — no el spike (spikes/language/rust/ tiene su
-# propio Cargo.toml y dependencias separadas, código de investigación
-# desechable, no el punto de partida del core real).
+# ADR-0001 (Rust, status "proposed") is already implemented in the root
+# Cargo.toml. The dependencies below reflect the REAL state of the `rationale`
+# crate — not the spike (spikes/language/rust/ has its own Cargo.toml and
+# separate dependencies; it is throwaway research code, not the starting point
+# of the real core).
 #
-# Dependencias externas ya presentes en el entorno de desarrollo (no del
-# runtime de Rationale) se documentan como research/tooling, no como
-# dependencias del producto:
-#   - Codebase Memory (proveedor estructural inicial, proceso externo vía MCP/CLI)
+# External dependencies present in the development environment (not in
+# Rationale's runtime) are documented as research/tooling, not as product
+# dependencies:
+#   - Codebase Memory (initial structural provider, an external process over MCP/CLI)
 #   - Git
+#
+# The `rationale` Agent Skill (skills/rationale/) adds no crate. Its optional
+# validator script uses only the Python standard library, and PyYAML when it is
+# already installed; it is not a runtime dependency of the binary.
 
 schema_version: 1
 core_dependencies:
   - name: serde
     version: "1"
     license: "MIT OR Apache-2.0"
-    purpose: "Framework de (de)serialización"
+    purpose: "(De)serialization framework"
     runtime_dependency: true
     requires_network: false
   - name: serde_json
     version: "1"
     license: "MIT OR Apache-2.0"
-    purpose: "Serialización de Context Packets y mensajes JSON-RPC del servidor MCP"
+    purpose: "Serialization of Context Packets and JSON-RPC messages of the MCP server"
     runtime_dependency: true
     requires_network: false
   - name: yaml_serde
     version: "0.10.4"
     license: "MIT OR Apache-2.0"
-    purpose: "Parseo de Records/Subjects/Evidence/Assessments YAML en .rationale/"
+    purpose: "Parsing YAML Records, Subjects, Evidence, and Assessments in .rationale/"
     runtime_dependency: true
     requires_network: false
     notes: >
-      Reemplazó a serde_yaml (0.9, "+deprecated" upstream) en ADR-0003.
-      Mantenido por "The YAML Organization" (github.com/yaml/yaml-serde).
-      Probado con roundtrip real contra un Subject del repo antes de migrar.
-      Trae una dependencia transitiva nueva: libyaml-rs 0.3.0 (libyaml
-      transpilado a Rust puro vía c2rust, MIT, mismo org github.com/yaml)
-      — no reintroduce un toolchain C, confirmado por `cargo info`.
+      Replaced serde_yaml (0.9, "+deprecated" upstream) in ADR-0003.
+      Maintained by "The YAML Organization" (github.com/yaml/yaml-serde).
+      Tested with a real round trip against a Subject from the repository
+      before migrating. Brings one new transitive dependency: libyaml-rs 0.3.0
+      (libyaml transpiled to pure Rust through c2rust, MIT, same github.com/yaml
+      organization) — it does not reintroduce a C toolchain, confirmed by
+      `cargo info`.
   - name: rusqlite
     version: "0.31 (feature: bundled)"
     license: "MIT"
-    purpose: "SQLite embebido para la capa derivada (assessments, FTS5, cache) — ADR-0004"
+    purpose: "Embedded SQLite for the derived layer (assessments, FTS5, cache) — ADR-0004"
     runtime_dependency: true
     requires_network: false
     vendorable: true
     notes: >
-      Añadido en Fase E3 (src/cache.rs). Validado end-to-end en
-      spikes/language/rust/ antes de migrarlo al core real. `cargo audit`
-      corrido sobre el árbol completo — ver resultado en `security_audit`
-      abajo.
+      Added in Phase E3 (src/cache.rs). Validated end to end in
+      spikes/language/rust/ before moving it into the real core. `cargo audit`
+      was run over the full tree — see the result in `security_audit` below.
   - name: sha2
     version: "0.10"
     license: "MIT OR Apache-2.0"
-    purpose: "SHA-256 del contenido íntegro de skills administrados; uninstall-agent solo borra un archivo si conserva el hash escrito"
+    purpose: "SHA-256 of the full content of every file install-agent owns (shortcut skills and the rationale skill); uninstall-agent deletes a file only while it keeps the recorded hash"
     runtime_dependency: true
     requires_network: false
     notes: >
-      Evita usar un hash de 64 bits no criptográfico en una frontera
-      destructiva. La comparación protege contenido editado por el usuario:
-      si el hash cambia, el skill se conserva y se reporta.
+      Avoids a non-cryptographic 64-bit hash at a destructive boundary. The
+      comparison protects content the user edited: when the hash changes, the
+      file is kept and reported.
 
-# Transitivas relevantes por tamaño o superficie de ataque (no cada crate
-# del árbol — cargo tree --edges normal en el repo tiene la lista completa).
+# Transitive dependencies that matter for size or attack surface (not every
+# crate in the tree — `cargo tree --edges normal` in the repository has the full list).
 notable_transitive_dependencies:
   - name: libsqlite3-sys
     via: rusqlite
     license: "MIT"
-    notes: "Bindings FFI a SQLite (bundled, compilado desde fuente vendorizada — no enlaza contra una libsqlite3 del sistema)."
+    notes: "FFI bindings to SQLite (bundled, compiled from vendored source — it does not link against a system libsqlite3)."
   - name: libyaml-rs
     via: yaml_serde
     license: "MIT"
-    notes: "libyaml transpilado a Rust puro (c2rust) — sin toolchain C adicional."
+    notes: "libyaml transpiled to pure Rust (c2rust) — no additional C toolchain."
   - name: zerocopy
     via: "rusqlite -> hashlink -> hashbrown -> ahash"
     license: "BSD-2-Clause OR Apache-2.0 OR MIT"
-    notes: "Sin unsafe expuesto a Rationale directamente; uso interno de ahash."
+    notes: "No unsafe exposed to Rationale directly; used internally by ahash."
   - name: digest
     via: sha2
     license: "MIT OR Apache-2.0"
-    notes: "Traits y buffering criptográfico usados por SHA-256; no realiza I/O ni llamadas externas."
+    notes: "Traits and cryptographic buffering used by SHA-256; performs no I/O or external calls."
 
 tooling_dependencies:
   - name: codebase-memory-mcp
-    purpose: "Proveedor estructural inicial, consumido vía MCP/CLI, nunca enlazado"
+    purpose: "Initial structural provider, consumed over MCP/CLI, never linked"
     runtime_dependency: false
     requires_network: false
-    license: "por verificar en docs/research/codebase-memory/"
+    license: "to be verified in docs/research/codebase-memory/"
   - name: git
-    purpose: "Fuente de verdad de revisión, historial y colaboración"
+    purpose: "Source of truth for revision, history, and collaboration"
     runtime_dependency: true
     requires_network: false
-    license: "GPL-2.0 (herramienta externa, no vinculada)"
+    license: "GPL-2.0 (external tool, not linked)"
 
-# Resultado real de `cargo audit` (ver docs/runbooks/build-and-test.md para
-# cómo re-ejecutarlo). Cierra el known_gap `cargo-audit-not-installed` que
-# existía desde Fase D — corrido en F0 antes de que Fase F añada más
-# dependencias (escritura canónica).
+# Real result of `cargo audit` (see docs/runbooks/build-and-test.md for how to
+# run it again). It closed the known gap `cargo-audit-not-installed` that had
+# existed since Phase D — run in F0 before Phase F added more dependencies
+# (canonical writes).
 security_audit:
   tool: "cargo-audit 0.22.2"
-  advisory_db: "RustSec/advisory-db, 1170 advisories cargados"
+  advisory_db: "RustSec/advisory-db, 1170 advisories loaded"
   crates_scanned: 46
   vulnerabilities_found: 0
   warnings: 0
@@ -115,9 +118,9 @@ security_audit:
 known_gaps:
   - id: windows-file-locking-unexercised
     description: >
-      Decisión formalizada en ADR-0008: rename atómico basta para el canon y
-      los skills usan claim por rename + publicación no-clobber con hard link;
-      no se añade file locking real. `rename` y `hard_link` pasan en CI, pero
-      sus garantías bajo contención real de varios procesos en NTFS siguen sin
-      ejercitarse empíricamente. No bloqueante hasta el piloto en Windows.
+      Decision formalized in ADR-0008: an atomic rename is enough for the canon,
+      and skills use a claim by rename plus no-clobber publication with a hard
+      link; no real file locking is added. `rename` and `hard_link` pass in CI,
+      but their guarantees under real multi-process contention on NTFS have not
+      been exercised empirically. Not blocking until the Windows pilot.
     severity: low

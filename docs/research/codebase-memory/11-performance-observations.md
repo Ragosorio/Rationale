@@ -2,70 +2,70 @@
 
 ## Observed
 
-### CLI (medición formal con `time`, ver `04-cli-contracts.md`)
+### CLI (formal measurement with `time`, see `04-cli-contracts.md`)
 
-| Escenario | Wall clock | CPU usuario |
+| Scenario | Wall clock | User CPU |
 |---|---:|---:|
-| `cli index_status`, sin daemon (crea uno temporal por invocación) — corrida 1 | 6.811s | 2.19s |
-| `cli index_status`, sin daemon — corrida 2 | 6.873s | 2.26s |
-| `cli index_status`, con `daemon start` previo — corrida 1 | 2.283s | 2.17s |
-| `cli index_status`, con `daemon start` previo — corrida 2 | 2.275s | 2.18s |
+| `cli index_status`, no daemon (creates a temporary one per invocation) — run 1 | 6.811 s | 2.19 s |
+| `cli index_status`, no daemon — run 2 | 6.873 s | 2.26 s |
+| `cli index_status`, with a prior `daemon start` — run 1 | 2.283 s | 2.17 s |
+| `cli index_status`, with a prior `daemon start` — run 2 | 2.275 s | 2.18 s |
 
-El propio binario advierte activamente sobre este costo (`hint: this command started a temporary CBM daemon...`).
+The binary itself actively warns about this cost (`hint: this command started a temporary CBM daemon...`).
 
-### MCP (medición formal, B1.1 — cliente stdio propio contra el binario compilado en HEAD)
+### MCP (formal measurement, B1.1 — our own stdio client against the binary built at HEAD)
 
-Se escribió un cliente mínimo en Python que habla JSON-RPC 2.0 framed con `Content-Length` directamente por stdio contra `build/c/codebase-memory-mcp` (confirmado en `src/mcp/mcp.c`), sin pasar por ninguna sesión de agente ya conectada — mide el proceso desde cero.
+A minimal Python client was written that speaks JSON-RPC 2.0 framed with `Content-Length` directly over stdio against `build/c/codebase-memory-mcp` (confirmed in `src/mcp/mcp.c`), without going through any already-connected agent session — it measures the process from scratch.
 
-Protocolo: spawn del proceso → `initialize` → `notifications/initialized` → tres `tools/call` sucesivos de `index_status` en la misma sesión. Tres corridas independientes:
+Protocol: spawn the process → `initialize` → `notifications/initialized` → three successive `tools/call` of `index_status` in the same session. Three independent runs:
 
-| Etapa | Corrida 1 | Corrida 2 | Corrida 3 |
+| Stage | Run 1 | Run 2 | Run 3 |
 |---|---:|---:|---:|
-| Spawn del proceso | 5.2ms | 4.7ms | 1.3ms |
-| **`initialize` (handshake, una vez)** | **6.837s** | **6.791s** | **6.859s** |
-| Primer `tools/call` (justo después del handshake) | 27.7ms | 27.5ms | 22.8ms |
-| Segundo `tools/call` (misma sesión) | 16.4ms | 16.7ms | 16.5ms |
-| Tercer `tools/call` (misma sesión) | 16.2ms | 16.5ms | 14.9ms |
+| Process spawn | 5.2 ms | 4.7 ms | 1.3 ms |
+| **`initialize` (handshake, once)** | **6.837 s** | **6.791 s** | **6.859 s** |
+| First `tools/call` (right after the handshake) | 27.7 ms | 27.5 ms | 22.8 ms |
+| Second `tools/call` (same session) | 16.4 ms | 16.7 ms | 16.5 ms |
+| Third `tools/call` (same session) | 16.2 ms | 16.5 ms | 14.9 ms |
 
-**Hallazgo central: el costo de ~6.8s vive enteramente en el handshake `initialize`, una única vez por proceso.** Coincide, dentro del margen de error, con el 6.8s medido para la CLI fría en `04-cli-contracts.md` — confirma que ambos transportes pagan el mismo costo de arranque (probablemente carga de las ~180 gramáticas tree-sitter y apertura de SQLite), no un costo distinto de IPC. **Una vez completado el handshake, cada llamada de herramienta cuesta 15-30ms** — dentro del presupuesto de baseline de `Rationale_v0.5.md §20.5.2` (P95 ≤ 150ms).
+**Central finding: the ~6.8 s cost lives entirely in the `initialize` handshake, once per process.** It matches, within the margin of error, the 6.8 s measured for the cold CLI in `04-cli-contracts.md` — confirming that both transports pay the same startup cost (probably loading the ~180 tree-sitter grammars and opening SQLite), not a different IPC cost. **Once the handshake completes, each tool call costs 15–30 ms** — within the baseline budget of `Rationale_v0.5.md §20.5.2` (P95 ≤ 150 ms).
 
 ## Claimed
 
-Ninguna documentación de CBM publica benchmarks de latencia CLI vs MCP.
+No CBM documentation publishes CLI versus MCP latency benchmarks.
 
 ## Verified
 
-- Las cuatro mediciones de CLI (`04-cli-contracts.md`) son reproducibles, con diferencia <5% entre corridas.
-- Las mediciones MCP son reproducibles: tres corridas completas e independientes (proceso nuevo cada vez) con `initialize` consistentemente entre 6.79s y 6.86s, y llamadas subsecuentes consistentemente entre 15ms y 28ms.
+- The four CLI measurements (`04-cli-contracts.md`) are reproducible, with <5% difference between runs.
+- The MCP measurements are reproducible: three complete, independent runs (a new process each time) with `initialize` consistently between 6.79 s and 6.86 s, and subsequent calls consistently between 15 ms and 28 ms.
 
 ## Unknown
 
-- Si el costo de `initialize` es dominado por la carga de gramáticas tree-sitter, apertura/verificación de las bases SQLite existentes en `~/.cache/codebase-memory-mcp/`, o ambos — no perfilado a ese nivel de detalle (fuera del alcance razonable de esta epic).
-- Si existe una diferencia de latencia entre el transporte MCP stdio y una eventual variante de red — fuera de alcance, CBM parece operar únicamente sobre stdio local.
-- Si el `daemon` persistente de CBM (`06-daemon-and-watcher.md`) permite que un cliente MCP nuevo se salte el `initialize` de 6.8s conectándose a un proceso ya inicializado — no probado; el cliente de este research siempre lanzó un proceso nuevo. Si el daemon lo permitiera, el costo de 6.8s se pagaría una sola vez por máquina, no por sesión de agente.
+- Whether the cost of `initialize` is dominated by loading tree-sitter grammars, opening/checking the existing SQLite databases in `~/.cache/codebase-memory-mcp/`, or both — not profiled at that level of detail (outside the reasonable scope of this epic).
+- Whether there is a latency difference between the stdio MCP transport and an eventual network variant — out of scope; CBM appears to operate only over local stdio.
+- Whether CBM's persistent `daemon` (`06-daemon-and-watcher.md`) lets a new MCP client skip the 6.8 s `initialize` by connecting to an already-initialized process — not tested; this research's client always launched a new process. If the daemon allowed it, the 6.8 s cost would be paid once per machine, not per agent session.
 
 ## Risk
 
-**Medio — refinado respecto a la evaluación inicial en `04-cli-contracts.md`.** El riesgo real no es que "todo MCP sea lento": es que **el primer arranque de una sesión paga ~6.8s**, y ninguna superficie de alta frecuencia de Rationale (lectura, búsqueda) puede depender de un proceso MCP que se reinicia por operación. Si Rationale mantiene una sesión (o se conecta al daemon persistente de CBM, pendiente de confirmar), el costo por-operación medido (15-30ms) sí es viable.
+**Medium — refined relative to the initial assessment in `04-cli-contracts.md`.** The real risk is not that "all of MCP is slow": it is that **the first startup of a session pays ~6.8 s**, and no high-frequency surface of Rationale (reading, searching) can depend on an MCP process restarted per operation. If Rationale keeps a session (or connects to CBM's persistent daemon, pending confirmation), the measured per-operation cost (15–30 ms) is viable.
 
 ## Decision impact
 
-1. **Confirma con evidencia formal, no solo cualitativa, la recomendación de `04-cli-contracts.md`:** el fast path baseline de Rationale no debe lanzar un proceso CLI ni una sesión MCP nueva por operación — el costo de ~6.8s de `initialize` es indistinguible del costo medido en CLI fría, así que ninguno de los dos transportes por-invocación es viable para el baseline.
-2. **A favor de ADR-0002 (MCP sobre CLI subprocess):** una vez pagado el `initialize`, el costo por-llamada de MCP (15-30ms) es sustancialmente mejor que reinvocar la CLI (que repetiría el costo completo, `04-cli-contracts.md`). Esto es evidencia concreta a favor de que el adaptador de Rationale mantenga **una sesión MCP persistente de larga duración** (un solo `initialize` por vida del proceso de Rationale), en vez de subprocesos CLI repetidos.
-3. Próximo research item, ahora más acotado: confirmar si conectar contra el `daemon` persistente de CBM (`daemon start`) permite evitar el costo de `initialize` en clientes MCP nuevos — determinaría si Rationale puede reconectar rápido tras un reinicio propio sin pagar 6.8s de nuevo.
+1. **It confirms with formal, not only qualitative, evidence the recommendation of `04-cli-contracts.md`:** Rationale's baseline fast path must not launch a CLI process or a new MCP session per operation — the ~6.8 s `initialize` cost is indistinguishable from the cost measured for the cold CLI, so neither per-invocation transport is viable for the baseline.
+2. **In favor of ADR-0002 (MCP over a CLI subprocess):** once `initialize` is paid, MCP's per-call cost (15–30 ms) is substantially better than re-invoking the CLI (which would repeat the full cost, `04-cli-contracts.md`). This is concrete evidence in favor of Rationale's adapter keeping **one long-lived persistent MCP session** (a single `initialize` per life of Rationale's process) instead of repeated CLI subprocesses.
+3. The next research item, now narrower: confirm whether connecting to CBM's persistent `daemon` (`daemon start`) avoids the `initialize` cost for new MCP clients — it would determine whether Rationale can reconnect quickly after its own restart without paying 6.8 s again.
 
-## Nota (E7, revisión adversarial de Fase E) — la cifra de 6.8s no se reprodujo en el entorno de desarrollo actual
+## Note (E7, adversarial review of Phase E) — the 6.8 s figure did not reproduce in the current development environment
 
-`docs/work-items/adversarial-review-fase-e5-e6.md` (hallazgo G) midió `initialize` fresco contra `codebase-memory-mcp` 0.8.1 (misma versión, mismo binario) en **~15-20ms**, no 6.8s, en la máquina de desarrollo donde se implementó la superficie MCP de Fase E5. La discrepancia no se explica todavía — candidatos no descartados: caché en disco ya caliente (`~/.cache/codebase-memory-mcp/*.db`, confirmado no vacío) que evitaría el costo de indexación original medido bajo el nombre de "`initialize`"; un entorno de medición distinto al de esta nota; o un cambio real de comportamiento entre la fecha de esta investigación y hoy.
+`docs/work-items/adversarial-review-fase-e5-e6.md` (finding G) measured a fresh `initialize` against `codebase-memory-mcp` 0.8.1 (the same version, the same binary) at **~15–20 ms**, not 6.8 s, on the development machine where the Phase E5 MCP surface was implemented. The discrepancy is not yet explained — candidates not ruled out: an already-warm on-disk cache (`~/.cache/codebase-memory-mcp/*.db`, confirmed non-empty) that would avoid the cost of the original indexing measured under the name "`initialize`"; a measurement environment different from this note's; or a real behavior change between the date of this research and today.
 
-Esto **no invalida el mecanismo de amortización de Fase E5** (la sesión persistente sigue siendo estrictamente mejor que una CLI de un solo disparo, y se midió una mejora real de ~4-5x, 150ms→33ms, en ese mismo entorno) — pero la magnitud dramática que motivó ADR-0002 y esta nota de research podría estar sobrestimada para desarrollo local con caché caliente. Próximo experimento sugerido: medir `initialize` con `~/.cache/codebase-memory-mcp/` vacío (contenedor limpio) para aislar la variable de caché y confirmar si el 6.8s original correspondía a indexación en frío, no al handshake del protocolo en sí.
+This **does not invalidate Phase E5's amortization mechanism** (the persistent session is still strictly better than a single-shot CLI, and a real ~4–5x improvement, 150 ms→33 ms, was measured in that same environment) — but the dramatic magnitude that motivated ADR-0002 and this research note may be overstated for local development with a warm cache. Suggested next experiment: measure `initialize` with an empty `~/.cache/codebase-memory-mcp/` (a clean container) to isolate the cache variable and confirm whether the original 6.8 s corresponded to cold indexing rather than to the protocol handshake itself.
 
-## Reproducir
+## Reproduce
 
 ```bash
 cd ~/Desktop/codebase-memory-mcp
-# Cliente mínimo: spawn, initialize, 3x tools/call de index_status, medir cada etapa.
-# Ver docs/research/language/ (fase C) para el equivalente en el lenguaje elegido.
+# Minimal client: spawn, initialize, 3x tools/call of index_status, time each stage.
+# See docs/research/language/ (phase C) for the equivalent in the chosen language.
 python3 - <<'PY'
 import json, subprocess, time
 BIN = "build/c/codebase-memory-mcp"
@@ -82,4 +82,3 @@ print("initialize:", time.time()-t0)
 proc.terminate()
 PY
 ```
-

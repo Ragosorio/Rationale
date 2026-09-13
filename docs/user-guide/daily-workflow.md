@@ -1,83 +1,101 @@
-# Flujo diario
+# Daily workflow
 
-## Antes del cambio
+## Before the change
 
-El agente prepara el target con su intención real. Por CLI puedes ver el mismo
-packet:
+The agent prepares the target with its real intent. From the CLI you can see
+the same packet:
 
 ```bash
-rationale prepare "src/auth/authorization.rs::resolve" --intent "cambiar la resolución de permisos"
+rationale prepare "src/auth/authorization.rs::resolve" --intent "change how permissions are resolved"
 ```
 
-El packet JSON va a stdout y los diagnósticos a stderr. Revisa sobre todo:
+The JSON packet goes to stdout and diagnostics to stderr. Look above all at:
 
-- `critical_constraints` y `decisions`, con su `authority` y `provenance`;
-- `relationships`, con su estado (`observed`, `indirect`, `orphaned`, `unknown`);
-- `intent_conflicts` — señal léxica, no contradicción probada;
-- `snapshot` y `warnings` de cobertura, y `budget_overflow` si aparece.
+- `critical_constraints` and `decisions`, with their `authority` and `provenance`;
+- `relationships`, with their state (`observed`, `indirect`, `orphaned`, `unknown`);
+- `intent_conflicts` — a lexical signal, not a proven contradiction;
+- coverage `snapshot` and `warnings`, and `budget_overflow` when it appears.
 
-Guarda el `operation_id`: `finalize_change` lo usa para cerrar la operación.
+Keep the `operation_id`: `finalize_change` uses it to close the operation.
 
-## Durante el cambio
+In Claude Code, `/rationale` or `/rationale-preflight <target> <intent>` drives
+this step explicitly; in Codex, `$rationale`. The skill's
+[packet reference](../../skills/rationale/references/packet.md) explains every
+field.
 
-Si el código parece extraño, el agente llama a `explain_target` antes de
-simplificarlo. No trata una inferencia del proveedor como autoridad.
+## During the change
 
-## Después del cambio
+If the code looks strange, the agent calls `explain_target` before simplifying
+it. It never treats a provider inference as authority.
 
-El agente llama a `finalize_change` con el `operation_id`, un `summary` y los
-`candidates`: solo conocimiento que seguirá siendo cierto. Rationale descarta
-ruido, notas transitorias, rationales que repiten el statement y duplicados —
-siempre con un motivo — y escribe el resto como Records en la misma llamada.
-Sin candidatos no se escribe memoria.
+## After the change
 
-Revisa lo capturado como revisas el código: `.rationale/records/` viaja en el
-mismo pull request.
+The agent calls `finalize_change` with the `operation_id`, a `summary`, and the
+`candidates`: only knowledge that will stay true. Rationale discards noise,
+transient notes, rationales that repeat the statement, and duplicates — always
+with a reason — and writes the rest as Records in the same call. Without
+candidates, no memory is written.
 
-## Mientras trabajas
+Review what was captured the way you review code: `.rationale/records/` travels
+in the same pull request.
+
+## While you work
 
 ```bash
 rationale ui
 ```
 
-El [Control Room](control-room.md) muestra cada operación en vivo: qué recibió
-el agente, qué capturó, qué descartó y qué explicaciones están en riesgo.
+The [Control Room](control-room.md) shows each operation live: what the agent
+received, what it captured, what it discarded, and which explanations are at
+risk.
 
-## Autoridad humana
+## Human authority
 
-Fija una regla que ningún agente debe reemplazar:
+Pin a rule that no agent may replace:
 
 ```bash
-rationale pin <record-id> --reason "invariante de pagos"
+rationale pin <record-id> --reason "payments invariant"
 ```
 
-Si un agente intenta reemplazarla, `finalize_change` devuelve un conflicto y no
-escribe nada. Decides tú:
+If an agent tries to replace it, `finalize_change` returns a conflict and writes
+nothing. You decide:
 
 ```bash
 rationale conflicts
-rationale resolve <conflict-id> keep-pinned    # o adopt-new, con autoridad declarada
+rationale resolve <conflict-id> keep-pinned    # or adopt-new, with declared authority
 ```
 
-Para corregir, disputar, revocar, reemplazar, cambiar la autoridad o añadir
-evidencia a un Record existente:
+To correct, dispute, revoke, supersede, change the authority of, or add evidence
+to an existing Record:
 
 ```bash
 rationale review-record <record-id>
 ```
 
-Todas estas acciones exigen una terminal interactiva y dejan eventos de
-lifecycle auditables.
+All these actions require an interactive terminal and leave auditable lifecycle
+events.
 
-## Proyectos que vienen de antes de 1.0
+## Keeping the canon healthy
 
-Si `.rationale/proposals/` todavía tiene propuestas pendientes:
+```bash
+rationale doctor --check
+```
+
+Run it in CI or before a release. When bindings go stale after a refactor, ask
+the agent to run the skill's `maintain` operation: it supersedes outdated
+Records through the capture gate and leaves pinned Records and lifecycle
+changes to you.
+
+## Projects that predate 1.0
+
+If `.rationale/proposals/` still has pending proposals:
 
 ```bash
 rationale migrate --dry-run
 rationale migrate
 ```
 
-Las válidas se vuelven Records con procedencia `migrated`; las ruidosas se
-archivan con su motivo en `.rationale/archive/proposals/`. Nada se borra.
-`rationale review` sigue disponible para confirmarlas una a una si lo prefieres.
+Valid proposals become Records with `migrated` provenance; noisy ones are
+archived with their reason in `.rationale/archive/proposals/`. Nothing is
+deleted. `rationale review` is still available to confirm them one by one if
+you prefer.

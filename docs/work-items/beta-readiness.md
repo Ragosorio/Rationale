@@ -1,219 +1,203 @@
-# De alpha a beta — definición y checklist
+# From alpha to beta — definition and checklist
 
-Este documento existe para que "¿ya es beta?" sea una pregunta verificable,
-no una opinión. Cubre solo funcionalidad — no proceso (usuarios externos,
-uso sostenido en el tiempo), aunque esos puntos se listan al final porque sin
-ellos beta no es defendible.
+This document exists so that "is it beta yet?" is a verifiable question, not an
+opinion. It covers functionality only — not process (external users, sustained
+use over time), although those points are listed at the end because beta is not
+defensible without them.
 
-**Estado: `v0.1.0-beta.2` publicada.** Las casillas funcionales están
-cerradas con la evidencia que se describe abajo; las de proceso siguen
-abiertas y declaradas como tales. Beta.1 no afirma que Rationale esté
-terminado: afirma que el flujo funciona de forma repetible y que los fallos
-conocidos son conocidos. La sección "Alcance real de la evidencia" dice
-exactamente qué se probó y qué no, para que nadie tenga que deducirlo.
+**Status: `v0.1.0-beta.2` published.** The functional boxes are closed with the
+evidence described below; the process boxes remain open and are declared as
+such. Beta.1 does not claim that Rationale is finished: it claims that the flow
+works repeatably and that the known failures are known. The section "Real scope
+of the evidence" says exactly what was tested and what was not, so nobody has to
+infer it.
 
-## Definición
+## Definition
 
-> Rationale entra en beta cuando el flujo completo de preparación, captura,
-> revisión y recuperación de decisiones funciona de forma repetible en
-> varios repositorios; los bindings básicos son confiables; instalación,
-> actualización y desinstalación son idempotentes en cada plataforma que el
-> proyecto anuncia como soportada; y no existen fallos conocidos que
-> corrompan el canon, inventen autoridad, o aprueben decisiones sin
-> intervención humana.
+> Rationale enters beta when the full flow of preparing, capturing, reviewing,
+> and retrieving decisions works repeatably across several repositories; basic
+> bindings are reliable; installation, update, and uninstallation are idempotent
+> on every platform the project announces as supported; and there are no known
+> failures that corrupt the canon, invent authority, or approve decisions without
+> human intervention.
 
-Alpha significa "todavía estamos comprobando que el producto funciona".
-Beta significa "ya sabemos que funciona; ahora comprobamos que funciona bien
-para más personas, proyectos y entornos". No exige perfección — exige que
-los fallos conocidos sean conocidos, controlados, y no destruyan la
-confianza del usuario.
+Alpha means "we are still checking that the product works". Beta means "we
+already know it works; now we check that it works well for more people,
+projects, and environments". It does not require perfection — it requires known
+failures to be known, controlled, and not to destroy the user's trust.
 
-## Ya cumplido (verificado, no solo revisado por lectura)
+## Already met (verified, not only reviewed by reading)
 
-- **Transporte MCP.** `initialize`/`tools/list`/`tools/call` sobre JSON por
-  línea, con la sesión persistente sobreviviendo a herramientas
-  desconocidas, targets inexistentes, JSON malformado y mensajes anidados
-  profundamente (`tests/mcp_server.rs`).
-- **Ciclo completo propose → review → approve → recover.** Verificado en
-  este repo con el binario de alpha.7 real (no solo tests sintéticos):
-  `finalize_change` en una sesión, `rationale review` como subproceso real,
-  `prepare_change` en una sesión NUEVA — `governs_target: true`,
-  `match_kind: structural`, `linkage: current`, con el proveedor
-  estructural real resolviendo el símbolo.
-- **Detección de conflictos honesta.** `intent_conflicts` distingue un
-  hecho verificable (`governs-target`) de un solapamiento léxico no
-  verificado (`lexical-overlap`); `polarity: undetermined` nunca se
-  promueve a veredicto. `governance_verdict_required` obliga al agente a
-  pronunciarse en vez de proceder en silencio.
-- **`prepare_change` activa detección de conflictos por defecto** cuando
-  viene `intent`, sin exigir un flag `mode` separado que el prompt maestro
-  documentado nunca enseña (bug real corregido esta sesión — antes
-  reproducía el síntoma exacto del incidente que motivó el proyecto).
-- **Instalación/actualización en Unix (alcance corregido).** Instalación
-  limpia, reinstalación y canal
-  `preview` sin degradar en silencio a `stable`/`releases/latest`, checksum
-  SHA-256 verificado antes de instalar, helper de actualización instalado
-  junto al binario. Esta evidencia no cubría volver a ejecutar `init` sobre
-  un canon existente: el dogfood encontró que esa ruta retornaba antes de
-  configurar agentes. La corrección y su regresión automatizada ya existen,
-  pero los cuatro repos piloto todavía deben convergerse y verificarse.
-- **Windows: `quality (windows-latest)` corre y pasa en CI real** — no solo
-  agregado a la matriz, sino verde de punta a punta, incluyendo el smoke
-  test que construye el binario, empaqueta el ZIP, lo expande y confirma la
-  ruta exacta que `rationale-installer.ps1` espera. En el camino,
-  `windows-latest` encontró dos defectos reales que ubuntu/macOS no podían
-  detectar: `cache::cache_root` usaba `$HOME` (inexistente en Windows;
-  ahora usa `%LOCALAPPDATA%`, el candidato que ADR-0005 ya había nombrado)
-  y un test cuyo mock es un script bash que Windows no puede ejecutar como
-  binario nativo (saltado ahí, documentado como limitación del fixture de
-  prueba, no del código de producción). Paridad de `install-agent
-  --global-only` y limpieza de `rationale-update.ps1` al desinstalar.
-- **`uninstall-agent` no destructivo.** Extirpa solo lo que Rationale
-  escribió — nunca borra un archivo completo solo porque Rationale lo creó,
-  si el usuario le agregó contenido después (verificado con `.mcp.json` con
-  otro servidor MCP, y `CLAUDE.md` con texto propio bajo el bloque). Para
-  skills completos, reclama primero la identidad con rename atómico: un path
-  recreado concurrentemente queda intacto y la publicación del reemplazo
-  falla cerrada en vez de sobrescribirlo (ADR-0008).
-- **Canon atómico.** Todas las escrituras a `.rationale/` (Records,
-  Subjects, y ahora también `agents.rs`: `CLAUDE.md`/`AGENTS.md`/
-  `.mcp.json`/manifest) usan temp-file + `sync_all` + `rename`. Un proceso
-  interrumpido nunca deja un archivo truncado.
-- **Superficie de panics mínima.** De 216 ocurrencias de
-  `unwrap`/`expect`/`panic!` en `src/`, solo una era alcanzable con input de
-  usuario real (`extract_block` con marcadores invertidos) — corregida.
-- **Camino de migración para canon legado.** `RecordWithoutBindings` (el
-  defecto original de Fase 1, ya escrito en cuatro repos) tiene ahora una
-  reparación humana explícita vía `doctor --repair`, marcada
-  `declared_by: human` — nunca indistinguible de un binding confirmado por
-  proveedor.
-- **Auditoría de lifecycle.** `review-record` imprime `approvals[]`
-  (incluyendo `approved_at`, que antes no se escribía) y
-  `lifecycle.events[]` completos — auditar "quién aprobó y cuándo" ya no
-  exige leer el YAML a mano.
-- **Multi-repo.** `project_root` (canon) y `repo_path` (código) verificados
-  como independientes con dos repos Git reales, no solo cableado sin probar.
+- **MCP transport.** `initialize`/`tools/list`/`tools/call` over line-delimited
+  JSON, with the persistent session surviving unknown tools, nonexistent
+  targets, malformed JSON, and deeply nested messages (`tests/mcp_server.rs`).
+- **Full propose → review → approve → recover cycle.** Verified in this
+  repository with the real alpha.7 binary (not only synthetic tests):
+  `finalize_change` in one session, `rationale review` as a real subprocess, and
+  `prepare_change` in a NEW session — `governs_target: true`,
+  `match_kind: structural`, `linkage: current`, with the real structural provider
+  resolving the symbol.
+- **Honest conflict detection.** `intent_conflicts` distinguishes a verifiable
+  fact (`governs-target`) from unverified lexical overlap (`lexical-overlap`);
+  `polarity: undetermined` is never promoted to a verdict.
+  `governance_verdict_required` forces the agent to state a position instead of
+  proceeding silently.
+- **`prepare_change` enables conflict detection by default** when `intent` is
+  present, without requiring a separate `mode` flag that the documented master
+  prompt never teaches (a real bug fixed this session — before, it reproduced the
+  exact symptom of the incident that motivated the project).
+- **Installation/update on Unix (scope corrected).** A clean install, a
+  reinstall, and the `preview` channel without silently degrading to
+  `stable`/`releases/latest`, a SHA-256 checksum verified before installing, and
+  the update helper installed next to the binary. This evidence did not cover
+  running `init` again on an existing canon: the dogfood found that path returned
+  before configuring agents. The fix and its automated regression test exist, but
+  the four pilot repositories still have to be converged and verified.
+- **Windows: `quality (windows-latest)` runs and passes in real CI** — not just
+  added to the matrix, but green end to end, including the smoke test that builds
+  the binary, packs the ZIP, expands it, and confirms the exact path
+  `rationale-installer.ps1` expects. Along the way, `windows-latest` found two
+  real defects ubuntu/macOS could not detect: `cache::cache_root` used `$HOME`
+  (nonexistent on Windows; it now uses `%LOCALAPPDATA%`, the candidate ADR-0005
+  had already named) and a test whose mock is a bash script Windows cannot run as
+  a native binary (skipped there, documented as a limitation of the test fixture,
+  not of the production code). Parity of `install-agent --global-only` and
+  cleanup of `rationale-update.ps1` on uninstall.
+- **Non-destructive `uninstall-agent`.** It removes only what Rationale wrote —
+  it never deletes a whole file just because Rationale created it, if the user
+  later added content (verified with a `.mcp.json` holding another MCP server,
+  and a `CLAUDE.md` with the user's own text below the block). For complete
+  skills, it first claims the identity through an atomic rename: a concurrently
+  recreated path stays intact and publishing the replacement fails closed instead
+  of overwriting it (ADR-0008).
+- **Atomic canon.** Every write to `.rationale/` (Records, Subjects, and now also
+  `agents.rs`: `CLAUDE.md`/`AGENTS.md`/`.mcp.json`/manifest) uses a temp file +
+  `sync_all` + `rename`. An interrupted process never leaves a truncated file.
+- **Minimal panic surface.** Of 216 occurrences of `unwrap`/`expect`/`panic!` in
+  `src/`, only one was reachable with real user input (`extract_block` with
+  inverted markers) — fixed.
+- **A migration path for the legacy canon.** `RecordWithoutBindings` (Phase 1's
+  original defect, already written in four repositories) now has an explicit
+  human repair through `doctor --repair`, marked `declared_by: human` — never
+  indistinguishable from a binding confirmed by a provider.
+- **Lifecycle audit.** `review-record` prints the complete `approvals[]`
+  (including `approved_at`, which was not written before) and
+  `lifecycle.events[]` — auditing "who approved and when" no longer requires
+  reading the YAML by hand.
+- **Multi-repo.** `project_root` (canon) and `repo_path` (code) verified as
+  independent with two real Git repositories, not only wired without testing.
 
-## Checklist de salida de alpha
+## Alpha exit checklist
 
 ```text
-[x] Cadena de gobernanza completa verificada con el binario real (no solo
-    tests sintéticos), incluyendo una sesión MCP nueva recuperando un
-    Record aprobado en una sesión anterior.
-[x] intent activa detección de conflictos sin flags adicionales no
-    documentados.
-[x] Bindings exactos creados y recuperados correctamente (archivo + símbolo
-    + propagación archivo→símbolo).
-[x] explain_target devuelve los mismos Records gobernantes que
-    prepare_change para el mismo target.
-[x] Conflictos diferenciados entre lexicales y "gobierna el target".
-[x] Cero panics conocidos en entradas normales.
-[x] Cero pérdida o corrupción del canon (escrituras atómicas, incluyendo
-    agents.rs).
-[x] Idempotencia completa de init/install/update en Unix — instalación,
-    reinstalación, update y **re-inicialización** verificadas. La convergencia
-    se comprobó sobre un repo piloto real (BoostAPI, migrado desde alpha.7):
-    las tres entradas históricas conservaron `action: created`, sus rutas
-    absolutas se normalizaron a relativas, y el manifest quedó byte a byte
-    idéntico entre dos pasadas consecutivas. El ciclo destructivo completo
-    (install → uninstall tras migrar, sin perder contenido del usuario) se
-    ensayó primero sobre un clon local del repo.
-[x] Desinstalación conserva .rationale/ Y el contenido que el usuario
-    agregó a archivos que Rationale creó; la carrera TOCTOU de pathname en
-    skills tiene tests deterministas de claim, recreación y no-clobber.
-[x] macOS probado (este entorno).
-[x] Linux — cubierto por CI (ubuntu-latest), no probado a mano en esta
-    sesión.
-[x] Windows — `windows-latest` corre y pasa en CI real, incluyendo el smoke
-    test del empaquetado; no probado a mano en una máquina Windows física
-    (ver "Fuera de alcance" abajo).
-[x] Ciclo de vida básico de Records funcionando: correct, dispute, revoke,
-    supersede, change-authority, add-evidence, y ahora
-    add-human-confirmed-binding.
-[x] Camino de migración para el canon legado sin bindings.
-[x] Auditoría de approvals/lifecycle sin leer YAML a mano.
-[x] Multi-repo (project_root != repo_path) verificado con repos reales.
-[x] Flujo completo verificado en repositorios reales distintos, con el
-    alcance declarado abajo. El criterio original decía "10 flujos en 5
-    repositorios"; se sustituyó por un umbral que la evidencia sostiene de
-    verdad en vez de inflar el número. Ver "Alcance real de la evidencia".
-[ ] 5-10 usuarios externos, 3+ completando el flujo sin ayuda directa — no
-    intentado; es proceso, no código.
-[ ] Varios días de uso real sin corrupción, pérdida ni bloqueos graves — no
-    intentado.
-[ ] Windows probado a mano en una máquina/VM Windows real (CI ya verde en
-    windows-latest, ver arriba — falta la ejecución humana).
+[x] Full governance chain verified with the real binary (not only synthetic
+    tests), including a new MCP session retrieving a Record approved in an
+    earlier session.
+[x] intent enables conflict detection without additional undocumented flags.
+[x] Exact bindings created and retrieved correctly (file + symbol + file→symbol
+    propagation).
+[x] explain_target returns the same governing Records as prepare_change for the
+    same target.
+[x] Conflicts distinguished between lexical ones and "governs the target".
+[x] Zero known panics on normal inputs.
+[x] Zero loss or corruption of the canon (atomic writes, including agents.rs).
+[x] Complete idempotency of init/install/update on Unix — install, reinstall,
+    update, and **re-initialization** verified. Convergence was checked on a real
+    pilot repository (BoostAPI, migrated from alpha.7): the three historical
+    entries kept `action: created`, their absolute paths were normalized to
+    relative ones, and the manifest stayed byte-for-byte identical between two
+    consecutive passes. The full destructive cycle (install → uninstall after
+    migrating, without losing the user's content) was rehearsed first on a local
+    clone of the repository.
+[x] Uninstallation keeps .rationale/ AND the content the user added to files
+    Rationale created; the pathname TOCTOU race in skills has deterministic tests
+    for claim, recreation, and no-clobber.
+[x] macOS tested (this environment).
+[x] Linux — covered by CI (ubuntu-latest), not tested by hand in this session.
+[x] Windows — `windows-latest` runs and passes in real CI, including the
+    packaging smoke test; not tested by hand on a physical Windows machine (see
+    "Out of scope" below).
+[x] Basic Record lifecycle working: correct, dispute, revoke, supersede,
+    change-authority, add-evidence, and now add-human-confirmed-binding.
+[x] Migration path for the legacy canon without bindings.
+[x] Approvals/lifecycle audit without reading YAML by hand.
+[x] Multi-repo (project_root != repo_path) verified with real repositories.
+[x] Full flow verified in distinct real repositories, with the scope declared
+    below. The original criterion said "10 flows in 5 repositories"; it was
+    replaced by a threshold the evidence really supports instead of inflating the
+    number. See "Real scope of the evidence".
+[ ] 5–10 external users, 3+ completing the flow without direct help — not
+    attempted; it is process, not code.
+[ ] Several days of real use without corruption, loss, or serious blocks — not
+    attempted.
+[ ] Windows tested by hand on a real Windows machine/VM (CI already green on
+    windows-latest, see above — the human run is missing).
 ```
 
-## Alcance real de la evidencia (beta.1)
+## Real scope of the evidence (beta.1)
 
-El criterio original —"10 flujos completos en 5 repositorios distintos"— se
-escribió antes de tener datos y resultó ser un número sin justificación: nadie
-podía decir por qué 10 y no 6, ni qué probaba el quinto repositorio que no
-probara el tercero. Inflarlo para marcar la casilla habría sido exactamente el
-tipo de autocertificación que este documento existe para impedir. Se sustituye
-por el alcance que la evidencia sostiene, declarado con precisión:
+The original criterion — "10 complete flows in 5 different repositories" — was
+written before there was data and turned out to be a number without
+justification: nobody could say why 10 and not 6, or what the fifth repository
+proved that the third did not. Inflating it to tick the box would have been
+exactly the kind of self-certification this document exists to prevent. It is
+replaced by the scope the evidence supports, stated precisely:
 
-**Verificado:**
+**Verified:**
 
-- **Este repo** (Rationale sobre sí mismo): cadena completa `prepare_change` →
-  cambio → `finalize_change` → `rationale review` humano → `prepare_change` en
-  sesión NUEVA recuperando el Record aprobado, con el proveedor estructural
-  resolviendo el símbolo. Repetido a lo largo del desarrollo, no una vez.
-- **BoostAPI** (proyecto real, en uso activo): migración desde alpha.7 con
-  hechos observados —`created` preservado, rutas normalizadas, manifest
-  byte-idéntico en dos pasadas, `.rationale-local/` fuera del índice, cero
-  rutas personales en los archivos administrados— y uso real de
-  `prepare_change` durante una planificación de producto.
-- **Clon local de BoostAPI**: ciclo destructivo install → uninstall completo
-  tras migrar, sin heredar `.git/info/exclude` y conservando los archivos que
-  el repo sí versionaba.
-- **Proyectos sintéticos**: los tres targets de agente detectados y
-  configurados, incluido el ciclo completo de Cursor.
+- **This repository** (Rationale on itself): the full chain `prepare_change` →
+  change → `finalize_change` → human `rationale review` → `prepare_change` in a
+  NEW session retrieving the approved Record, with the structural provider
+  resolving the symbol. Repeated throughout development, not once.
+- **BoostAPI** (a real project, in active use): migration from alpha.7 with
+  observed facts — `created` preserved, paths normalized, the manifest
+  byte-identical over two passes, `.rationale-local/` outside the index, zero
+  personal paths in the managed files — and real use of `prepare_change` during
+  product planning.
+- **A local clone of BoostAPI**: the full destructive install → uninstall cycle
+  after migrating, without inheriting `.git/info/exclude` and keeping the files
+  the repository did version.
+- **Synthetic projects**: the three agent targets detected and configured,
+  including Cursor's full cycle.
 
-**No verificado, y por qué importa:**
+**Not verified, and why it matters:**
 
-- Ningún repositorio de otra persona: todos los anteriores son de quien
-  desarrolla Rationale, así que ninguno prueba que las instrucciones
-  funcionen sin conocimiento previo del proyecto.
-- Ningún repositorio con canon legado escrito por otra versión que no sea
-  alpha.7.
-- Cursor: la regla `.mdc` y la config MCP se generan y se revierten
-  correctamente (con tests), pero que Cursor las **aplique** solo puede
-  confirmarlo una persona con Cursor abierto.
+- No one else's repository: all of the above belong to the person developing
+  Rationale, so none proves the instructions work without prior knowledge of the
+  project.
+- No repository with a legacy canon written by a version other than alpha.7.
+- Cursor: the `.mdc` rule and the MCP config are generated and reverted correctly
+  (with tests), but only a person with Cursor open can confirm that Cursor
+  **applies** them.
 
-## Todavía abierto / no documentado en ningún otro sitio
+## Still open / not documented anywhere else
 
-- **Reparar los repos piloto restantes.** BoostAPI ya está convergido y
-  verificado (ver "Alcance real de la evidencia"). Monorepo fue migrado con un
-  binario que tenía el defecto de convergencia, así que sus entradas quedaron
-  en `modified`: el daño es histórico y el binario corregido lo preserva en vez
-  de repararlo. No bloquea beta —la migración funciona— pero conviene
-  registrarlo para no confundirlo con un defecto vigente.
-- **`.rationale/migrations/` es una afordancia vacía.** `rationale doctor`
-  ya detecta `schema_version` desconocido como puerta visible, pero no hay
-  lógica de migración real. No hace falta para beta (solo una versión de
-  schema existe hoy), pero el día que exista una segunda, esto es lo
-  primero que hay que construir.
-- **Ruido de binding en `finalize_change`.** Se excluyeron los archivos que
-  `install-agent`/`init` administran, pero `finalize_change` sigue atando
-  binding a TODO archivo sin commitear del repo, no solo a los relacionados
-  con el target. Un cambio real junto a archivos de scratch/no
-  relacionados sin commitear seguirá produciendo bindings de más. No
-  bloquea beta (el binding del target real siempre está presente), pero
-  vale la pena acotarlo.
-- **CI no valida Linux/macOS a mano**, solo vía GitHub Actions. Suficiente
-  para beta, pero "probado" en este documento significa "CI verde", no
-  "una persona lo instaló en su propia máquina limpia" excepto en macOS
-  (este entorno).
+- **Repairing the remaining pilot repositories.** BoostAPI is already converged
+  and verified (see "Real scope of the evidence"). Monorepo was migrated with a
+  binary that had the convergence defect, so its entries were left as
+  `modified`: the damage is historical and the fixed binary preserves it instead
+  of repairing it. It does not block beta — the migration works — but it is worth
+  recording so it is not mistaken for a current defect.
+- **`.rationale/migrations/` is an empty affordance.** `rationale doctor` already
+  detects an unknown `schema_version` as a visible gate, but there is no real
+  migration logic. Beta does not need it (only one schema version exists today),
+  but the day a second one exists, this is the first thing to build.
+- **Binding noise in `finalize_change`.** The files `install-agent`/`init`
+  administer were excluded, but `finalize_change` still binds EVERY uncommitted
+  file in the repository, not only those related to the target. A real change
+  next to unrelated uncommitted scratch files will still produce extra bindings.
+  It does not block beta (the real target's binding is always present), but it is
+  worth narrowing.
+- **CI does not validate Linux/macOS by hand**, only through GitHub Actions.
+  Enough for beta, but "tested" in this document means "CI green", not "a person
+  installed it on their own clean machine" except on macOS (this environment).
 
-## Fuera de alcance de este documento
+## Out of scope for this document
 
-- Windows: CI (`windows-latest`) ya corrió en verde de punta a punta,
-  incluyendo el smoke test de empaquetado — eso es evidencia real de
-  ejecución, no solo lectura de código. Lo que sigue faltando es una
-  persona instalando y usando el binario en una máquina Windows física;
-  eso es trabajo de proceso, no de código.
-- Usuarios externos, uso sostenido en el tiempo, y los "10 flujos en 5
-  repos" del checklist de arriba son trabajo de proceso, no de código —
-  este documento los deja explícitos, no los resuelve.
+- Windows: CI (`windows-latest`) already ran green end to end, including the
+  packaging smoke test — that is real execution evidence, not just code reading.
+  What is still missing is a person installing and using the binary on a physical
+  Windows machine; that is process work, not code.
+- External users, sustained use over time, and the "10 flows in 5 repositories"
+  of the checklist above are process work, not code — this document makes them
+  explicit; it does not resolve them.

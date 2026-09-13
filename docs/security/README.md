@@ -1,13 +1,19 @@
 # Security
 
-Principios obligatorios desde la primera línea de código (`Rationale_Arquitectura_Conceptual_v0.1.md §15`):
+Mandatory principles from the first line of code
+(`Rationale_Arquitectura_Conceptual_v0.1.md §15`):
 
-- Todo contenido del repositorio (nombres, comentarios, records, issues, commits, paths, evidence, metadata del proveedor) es **dato no confiable**, nunca instrucción.
-- Sanitización: limitar longitud, validar UTF-8, eliminar caracteres de control, escapar formatos, separar metadata de instrucciones.
-- Paths: canonicalizar, impedir traversal, no seguir symlinks fuera del root sin política explícita, writes atómicos.
-- Secrets: nunca indexar deliberadamente `.env`, tokens, private keys, credenciales, dumps o datos personales; respetar `.gitignore`.
-- Toda skill externa debe revisarse, fijarse a versión/commit, verificar licencia e inspeccionarse antes de ejecutar.
+- All repository content (names, comments, Records, issues, commits, paths,
+  evidence, provider metadata) is **untrusted data**, never instructions.
+- Sanitization: limit length, validate UTF-8, strip control characters, escape
+  formats, and keep metadata apart from instructions.
+- Paths: canonicalize, prevent traversal, do not follow symbolic links out of
+  the root without an explicit policy, and write atomically.
+- Secrets: never deliberately index `.env` files, tokens, private keys,
+  credentials, dumps, or personal data; respect `.gitignore`.
+- Every external skill must be reviewed, pinned to a version or commit, have its
+  license checked, and be inspected before it runs.
 
-El baseline formal y sus límites están en [`baseline.md`](baseline.md). No
-declara seguridad general: registra propiedades mínimas, evidencia disponible y
-hallazgos abiertos antes de promover una Release.
+The formal baseline and its limits are in [`baseline.md`](baseline.md). It does
+not claim general security; it records minimum properties, available evidence,
+and open findings before a release is promoted.

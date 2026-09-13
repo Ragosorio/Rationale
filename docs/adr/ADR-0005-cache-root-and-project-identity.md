@@ -1,51 +1,51 @@
 # ADR-0005: Cache root and project identity
 
-**Status:** proposed — pendiente de revisión cruzada independiente antes de `accepted`.
+**Status:** proposed — pending independent cross-review before `accepted`.
 **Date:** 2026-07-25
-**Deciders:** Claude Code (análisis e implementación); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno
+**Deciders:** Claude Code (analysis and implementation); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** none
 
 ## Context
 
-ADR-0004 decide que la capa derivada vive en SQLite. Falta decidir **dónde** en el filesystem y **cómo se nombra** por proyecto. `Rationale_Arquitectura_Conceptual_v0.1.md §10.2` propone `<user-cache>/rationale/projects/<project-id>/`, con la ruta exacta "pendiente de decisión durante implementación" y sugiere `~/Library/Caches/Rationale/` en macOS o "un root configurable compatible con XDG".
+ADR-0004 decides that the derived layer lives in SQLite. It remains to decide **where** on the filesystem it lives and **how** it is named per project. `Rationale_Arquitectura_Conceptual_v0.1.md §10.2` proposes `<user-cache>/rationale/projects/<project-id>/`, with the exact path "pending a decision during implementation", and suggests `~/Library/Caches/Rationale/` on macOS or "a configurable root compatible with XDG".
 
-`src/configuration.rs` ya resuelve un `project_id` (de `config.yaml` o, por defecto, el nombre del directorio), pero solo se usa hoy para mostrarlo en `health` — no existe todavía ninguna ruta de cache real que nombrar.
+`src/configuration.rs` already resolves a `project_id` (from `config.yaml` or, by default, the directory name), but today it is only used to display it in `health` — no real cache path exists yet to name.
 
 ## Decision
 
-1. **Cache root:** `~/.cache/rationale/projects/<project-id-sanitizado>/` en macOS y Linux — no la ruta nativa de macOS (`~/Library/Caches/`). Windows queda como gap documentado, no bloqueante (ver Risks).
-2. **Sanitización del nombre de proyecto:** la ruta absoluta del `project_root`, con separadores reemplazados por guiones — mismo esquema observado en Codebase Memory.
-3. **`project_id` lógico** (el valor usado dentro de Records/logs, no el nombre de carpeta de cache) sigue siendo el mecanismo ya implementado: `config.yaml → project.id`, con fallback al nombre del directorio. No cambia con este ADR.
+1. **Cache root:** `~/.cache/rationale/projects/<sanitized-project-id>/` on macOS and Linux — not the native macOS path (`~/Library/Caches/`). Windows remains a documented, non-blocking gap (see Risks).
+2. **Sanitizing the project name:** the absolute path of the `project_root`, with separators replaced by hyphens — the same scheme observed in Codebase Memory.
+3. **The logical `project_id`** (the value used inside Records and logs, not the cache folder name) remains the mechanism already implemented: `config.yaml → project.id`, falling back to the directory name. It does not change with this ADR.
 
 ## Evidence
 
-- **Precedente real, no solo teórico:** Codebase Memory (mismo dominio de herramienta: análisis local de código, cache derivado) usa exactamente `~/.cache/codebase-memory-mcp/<ruta-sanitizada>.db`, confirmado por inspección directa de archivos en `docs/research/codebase-memory/07-storage-and-cache.md` — no una ruta nativa de macOS. Siete proyectos reales indexados en esa máquina confirman el patrón de nombrado (`Users-roor.osorio-Desktop-Monorepo.db`, etc.).
-- Usar `~/.cache/` uniformemente (en vez de `~/Library/Caches/` en macOS vs `~/.cache/` en Linux) evita añadir una dependencia nueva (`dirs` u otro crate de resolución de paths por plataforma) solo para esta decisión — consistente con el principio de minimizar dependencias (`Proceso §19`).
-- La separación canónica/derivada (`v0.5 §4.19`, Subject `storage.canonical-vs-derived`) significa que **la corrección nunca depende de esta ruta** — perder o mover el cache solo dispara una reconstrucción, nunca pérdida de una decisión real. Esto reduce el riesgo de cualquier elección de ruta imperfecta.
+- **A real precedent, not only a theoretical one:** Codebase Memory (the same tool domain: local code analysis, derived cache) uses exactly `~/.cache/codebase-memory-mcp/<sanitized-path>.db`, confirmed by direct file inspection in `docs/research/codebase-memory/07-storage-and-cache.md` — not a native macOS path. Seven real projects indexed on that machine confirm the naming pattern (`Users-roor.osorio-Desktop-Monorepo.db`, etc.).
+- Using `~/.cache/` uniformly (instead of `~/Library/Caches/` on macOS versus `~/.cache/` on Linux) avoids adding a new dependency (`dirs` or another per-platform path-resolution crate) just for this decision — consistent with the principle of minimizing dependencies (`Proceso §19`).
+- The canonical/derived separation (`v0.5 §4.19`, Subject `storage.canonical-vs-derived`) means **correctness never depends on this path** — losing or moving the cache only triggers a rebuild, never the loss of a real decision. That reduces the risk of any imperfect path choice.
 
 ## Alternatives considered
 
-- **`~/Library/Caches/Rationale/` en macOS, XDG en Linux (rutas nativas por plataforma)**: descartado por ahora — requeriría el crate `dirs` (o `directories`) sin que exista todavía una razón concreta más allá de "seguir la convención del SO". Se reconsiderará si Fase J (empaquetado) encuentra un requisito real de integración con herramientas del sistema (Finder, indexación de Spotlight, etc.) que dependa de la ubicación nativa.
-- **Cache dentro del repo (`.rationale-local/` ya existe con este propósito)**: descartado para la capa SQLite específicamente — `.rationale-local/` ya se usa para logs de ejecución efímeros (Fase D), pero mezclar ahí un índice SQLite de mayor volumen contradice la intención original de esa carpeta y complica `.gitignore` selectivo. Se mantiene separado.
-- **Project ID basado en hash del remote de Git o del commit raíz** (más estable que un nombre de directorio ante renombres/movimientos): evaluado, no descartado — es una mejora real pendiente, pero no bloquea este ADR porque la corrección no depende de la estabilidad del `project_id` (solo su legibilidad en logs). Queda anotado como mejora futura, no como decisión de este documento.
+- **`~/Library/Caches/Rationale/` on macOS, XDG on Linux (native per-platform paths)**: discarded for now — it would require the `dirs` (or `directories`) crate without a concrete reason yet beyond "follow the OS convention". It will be reconsidered if Phase J (packaging) finds a real integration requirement with system tools (Finder, Spotlight indexing, etc.) that depends on the native location.
+- **A cache inside the repository (`.rationale-local/` already exists for this purpose)**: discarded for the SQLite layer specifically — `.rationale-local/` is already used for ephemeral run logs (Phase D), but putting a larger SQLite index there contradicts the folder's original intent and complicates selective `.gitignore`. It stays separate.
+- **A project ID based on a hash of the Git remote or the root commit** (more stable than a directory name under renames or moves): evaluated, not discarded — it is a real pending improvement, but it does not block this ADR because correctness does not depend on the stability of `project_id` (only its readability in logs). It is noted as a future improvement, not as a decision of this document.
 
 ## Consequences
 
-- Nuevo módulo o extensión de `configuration.rs` para calcular la ruta de cache: `cache_root(project_root) -> PathBuf`.
-- Si el usuario mueve o renombra la carpeta del proyecto, el cache derivado bajo la ruta anterior queda huérfano (nunca se borra automáticamente en este ADR) — aceptable porque es 100% regenerable, pero deja basura en disco a largo plazo. Política de limpieza de cache huérfano queda fuera de alcance de Fase E.
-- Windows usará una ruta distinta cuando se implemente (`%LOCALAPPDATA%\rationale\projects\...` es el candidato natural, sin verificar todavía) — no bloquea Fase E, que se desarrolla y valida en macOS.
+- A new module or an extension of `configuration.rs` computes the cache path: `cache_root(project_root) -> PathBuf`.
+- If the user moves or renames the project folder, the derived cache under the old path is orphaned (this ADR never deletes it automatically) — acceptable because it is 100% regenerable, but it leaves garbage on disk in the long run. A cleanup policy for orphaned caches is out of scope for Phase E.
+- Windows will use a different path when implemented (`%LOCALAPPDATA%\rationale\projects\...` is the natural candidate, not yet verified) — it does not block Phase E, which is developed and validated on macOS.
 
 ## Risks
 
-- **Gap de Windows explícito**: este ADR no resuelve la ruta de cache en Windows. Mismo patrón de riesgo ya registrado para file locking (`docs/dependencies/inventory.yaml known_gaps`) — se añade aquí como segundo gap de la misma naturaleza, a resolver junto con Fase J (empaquetado), no antes.
-- Colisión de nombres si dos proyectos distintos sanitizan a la misma ruta (extremadamente improbable con rutas absolutas completas, pero no matemáticamente imposible con symlinks) — mitigación diferida, mismo riesgo ya aceptado implícitamente por Codebase Memory sin incidentes reportados en la investigación de Fase B.
+- **An explicit Windows gap**: this ADR does not solve the cache path on Windows. The same risk pattern is already recorded for file locking (`docs/dependencies/inventory.yaml known_gaps`) — it is added here as a second gap of the same nature, to be resolved together with Phase J (packaging), not before.
+- A name collision if two different projects sanitize to the same path (extremely unlikely with full absolute paths, but not mathematically impossible with symbolic links) — mitigation deferred; the same risk Codebase Memory already accepts implicitly, with no incidents reported in the Phase B research.
 
 ## Validation
 
-Se valida en Fase E3 con un test que calcula la ruta de cache para el propio repo de Rationale y para el fixture de la vertical slice, confirmando que no colisionan y que ambas son reconstruibles borrando el directorio de cache.
+Validated in Phase E3 with a test that computes the cache path for Rationale's own repository and for the vertical-slice fixture, confirming that they do not collide and that both are rebuildable after deleting the cache directory.
 
-**Este ADR está en estado `proposed`**, pendiente de revisión cruzada y aprobación humana.
+**This ADR is `proposed`**, pending cross-review and human approval.
 
 ## Revisit trigger
 
-Reabrir cuando Fase J (empaquetado) necesite resolver Windows de forma real, o si aparece un caso concreto donde la estabilidad del `project_id` ante renombres de carpeta cause un problema medible (no solo teórico).
+Reopen when Phase J (packaging) needs to solve Windows for real, or if a concrete case appears where the stability of `project_id` under folder renames causes a measurable (not only theoretical) problem.

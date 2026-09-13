@@ -1,64 +1,64 @@
 # ADR-0002: Codebase Memory transport
 
-**Status:** proposed — pendiente de revisión cruzada independiente antes de `accepted`.
+**Status:** proposed — pending independent cross-review before `accepted`.
 **Date:** 2026-07-25
-**Deciders:** Claude Code (análisis e implementación); pendiente aprobación humana y/o revisión cruzada de otro agente
-**Supersedes / Superseded by:** ninguno
+**Deciders:** Claude Code (analysis and implementation); pending human approval and/or cross-review by another agent
+**Supersedes / Superseded by:** none
 
 ## Context
 
-`Rationale_Arquitectura_Conceptual_v0.1.md §7.1` exige responder explícitamente si "MCP cliente-a-servidor es mejor que CLI subprocess para la primera vertical", con evidencia medida, no preferencia. `docs/research/codebase-memory/04-cli-contracts.md` y `11-performance-observations.md` ya produjeron mediciones formales de ambos transportes contra el mismo binario de Codebase Memory.
+`Rationale_Arquitectura_Conceptual_v0.1.md §7.1` requires an explicit answer to whether "client-to-server MCP is better than a CLI subprocess for the first vertical", with measured evidence, not preference. `docs/research/codebase-memory/04-cli-contracts.md` and `11-performance-observations.md` already produced formal measurements of both transports against the same Codebase Memory binary.
 
 ## Decision
 
-El adaptador `CodeIntelligenceProvider` de Rationale (`Rationale_v0.5.md §21`) usará una **sesión MCP persistente de larga duración** (un proceso hijo de Codebase Memory iniciado una vez por vida del proceso de Rationale, no un subproceso CLI por operación) como transporte primario hacia Codebase Memory.
+Rationale's `CodeIntelligenceProvider` adapter (`Rationale_v0.5.md §21`) will use a **long-lived persistent MCP session** (a Codebase Memory child process started once per life of the Rationale process, not one CLI subprocess per operation) as its primary transport toward Codebase Memory.
 
 ## Evidence
 
-Mediciones formales (`04-cli-contracts.md`, `11-performance-observations.md`, cliente MCP stdio propio construido en B1.1):
+Formal measurements (`04-cli-contracts.md`, `11-performance-observations.md`, our own stdio MCP client built in B1.1):
 
-| Transporte | Escenario | Latencia medida |
+| Transport | Scenario | Measured latency |
 |---|---|---:|
-| CLI | Sin daemon (proceso nuevo por invocación) | 6.811s – 6.873s |
-| CLI | Con `daemon start` previo | 2.275s – 2.283s |
-| MCP | `initialize` (handshake, una vez por proceso) | 6.791s – 6.859s |
-| MCP | `tools/call` subsecuente, misma sesión | 15ms – 30ms |
+| CLI | No daemon (new process per invocation) | 6.811 s – 6.873 s |
+| CLI | With a prior `daemon start` | 2.275 s – 2.283 s |
+| MCP | `initialize` (handshake, once per process) | 6.791 s – 6.859 s |
+| MCP | Subsequent `tools/call`, same session | 15 ms – 30 ms |
 
-**Hallazgo central:** el costo de ~6.8s es idéntico entre CLI fría y el handshake `initialize` de MCP — es el mismo costo de arranque del binario de Codebase Memory (carga de ~180 gramáticas tree-sitter, verificación de índices SQLite existentes), no una diferencia de transporte. La diferencia real aparece **después** del arranque: cada llamada MCP subsecuente en la misma sesión cuesta 15-30ms, mientras que cada invocación CLI repite un costo de al menos 2.2s (con daemon precalentado) porque no existe el concepto de "sesión" entre invocaciones de `cli <tool>`.
+**Central finding:** the ~6.8 s cost is identical between a cold CLI and MCP's `initialize` handshake — it is the same startup cost of the Codebase Memory binary (loading ~180 tree-sitter grammars, checking existing SQLite indexes), not a transport difference. The real difference appears **after** startup: every subsequent MCP call in the same session costs 15–30 ms, while every CLI invocation repeats a cost of at least 2.2 s (with a warmed-up daemon) because there is no concept of a "session" between `cli <tool>` invocations.
 
 ## Alternatives considered
 
-- **CLI subprocess por operación**: descartado. Incluso con el daemon de CBM precalentado (`daemon start`), cada invocación de `cli <tool>` cuesta ~2.2s — dos órdenes de magnitud por encima del presupuesto de baseline de `Rationale_v0.5.md §20.5.2` (P95 ≤ 150ms) y del propio presupuesto intent-aware (~2s, `Arquitectura_Conceptual_v0.1.md §13.2`, ya al límite con una sola llamada).
-- **Sesión MCP nueva por operación**: descartado por la misma razón — pagaría el handshake de 6.8s en cada operación, sin ninguna ventaja sobre la CLI fría.
-- **Conectar al daemon persistente de Codebase Memory** (`06-daemon-and-watcher.md`): **no descartado, sino diferido**. Si Rationale pudiera conectar una sesión MCP nueva contra un daemon de CBM ya corriendo (en vez de arrancar su propio proceso hijo), el costo de 6.8s podría pagarse una sola vez por máquina en vez de una vez por proceso de Rationale. Esto no se probó en esta epic (research item explícito, no bloqueante para Fase D).
+- **A CLI subprocess per operation**: discarded. Even with CBM's daemon warmed up (`daemon start`), each `cli <tool>` invocation costs ~2.2 s — two orders of magnitude above the baseline budget in `Rationale_v0.5.md §20.5.2` (P95 ≤ 150 ms) and above the intent-aware budget itself (~2 s, `Arquitectura_Conceptual_v0.1.md §13.2`, already at the limit with a single call).
+- **A new MCP session per operation**: discarded for the same reason — it would pay the 6.8 s handshake on every operation, with no advantage over the cold CLI.
+- **Connecting to Codebase Memory's persistent daemon** (`06-daemon-and-watcher.md`): **not discarded but deferred**. If Rationale could connect a new MCP session to an already-running CBM daemon (instead of starting its own child process), the 6.8 s cost could be paid once per machine instead of once per Rationale process. This was not tested in this epic (an explicit research item, not blocking for Phase D).
 
 ## Consequences
 
-- El adaptador de Rationale debe gestionar el ciclo de vida de un proceso hijo de larga duración (spawn una vez, mantener vivo, terminar limpiamente al cerrar Rationale) — más complejidad de gestión de proceso que un subprocess CLI stateless, pero necesaria para cumplir el presupuesto de latencia.
-- El primer `prepare_change`/`explain_target` de una sesión de Rationale pagará inevitablemente el costo de ~6.8s de arranque de Codebase Memory — debe comunicarse honestamente al usuario/agente como "warm-up", no ocultarse ni presentarse como parte del presupuesto de baseline.
-- El **fast path baseline** (`Rationale_v0.5.md §20.5.1`) sigue sin poder depender de esta sesión MCP para su primera invocación en frío — debe depender exclusivamente de bindings ya resueltos localmente por Rationale, tal como ya concluía `12-integration-recommendation.md`. Esta decisión de transporte resuelve el modo intent-aware, no el baseline.
+- Rationale's adapter must manage the lifecycle of a long-lived child process (spawn once, keep alive, terminate cleanly when Rationale closes) — more process-management complexity than a stateless CLI subprocess, but necessary to meet the latency budget.
+- The first `prepare_change`/`explain_target` of a Rationale session will inevitably pay Codebase Memory's ~6.8 s startup cost — it must be communicated honestly to the user/agent as "warm-up", not hidden or presented as part of the baseline budget.
+- The **baseline fast path** (`Rationale_v0.5.md §20.5.1`) still cannot depend on this MCP session for its first cold invocation — it must depend exclusively on bindings already resolved locally by Rationale, as `12-integration-recommendation.md` already concluded. This transport decision resolves the intent-aware mode, not the baseline.
 
-### Corrección post-revisión adversarial (`docs/work-items/adversarial-review-adr-0001-0002-0006.md`)
+### Post-adversarial-review correction (`docs/work-items/adversarial-review-adr-0001-0002-0006.md`)
 
-**La implementación de Fase D (`src/main.rs`) NO logra todavía la amortización que este ADR describe.** `cmd_health`/`cmd_prepare` llaman `CodebaseMemoryClient::spawn()` al inicio de cada invocación y el binario `rationale` termina al final de `main()` — cada ejecución de la CLI es un proceso del sistema operativo nuevo que paga el handshake completo de ~6.8s. La ventaja de 15-30ms por llamada, medida y real, solo se materializa **dentro** de una única invocación (entre las varias llamadas MCP que una misma ejecución de `prepare` hace internamente), nunca **entre** invocaciones sucesivas de la CLI desde una terminal.
+**The Phase D implementation (`src/main.rs`) does NOT yet achieve the amortization this ADR describes.** `cmd_health`/`cmd_prepare` call `CodebaseMemoryClient::spawn()` at the start of each invocation and the `rationale` binary exits at the end of `main()` — each CLI run is a new operating-system process that pays the full ~6.8 s handshake. The measured, real 15–30 ms per-call advantage only materializes **within** a single invocation (between the several MCP calls one `prepare` run makes internally), never **between** successive CLI invocations from a terminal.
 
-Esto no invalida la decisión de transporte (MCP sobre CLI subprocess sigue siendo superior en cualquier escenario), pero sí significa que **la amortización prometida depende de una decisión arquitectónica todavía no tomada**: si Rationale mismo es un proceso de un solo uso (CLI) o un proceso de larga duración (daemon/servidor). Esa pregunta ya estaba marcada como abierta en `Arquitectura_Conceptual_v0.1.md §28` ("¿Un proceso por sesión o daemon compartido?").
+This does not invalidate the transport decision (MCP over a CLI subprocess is still superior in every scenario), but it does mean that **the promised amortization depends on an architectural decision not yet made**: whether Rationale itself is a single-use process (CLI) or a long-lived process (daemon/server). That question was already marked open in `Arquitectura_Conceptual_v0.1.md §28` ("One process per session or a shared daemon?").
 
-**Fase E5 (superficie MCP) es precisamente la resolución de este gap**: un servidor MCP es, por construcción, un proceso de larga duración que atiende múltiples `tools/call` sin terminar entre ellos — la sesión hacia Codebase Memory se abre una vez por vida del *servidor* de Rationale, no por invocación de CLI. La CLI (`rationale prepare` desde una terminal) seguirá pagando el costo completo cada vez hasta que exista un daemon propio de Rationale (fuera de alcance de este ADR — pertenece a ADR-0009, Baseline integration surfaces).
+**Phase E5 (the MCP surface) is precisely the resolution of this gap**: an MCP server is, by construction, a long-lived process that serves multiple `tools/call` without exiting between them — the session toward Codebase Memory opens once per life of Rationale's *server*, not per CLI invocation. The CLI (`rationale prepare` from a terminal) will keep paying the full cost every time until Rationale has its own daemon (out of scope for this ADR — it belongs to ADR-0009, Baseline integration surfaces).
 
 ## Risks
 
-- Un proceso hijo de larga duración puede quedar huérfano o zombi si Rationale termina de forma anormal — mitigación: manejo de señales explícito y verificación de salud (`health`) al inicio de cada sesión de Rationale. **Nota de la revisión adversarial: esta mitigación está descrita pero no implementada todavía** (no hay `ctrlc`/`signal-hook` en el código); el único mecanismo actual es un `Drop` que no se ejecuta ante una señal no manejada. Riesgo práctico bajo hoy porque cada invocación de CLI ya es de corta vida, pero debe implementarse antes de que Fase E5 introduzca un servidor de larga duración real.
-- Si Codebase Memory actualiza su binario mientras la sesión MCP está viva, el adaptador podría quedar hablando con una versión obsoleta — mitigación: negociación de capacidades (`capabilities()`) al reconectar, no asumir que una sesión larga es siempre válida.
-- **Sin correlación de `id` de respuesta:** el cliente actual asume llamadas estrictamente secuenciales (documentado en comentario, `src/providers/codebase_memory.rs`) y atribuye cualquier mensaje entrante a la última petición enviada, sin verificar el `id`. Si Fase E5 necesita atender llamadas concurrentes de múltiples agentes, este supuesto deja de sostenerse y debe corregirse antes.
-- **Contención de SQLite entre procesos concurrentes de Rationale:** no evaluada. Si Fase E5 mantiene el patrón actual de un hijo de CBM por proceso de Rationale, dos sesiones concurrentes sobre el mismo repo abrirían dos hijos de CBM compitiendo por el mismo caché SQLite del proyecto.
+- A long-lived child process can be orphaned or become a zombie if Rationale exits abnormally — mitigation: explicit signal handling and a health check (`health`) at the start of each Rationale session. **Note from the adversarial review: this mitigation is described but not yet implemented** (there is no `ctrlc`/`signal-hook` in the code); the only current mechanism is a `Drop` that does not run on an unhandled signal. Low practical risk today because each CLI invocation is already short-lived, but it must be implemented before Phase E5 introduces a real long-lived server.
+- If Codebase Memory updates its binary while the MCP session is alive, the adapter could keep talking to an obsolete version — mitigation: capability negotiation (`capabilities()`) on reconnect; do not assume a long session is always valid.
+- **No response `id` correlation:** the current client assumes strictly sequential calls (documented in a comment, `src/providers/codebase_memory.rs`) and attributes any incoming message to the last request sent, without checking the `id`. If Phase E5 needs to serve concurrent calls from multiple agents, this assumption stops holding and must be fixed first.
+- **SQLite contention between concurrent Rationale processes:** not evaluated. If Phase E5 keeps the current pattern of one CBM child per Rationale process, two concurrent sessions on the same repository would open two CBM children competing for the same project SQLite cache.
 
 ## Validation
 
-Medición reproducible con el cliente MCP stdio de `docs/research/codebase-memory/11-performance-observations.md §Reproducir`.
+Reproducible measurement with the stdio MCP client in `docs/research/codebase-memory/11-performance-observations.md §Reproduce`.
 
-**Este ADR está en estado `proposed`.** Pendiente: medir si conectar al daemon persistente de CBM evita pagar el handshake de 6.8s por proceso (research item de `12-integration-recommendation.md`) — de confirmarse, actualizaría este ADR con una ruta aún más rápida sin cambiar la decisión central (MCP sobre CLI).
+**This ADR is `proposed`.** Pending: measure whether connecting to CBM's persistent daemon avoids paying the 6.8 s handshake per process (a research item from `12-integration-recommendation.md`) — if confirmed, it would update this ADR with an even faster path without changing the central decision (MCP over CLI).
 
 ## Revisit trigger
 
-Reabrir si: (a) se confirma que conectar al daemon persistente de CBM evita el costo de 6.8s, cambiando el diseño de gestión de proceso del adaptador; (b) una versión futura de Codebase Memory reduce drásticamente el costo de `initialize`, lo cual podría hacer viable una sesión MCP por operación después de todo.
+Reopen if: (a) connecting to CBM's persistent daemon is confirmed to avoid the 6.8 s cost, changing the design of the adapter's process management; (b) a future Codebase Memory version drastically reduces the cost of `initialize`, which could make one MCP session per operation viable after all.

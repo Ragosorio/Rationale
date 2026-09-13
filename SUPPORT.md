@@ -1,33 +1,37 @@
-# Soporte
+# Support
 
-## Antes de pedir ayuda
+## Before asking for help
 
-Ejecuta:
+Run:
 
 ```bash
 rationale health
+rationale doctor
 rationale --help
 ```
 
-Luego consulta [`docs/runbooks/diagnostics.md`](docs/runbooks/diagnostics.md)
-y [`docs/runbooks/provider-failure.md`](docs/runbooks/provider-failure.md).
+Then read [`docs/runbooks/diagnostics.md`](docs/runbooks/diagnostics.md) and
+[`docs/runbooks/provider-failure.md`](docs/runbooks/provider-failure.md). In
+Claude Code, `/rationale-health` combines the MCP `health` tool with
+`rationale doctor`.
 
-## Qué incluir en un issue
+## What to include in an issue
 
-- sistema operativo y arquitectura;
-- versión de Rationale (`git describe --tags` o Release instalada);
-- comando ejecutado;
-- salida de `rationale health` sin secretos;
-- si Codebase Memory estaba disponible;
-- reproducción mínima y resultado esperado.
+- operating system and architecture;
+- Rationale version (`rationale --version`, or `git describe --tags` from source);
+- the command you ran;
+- the output of `rationale health`, without secrets;
+- whether Codebase Memory was available;
+- the agent and how it was connected (installer, `install-agent`, or manual);
+- a minimal reproduction and the result you expected.
 
-Redacta tokens, URLs privadas, nombres de clientes y contenido sensible antes
-de publicar. Para vulnerabilidades, usa [`SECURITY.md`](SECURITY.md), no un
-issue público.
+Redact tokens, private URLs, customer names, and sensitive content before
+posting. For vulnerabilities, use [`SECURITY.md`](SECURITY.md), not a public
+issue.
 
-## Tipos de ayuda
+## Kinds of help
 
-- Bug reproducible: issue con pasos mínimos.
-- Duda de uso: discusión o issue etiquetado `question`.
-- Mejora: propuesta con problema, alternativas y costo.
-- Documentación: PR directo si el cambio es autocontenido.
+- Reproducible bug: an issue with minimal steps.
+- Usage question: a discussion, or an issue labeled `question`.
+- Improvement: a proposal with the problem, alternatives, and cost.
+- Documentation: a direct pull request when the change is self-contained.

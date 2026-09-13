@@ -1,92 +1,102 @@
 # Rationale
 
-## Proceso de construcción con agentes 0.1
+## Agent build process 0.1
 
-### Manual operativo para Claude Code, Codex y otros agentes de programación
+### Operating manual for Claude Code, Codex, and other coding agents
 
-**Versión:** 0.1  
-**Fecha de corte:** 2026-07-24  
-**Arquitectura obligatoria:** `Rationale_Arquitectura_Conceptual_v0.1.md`  
-**Contrato de producto obligatorio:** `Rationale_v0.5.md`
+**Version:** 0.1\
+**Cutoff date:** 2026-07-24\
+**Required architecture:** `Rationale_Arquitectura_Conceptual_v0.1.md`\
+**Required product contract:** `Rationale_v0.5.md`
+
+> **Status (1.0):** the working rules in this manual still apply to how
+> Rationale is built. The sections on packaging (§23), the landing page (§24),
+> and the initial deliverables (§27) describe steps that are already done.
+> §21 predates the 1.0 model: Records are no longer reviewed through a
+> proposal queue; `finalize_change` writes them through the capture gate and
+> people keep authority through pins and conflicts. For current behavior, read
+> [`README.md`](README.md) and [`docs/user-guide/`](docs/user-guide/).
 
 ---
 
-# 0. Propósito
+# 0. Purpose
 
-Este documento define cómo varios agentes de código deben construir Rationale sin perder:
+This document defines how several coding agents must build Rationale without
+losing:
 
-- Decisiones.
-- Evidencia.
-- Contexto.
-- Arquitectura.
-- Resultados de experimentos.
-- Limitaciones.
-- Riesgos.
-- Motivos.
-- Continuidad entre sesiones.
+- Decisions.
+- Evidence.
+- Context.
+- Architecture.
+- Experiment results.
+- Limitations.
+- Risks.
+- Reasons.
+- Continuity between sessions.
 
-El proyecto será construido principalmente con:
+The project will be built mainly with:
 
 - Claude Code.
 - OpenAI Codex.
-- Otros agentes compatibles.
-- Revisión humana de decisiones críticas.
+- Other compatible agents.
+- Human review of critical decisions.
 
-La herramienta podrá ser desarrollada por agentes distintos en momentos distintos.
+Different agents may develop the tool at different times.
 
-Por eso, ningún agente debe asumir que conoce conversaciones anteriores.
+For that reason, no agent may assume it knows earlier conversations.
 
-El repositorio debe contener todo lo necesario para continuar.
-
----
-
-# 1. Regla fundamental
-
-> Nada importante puede existir únicamente en la conversación de un agente.
-
-Toda decisión importante deberá terminar en:
-
-- Código.
-- Test.
-- Documento.
-- ADR.
-- Research note.
-- Experiment result.
-- Rationale Record.
-
-Según corresponda.
-
-No se documentará por documentar.
-
-Se documentará aquello que otro agente necesitaría para no repetir errores ni destruir decisiones.
+The repository must contain everything needed to continue.
 
 ---
 
-# 2. Jerarquía de fuentes
+# 1. Fundamental rule
 
-Antes de actuar, un agente debe aplicar:
+> Nothing important may exist only in an agent's conversation.
+
+Every important decision must end up in:
+
+- Code.
+- A test.
+- A document.
+- An ADR.
+- A research note.
+- An experiment result.
+- A Rationale Record.
+
+Whichever applies.
+
+Nothing is documented for the sake of documenting.
+
+What gets documented is what another agent would need so it neither repeats
+mistakes nor destroys decisions.
+
+---
+
+# 2. Source hierarchy
+
+Before acting, an agent must apply:
 
 ```text
-1. Tests y comportamiento reproducible
+1. Tests and reproducible behavior
 2. Rationale_v0.5.md
-3. ADRs aprobados
-4. Arquitectura conceptual vigente
-5. Rationale Records aprobados
-6. Research notes verificadas
-7. Plan del issue o task
-8. Comentarios de código
-9. Inferencias del agente
+3. Approved ADRs
+4. Current conceptual architecture
+5. Approved Rationale Records
+6. Verified research notes
+7. Issue or task plan
+8. Code comments
+9. Agent inferences
 ```
 
-Una inferencia nunca debe sobrescribir silenciosamente una decisión aprobada.
+An inference must never silently overwrite an approved decision.
 
 ---
 
-# 3. Protocolo de inicio de sesión
+# 3. Session start protocol
 
-Cada agente deberá:
+Every agent must:
 
-## Paso 1 — Identificar repositorio
+## Step 1 — Identify the repository
 
 ```bash
 git rev-parse --show-toplevel
@@ -95,148 +105,148 @@ git branch --show-current
 git rev-parse HEAD
 ```
 
-## Paso 2 — Leer documentos mínimos
+## Step 2 — Read the minimum documents
 
-En este orden:
+In this order:
 
 ```text
 AGENTS.md
 Rationale_v0.5.md
 Rationale_Arquitectura_Conceptual_v0.1.md
 Rationale_Proceso_Construccion_Agentes_v0.1.md
-ADRs relevantes
-Issue/plan actual
+Relevant ADRs
+Current issue/plan
 ```
 
-No es necesario leer 5,000 líneas en cada operación trivial.
+Reading 5,000 lines for every trivial operation is not necessary.
 
-`AGENTS.md` deberá contener una ruta de lectura por tarea.
+`AGENTS.md` must contain a reading path per task.
 
-## Paso 3 — Verificar entorno
+## Step 3 — Check the environment
 
 ```bash
-rationale health          # cuando exista
+rationale health          # once it exists
 codebase-memory-mcp --version
 git --version
 ```
 
-## Paso 4 — Consultar Codebase Memory
+## Step 4 — Query Codebase Memory
 
-Para tareas no triviales:
+For non-trivial tasks:
 
-- Ver arquitectura.
-- Buscar targets.
-- Ver dependencias.
-- Ver impacto.
-- Ver coverage.
-- Confirmar revisión.
+- View the architecture.
+- Find targets.
+- View dependencies.
+- View impact.
+- View coverage.
+- Confirm the revision.
 
-## Paso 5 — Revisar trabajo existente
+## Step 5 — Review existing work
 
 - Git status.
 - Diffs.
 - TODOs.
-- Tests fallidos.
-- Research en progreso.
-- ADRs pendientes.
+- Failing tests.
+- Research in progress.
+- Pending ADRs.
 
-## Paso 6 — Declarar alcance
+## Step 6 — Declare scope
 
-Antes de editar, el agente debe expresar en su plan:
+Before editing, the agent must state in its plan:
 
-- Qué va a cambiar.
-- Qué no va a cambiar.
-- Qué documentos necesita.
-- Qué tests ejecutará.
-- Qué decisiones podrían verse afectadas.
+- What it will change.
+- What it will not change.
+- Which documents it needs.
+- Which tests it will run.
+- Which decisions could be affected.
 
 ---
 
-# 4. Roles de agentes
+# 4. Agent roles
 
-Un agente puede ocupar varios roles de forma secuencial.
+An agent may take several roles in sequence.
 
-No debe mezclarlos sin indicarlo.
+It must not mix them without saying so.
 
 ## 4.1 Research Agent
 
-Responsable de:
+Responsible for:
 
-- Leer upstream.
-- Ejecutar experimentos.
-- Citar archivos.
-- Separar claim de observation.
-- Registrar unknowns.
-- No implementar producción prematuramente.
+- Reading upstream.
+- Running experiments.
+- Citing files.
+- Separating claim from observation.
+- Recording unknowns.
+- Not implementing production code prematurely.
 
 ## 4.2 Architecture Agent
 
-Responsable de:
+Responsible for:
 
-- Definir fronteras.
-- Evaluar tradeoffs.
-- Crear ADRs.
-- Mantener trazabilidad.
-- Evitar acoplamientos.
+- Defining boundaries.
+- Evaluating tradeoffs.
+- Creating ADRs.
+- Keeping traceability.
+- Avoiding coupling.
 
-No aprueba solo decisiones críticas.
+It does not approve critical decisions on its own.
 
 ## 4.3 Implementation Agent
 
-Responsable de:
+Responsible for:
 
-- Implementar alcance aprobado.
-- Crear tests.
-- Respetar contratos.
-- Actualizar documentación cercana.
-- No ampliar scope sin registrar.
+- Implementing approved scope.
+- Creating tests.
+- Respecting contracts.
+- Updating nearby documentation.
+- Not widening scope without recording it.
 
 ## 4.4 Review Agent
 
-Responsable de:
+Responsible for:
 
-- Leer diff.
-- Ejecutar tests.
-- Buscar contradicciones.
-- Revisar seguridad.
-- Revisar docs.
-- Revisar performance.
-- No defender la implementación por haberla creado.
+- Reading the diff.
+- Running tests.
+- Looking for contradictions.
+- Reviewing security.
+- Reviewing docs.
+- Reviewing performance.
+- Not defending the implementation because it wrote it.
 
-Preferiblemente será:
+Preferably this will be:
 
-- Otro agente.
-- Otra sesión.
-- Otro modelo.
-- Un humano.
+- Another agent.
+- Another session.
+- Another model.
+- A human.
 
 ## 4.5 Evaluation Agent
 
-Responsable de:
+Responsible for:
 
-- Ejecutar harness.
-- Aplicar rubrica.
-- No modificar outputs.
-- Registrar métricas.
-- Comparar condiciones.
-- Separar análisis de juicio.
+- Running the harness.
+- Applying the rubric.
+- Not modifying outputs.
+- Recording metrics.
+- Comparing conditions.
+- Separating analysis from judgment.
 
 ## 4.6 Documentation Agent
 
-Responsable de:
+Responsible for:
 
-- Consolidar resultados.
-- Evitar duplicación.
-- Mantener enlaces.
-- Actualizar changelog.
-- Verificar ejemplos.
-- No inventar comportamiento.
+- Consolidating results.
+- Avoiding duplication.
+- Keeping links working.
+- Updating the changelog.
+- Verifying examples.
+- Not inventing behavior.
 
 ---
 
-# 5. Separación mínima de funciones
+# 5. Minimum separation of duties
 
-Para cambios críticos:
+For critical changes:
 
 ```text
 Research/Plan
@@ -250,87 +260,87 @@ Evaluation
 Human or authorized approval
 ```
 
-El mismo agente puede implementar y hacer una primera self-review.
+The same agent may implement and do a first self-review.
 
-Eso no sustituye una revisión independiente.
+That does not replace an independent review.
 
 ---
 
-# 6. Flujo de un trabajo
+# 6. Workflow for a piece of work
 
 ## 6.1 Intake
 
-Crear o actualizar:
+Create or update:
 
 ```text
 docs/work-items/<id>.md
 ```
 
-Debe contener:
+It must contain:
 
-- Problema.
-- Objetivo.
+- Problem.
+- Goal.
 - Non-goals.
 - Base revision.
-- Evidencia.
-- Riesgos.
+- Evidence.
+- Risks.
 - Plan.
 - Tests.
 - Docs.
-- Criterio de éxito.
+- Success criterion.
 
 ## 6.2 Preflight
 
-Antes de código:
+Before code:
 
-- Consultar Codebase Memory.
-- Consultar Rationale cuando exista.
-- Identificar restricciones.
-- Identificar ADRs.
-- Identificar módulos.
-- Registrar unknowns.
+- Query Codebase Memory.
+- Query Rationale once it exists.
+- Identify constraints.
+- Identify ADRs.
+- Identify modules.
+- Record unknowns.
 
-## 6.3 Investigación
+## 6.3 Research
 
-Cuando exista incertidumbre:
+When there is uncertainty:
 
-- Crear spike.
-- No contaminar producción.
-- Medir.
-- Comparar.
-- Guardar resultados.
+- Create a spike.
+- Do not contaminate production.
+- Measure.
+- Compare.
+- Save results.
 
-## 6.4 Implementación
+## 6.4 Implementation
 
-- Cambios pequeños.
-- Commits coherentes.
-- Tests junto al cambio.
-- Sin refactors no relacionados.
-- Sin dependencias innecesarias.
-- Sin secrets.
+- Small changes.
+- Coherent commits.
+- Tests alongside the change.
+- No unrelated refactors.
+- No unnecessary dependencies.
+- No secrets.
 
 ## 6.5 Self-review
 
-El implementador revisará:
+The implementer will review:
 
 ```bash
 git diff --check
 git diff
 ```
 
-Y ejecutará:
+And will run:
 
 - Formatter.
 - Lint.
-- Unit.
-- Contract.
-- Integration relevante.
-- Security relevante.
-- Benchmark si aplica.
+- Unit tests.
+- Contract tests.
+- Relevant integration tests.
+- Relevant security checks.
+- Benchmark, if applicable.
 
 ## 6.6 Independent review
 
-Otro reviewer verificará:
+Another reviewer will verify:
 
 - Correctness.
 - Scope.
@@ -345,83 +355,83 @@ Otro reviewer verificará:
 
 ## 6.7 Documentation gate
 
-Antes de completar:
+Before completing:
 
-- Actualizar ADR si hubo decisión.
-- Actualizar architecture si cambió frontera.
-- Actualizar research si se descubrió algo.
-- Actualizar runbook si cambió operación.
-- Actualizar examples si cambió contrato.
-- Actualizar Rationale Record cuando exista.
+- Update the ADR if a decision was made.
+- Update the architecture if a boundary changed.
+- Update research if something was discovered.
+- Update the runbook if an operation changed.
+- Update examples if a contract changed.
+- Update the Rationale Record once it exists.
 
 ## 6.8 Finalize
 
-- Ejecutar suite.
-- Guardar resultados.
-- Registrar revisión.
-- Capturar evidence.
-- Cerrar work item.
-- Crear resumen de cambio.
+- Run the suite.
+- Save the results.
+- Record the revision.
+- Capture evidence.
+- Close the work item.
+- Write a change summary.
 
 ---
 
-# 7. Uso obligatorio de Codebase Memory
+# 7. Mandatory use of Codebase Memory
 
-## 7.1 Durante bootstrap
+## 7.1 During bootstrap
 
-Codebase Memory se utilizará para:
+Codebase Memory will be used to:
 
-- Indexar su propio clon.
-- Indexar Rationale.
-- Comparar arquitectura declarada y observada.
-- Encontrar módulos.
-- Analizar impacto.
-- Reducir lecturas manuales.
+- Index its own clone.
+- Index Rationale.
+- Compare declared and observed architecture.
+- Find modules.
+- Analyze impact.
+- Reduce manual reading.
 
-## 7.2 Antes de cambios
+## 7.2 Before changes
 
-El agente deberá consultar estructura cuando:
+The agent must query structure when the change:
 
-- Toca varios módulos.
-- Cambia contratos.
-- Cambia almacenamiento.
-- Cambia MCP.
-- Cambia revisión.
-- Cambia providers.
-- Cambia seguridad.
-- Cambia packaging.
-- Cambia un Subject crítico.
+- Touches several modules.
+- Changes contracts.
+- Changes storage.
+- Changes MCP.
+- Changes revision handling.
+- Changes providers.
+- Changes security.
+- Changes packaging.
+- Changes a critical Subject.
 
-## 7.3 Después de cambios
+## 7.3 After changes
 
-- Reindexar o esperar actualización verificada.
-- Comprobar provider revision.
-- Volver a consultar target.
-- Confirmar impacto.
-- Registrar discrepancias.
+- Reindex, or wait for a verified update.
+- Check the provider revision.
+- Query the target again.
+- Confirm the impact.
+- Record discrepancies.
 
-## 7.4 No confiar ciegamente
+## 7.4 Do not trust blindly
 
-Los resultados deberán incluir:
+Results must include:
 
 - Coverage.
 - Revision.
 - Provider version.
 - Warnings.
 
-El código fuente sigue siendo evidencia primaria para el comportamiento exacto.
+The source code remains the primary evidence for exact behavior.
 
 ---
 
-# 8. Análisis inicial de Codebase Memory
+# 8. Initial Codebase Memory analysis
 
-El primer epic deberá producir:
+The first epic must produce:
 
 ```text
 EPIC-CBM-ANALYSIS
 ```
 
-Subtareas:
+Subtasks:
 
 ```text
 CBM-001 Clone and lock revision
@@ -438,17 +448,17 @@ CBM-011 Measure CLI vs MCP
 CBM-012 Recommend adapter boundary
 ```
 
-Cada tarea tendrá evidence.
+Every task will have evidence.
 
 ---
 
-# 9. Selección de lenguaje
+# 9. Language selection
 
-Ningún agente comenzará el núcleo definitivo antes de `ADR-0001`.
+No agent will start the definitive core before `ADR-0001`.
 
-## 9.1 Spike común
+## 9.1 Common spike
 
-Cada candidato implementará la misma función:
+Every candidate will implement the same function:
 
 ```text
 Input:
@@ -471,60 +481,60 @@ test speed
 cross-platform viability
 ```
 
-## 9.2 Misma carga
+## 9.2 Same workload
 
-No se permitirá que un candidato use un demo trivial y otro implemente todo.
+One candidate may not use a trivial demo while another implements everything.
 
-## 9.3 Skills y documentación
+## 9.3 Skills and documentation
 
-Después de elegir lenguaje:
+After choosing the language:
 
-- Buscar documentación oficial.
-- Instalar o crear skills.
-- Registrar versiones.
-- Crear style guide.
-- Crear testing guide.
-- Crear security guide.
-- Configurar formatter/linter.
-- Crear agent instructions.
+- Find the official documentation.
+- Install or create skills.
+- Record versions.
+- Create a style guide.
+- Create a testing guide.
+- Create a security guide.
+- Configure the formatter and linter.
+- Create agent instructions.
 
-## 9.4 Política de skills
+## 9.4 Skills policy
 
-Crear una skill cuando:
+Create a skill when:
 
-- El flujo se repite.
-- Tiene pasos verificables.
-- Reduce errores.
-- Puede mantenerse.
+- The workflow repeats.
+- It has verifiable steps.
+- It reduces errors.
+- It can be maintained.
 
-No crear una skill para:
+Do not create a skill to:
 
-- Una tarea única.
-- Reemplazar documentación oficial.
-- Ocultar comandos inseguros.
-- Dar permisos globales.
+- Handle a one-off task.
+- Replace official documentation.
+- Hide unsafe commands.
+- Grant global permissions.
 
 ---
 
-# 10. Documentación obligatoria
+# 10. Mandatory documentation
 
 ## 10.1 AGENTS.md
 
-Debe ser breve.
+It must be short.
 
-Contendrá:
+It will contain:
 
-- Qué leer.
-- Cómo ejecutar.
-- Qué no hacer.
+- What to read.
+- How to run things.
+- What not to do.
 - Quality gates.
-- Link a docs.
+- Links to docs.
 
-No duplicará toda la arquitectura.
+It will not duplicate the whole architecture.
 
 ## 10.2 ADR
 
-Formato:
+Format:
 
 ```text
 Context
@@ -540,7 +550,7 @@ Revisit trigger
 
 ## 10.3 Research note
 
-Formato:
+Format:
 
 ```text
 Question
@@ -556,7 +566,7 @@ Artifacts
 
 ## 10.4 Experiment
 
-Formato:
+Format:
 
 ```text
 Hypothesis
@@ -572,7 +582,7 @@ Decision
 
 ## 10.5 Runbook
 
-Para:
+For:
 
 - Build.
 - Test.
@@ -587,20 +597,20 @@ Para:
 
 ## 10.6 Code comments
 
-Comentarios deben explicar:
+Comments must explain:
 
-- Por qué.
-- Invariant.
-- Security reason.
-- Non-obvious tradeoff.
+- Why.
+- Invariants.
+- Security reasons.
+- Non-obvious tradeoffs.
 
-No deben repetir syntax.
+They must not repeat syntax.
 
 ---
 
-# 11. Registro de trabajo por agente
+# 11. Per-agent work log
 
-Cada ejecución importante deberá generar un registro local.
+Every important run must produce a local log.
 
 ```json
 {
@@ -622,35 +632,35 @@ Cada ejecución importante deberá generar un registro local.
 }
 ```
 
-Ubicación:
+Location:
 
 ```text
 .rationale-local/runs/
 ```
 
-Datos sensibles no se versionan.
+Sensitive data is not versioned.
 
-Un resumen puede guardarse en el work item.
+A summary may be saved in the work item.
 
 ---
 
-# 12. Autorrevisión asistida por agentes
+# 12. Agent-assisted self-review
 
-La autorrevisión tendrá cinco pases.
+Self-review has five passes.
 
 ## Pass 1 — Correctness
 
-- ¿Cumple objetivo?
-- ¿Maneja errores?
-- ¿Tiene tests?
-- ¿Rompe invariants?
+- Does it meet the goal?
+- Does it handle errors?
+- Does it have tests?
+- Does it break invariants?
 
 ## Pass 2 — Architecture
 
-- ¿Respeta fronteras?
-- ¿Agrega dependencia circular?
-- ¿Acopla internals de Codebase Memory?
-- ¿Duplica responsabilidad?
+- Does it respect boundaries?
+- Does it add a circular dependency?
+- Does it couple to Codebase Memory internals?
+- Does it duplicate a responsibility?
 
 ## Pass 3 — Security
 
@@ -660,7 +670,7 @@ La autorrevisión tendrá cinco pases.
 - Permissions.
 - Untrusted data.
 - Temp files.
-- Subprocess.
+- Subprocesses.
 
 ## Pass 4 — Performance
 
@@ -681,9 +691,9 @@ La autorrevisión tendrá cinco pases.
 - Changelog.
 - Rationale Record.
 
-El agente debe reportar hallazgos concretos.
+The agent must report concrete findings.
 
-No deberá escribir solamente:
+It must not write only:
 
 ```text
 Looks good.
@@ -691,9 +701,9 @@ Looks good.
 
 ---
 
-# 13. Revisión cruzada Claude Code / Codex
+# 13. Claude Code / Codex cross-review
 
-Cuando sea posible:
+When possible:
 
 ```text
 Agent A implements.
@@ -702,30 +712,30 @@ Agent A addresses.
 Agent B verifies.
 ```
 
-La identidad de A y B puede alternarse.
+The identities of A and B may alternate.
 
-Para decisiones críticas:
+For critical decisions:
 
-- Un agente propone.
-- El otro intenta falsificar.
-- El humano aprueba o rechaza.
+- One agent proposes.
+- The other tries to falsify.
+- The human approves or rejects.
 
-La revisión debe buscar:
+The review must look for:
 
-- Contraejemplos.
+- Counterexamples.
 - Race conditions.
-- Stale revision.
+- Stale revisions.
 - False confidence.
 - Hidden cost.
-- Cross-platform issue.
-- Missing test.
-- Documentation gap.
+- Cross-platform issues.
+- Missing tests.
+- Documentation gaps.
 
 ---
 
-# 14. Métricas de construcción
+# 14. Build metrics
 
-Además de medir Rationale sobre tareas, se medirá su construcción.
+Besides measuring Rationale on tasks, its construction will be measured.
 
 ```text
 Lead time per work item
@@ -744,17 +754,17 @@ Agent tool calls
 Prompt context written manually
 ```
 
-El objetivo no es maximizar commits.
+The goal is not to maximize commits.
 
-Es aumentar evidencia por cambio.
+It is to increase evidence per change.
 
 ---
 
-# 15. Evaluación empírica
+# 15. Empirical evaluation
 
 ## 15.1 Ground truth
 
-Cada caso histórico tendrá:
+Every historical case will have:
 
 - Must know.
 - Useful.
@@ -763,61 +773,61 @@ Cada caso histórico tendrá:
 - Expected tests.
 - Expected invariant.
 
-El ground truth deberá prepararse antes de ejecutar condiciones.
+The ground truth must be prepared before running the conditions.
 
-## 15.2 Condiciones
+## 15.2 Conditions
 
 ```text
-A. Código + Git
+A. Code + Git
 B. AGENTS/ADR/docs
 C. Codebase Memory
 D. Codebase Memory + Rationale
-E. Prompt experto
+E. Expert prompt
 ```
 
-## 15.3 Misma tarea
+## 15.3 Same task
 
-Se controlará:
+The following will be controlled:
 
-- Modelo.
-- Temperature cuando sea configurable.
+- Model.
+- Temperature, when configurable.
 - Base revision.
-- Herramientas.
+- Tools.
 - Time budget.
 - Prompt.
 - Test harness.
 
-## 15.4 Evaluación ciega
+## 15.4 Blind evaluation
 
-El evaluator no deberá saber qué condición produjo el resultado cuando sea posible.
+When possible, the evaluator must not know which condition produced the result.
 
 ## 15.5 Self-evaluation limitation
 
-Los agentes pueden:
+Agents may:
 
-- Recopilar datos.
-- Ejecutar tests.
-- Aplicar rubricas.
-- Generar análisis.
+- Collect data.
+- Run tests.
+- Apply rubrics.
+- Generate analysis.
 
-No pueden ser la única prueba.
+They cannot be the only proof.
 
-Las conclusiones deberán apoyarse en:
+Conclusions must rest on:
 
 - Tests.
 - Ground truth.
-- Comparaciones pareadas.
+- Paired comparisons.
 - Bootstrap confidence intervals.
-- Review separado.
-- Datos brutos.
+- Separate review.
+- Raw data.
 
 ---
 
 # 16. Definition of Done
 
-Un work item no está completo si falta alguno aplicable:
+A work item is not complete if any applicable item is missing:
 
-- Código.
+- Code.
 - Tests.
 - Formatter.
 - Lint.
@@ -833,12 +843,12 @@ Un work item no está completo si falta alguno aplicable:
 
 ---
 
-# 17. Quality gates por fase
+# 17. Quality gates per phase
 
 ## Bootstrap
 
-- Docs existen.
-- Links funcionan.
+- Docs exist.
+- Links work.
 - Environment captured.
 - Codebase Memory installed.
 - Repo indexes.
@@ -846,9 +856,9 @@ Un work item no está completo si falta alguno aplicable:
 ## Research
 
 - Source pinned.
-- Commands reproducibles.
+- Reproducible commands.
 - Claims cited.
-- Unknowns visibles.
+- Unknowns visible.
 - Results committed.
 
 ## Vertical slice
@@ -903,14 +913,14 @@ release/<version>
 
 ## Commits
 
-Cada commit debe:
+Every commit must:
 
-- Ser coherente.
-- Pasar tests relevantes.
-- Evitar mezclar refactor.
-- Tener mensaje causal.
+- Be coherent.
+- Pass the relevant tests.
+- Avoid mixing in refactors.
+- Have a causal message.
 
-Ejemplo:
+Example:
 
 ```text
 feat(revision): reject exact context when provider is behind
@@ -918,7 +928,7 @@ feat(revision): reject exact context when provider is behind
 
 ## Pull requests
 
-Debe incluir:
+They must include:
 
 - Why.
 - What.
@@ -932,22 +942,22 @@ Debe incluir:
 
 ---
 
-# 19. Dependencias
+# 19. Dependencies
 
-Antes de añadir una dependencia:
+Before adding a dependency:
 
-- ¿Es necesaria?
-- ¿Puede resolverse con estándar?
-- ¿Es activa?
-- ¿Licencia compatible?
-- ¿Cross-platform?
-- ¿Binary impact?
-- ¿Supply-chain risk?
-- ¿Se puede fijar?
-- ¿Requiere red?
-- ¿Tiene alternativa?
+- Is it necessary?
+- Can the standard library solve it?
+- Is it active?
+- Is the license compatible?
+- Is it cross-platform?
+- What is the binary impact?
+- What is the supply-chain risk?
+- Can it be pinned?
+- Does it need network access?
+- Is there an alternative?
 
-Se registrará en:
+It will be recorded in:
 
 ```text
 docs/dependencies/<name>.md
@@ -957,32 +967,32 @@ docs/dependencies/<name>.md
 
 # 20. Cost control
 
-El desarrollo debe preferir:
+Development must prefer:
 
-- Ejecución local.
-- Tests locales.
-- Fixtures pequeñas.
-- Benchmarks controlados.
+- Local execution.
+- Local tests.
+- Small fixtures.
+- Controlled benchmarks.
 - Cache.
-- Reutilización de contexto.
-- Modelos ya disponibles.
-- AI ya contratada.
+- Context reuse.
+- Models already available.
+- AI already paid for.
 
-No se debe introducir:
+The following must not be introduced:
 
-- Base administrada.
-- Vector database remota.
-- Telemetría SaaS.
-- Servicio de colas.
-- Infraestructura permanente.
+- Managed database.
+- Remote vector database.
+- SaaS telemetry.
+- Queue service.
+- Permanent infrastructure.
 
-sin una decisión posterior.
+without a later decision.
 
 ---
 
 # 21. Dogfooding
 
-Rationale deberá usarse sobre su propio repo cuando exista:
+Rationale must be used on its own repository once these exist:
 
 ```text
 init
@@ -992,7 +1002,7 @@ finalize_change
 health
 ```
 
-Primeros Subjects sugeridos:
+Suggested first Subjects:
 
 ```text
 architecture.provider-boundary
@@ -1004,45 +1014,45 @@ retrieval.context-budget
 evaluation.no-self-certification
 ```
 
-Sus Records deben ser revisados.
+Its Records must be reviewed.
 
-No se autoaprobarán.
+They will not be self-approved.
 
 ---
 
-# 22. Piloto en el monorepo del trabajo
+# 22. Pilot in the work monorepo
 
-El piloto real debe comenzar solo después de:
+The real pilot must start only after:
 
-- Vertical estable.
-- Security review.
+- A stable vertical slice.
+- A security review.
 - Local-only verification.
 - Sensitivity support.
-- No automatic write fuera de `.rationale/`.
-- Backup.
+- No automatic writes outside `.rationale/`.
+- A backup.
 - Uninstall.
 
-El primer modo será:
+The first mode will be:
 
 ```text
 read-only
 ```
 
-Después:
+Then:
 
 ```text
 assisted capture
 ```
 
-No se activará bloqueo automático al inicio.
+Automatic blocking will not be enabled at the start.
 
 ---
 
 # 23. Packaging
 
-El packaging se realizará después de demostrar valor.
+Packaging will happen after value is demonstrated.
 
-Orden:
+Order:
 
 ```text
 1. Development build for macOS arm64
@@ -1056,54 +1066,54 @@ Orden:
 9. Release automation
 ```
 
-El instalador debe ser auditable.
+The installer must be auditable.
 
-No ejecutará cambios ocultos.
+It will not make hidden changes.
 
 ---
 
 # 24. Landing page
 
-La landing page será una fase de distribución.
+The landing page will be a distribution phase.
 
-No forma parte del núcleo.
+It is not part of the core.
 
-Antes de crearla deben existir:
+Before creating it, the following must exist:
 
-- Release descargable.
-- Quick start probado.
-- Screenshots reales.
-- Benchmarks honestos.
-- Security statement.
-- License.
-- Changelog.
+- A downloadable release.
+- A tested quick start.
+- Real screenshots.
+- Honest benchmarks.
+- A security statement.
+- A license.
+- A changelog.
 - Troubleshooting.
-- Platform support real.
+- Real platform support.
 
-No se usarán métricas no verificadas.
-
----
-
-# 25. Qué debe hacer un agente si encuentra una contradicción
-
-1. Detener el supuesto afectado.
-2. Registrar evidencia.
-3. Crear issue o work item.
-4. Reproducir.
-5. Identificar documentos afectados.
-6. Proponer ADR.
-7. No ocultar la contradicción.
-8. No modificar concepto y código en silencio.
+Unverified metrics will not be used.
 
 ---
 
-# 26. Qué debe hacer un agente si no sabe
+# 25. What an agent must do when it finds a contradiction
 
-Debe escribir:
+1. Stop the affected assumption.
+2. Record the evidence.
+3. Create an issue or work item.
+4. Reproduce it.
+5. Identify the affected documents.
+6. Propose an ADR.
+7. Not hide the contradiction.
+8. Not silently change the concept and the code.
+
+---
+
+# 26. What an agent must do when it does not know
+
+It must write:
 
 ```text
 Unknown:
-No pude verificar X.
+I could not verify X.
 
 Evidence:
 ...
@@ -1115,13 +1125,13 @@ Next experiment:
 ...
 ```
 
-No debe completar el vacío con una explicación convincente.
+It must not fill the gap with a convincing explanation.
 
 ---
 
-# 27. Entregables iniciales
+# 27. Initial deliverables
 
-## Semana/iteración conceptual 1
+## Conceptual week/iteration 1
 
 - Repository bootstrap.
 - AGENTS.md.
@@ -1131,7 +1141,7 @@ No debe completar el vacío con una explicación convincente.
 - Build note.
 - Test note.
 
-## Iteración 2
+## Iteration 2
 
 - Module map.
 - MCP analysis.
@@ -1139,72 +1149,74 @@ No debe completar el vacío con una explicación convincente.
 - Revision analysis.
 - Monorepo analysis.
 
-## Iteración 3
+## Iteration 3
 
 - Language spikes.
 - Benchmarks.
 - ADR-0001.
 - Toolchain.
 
-## Iteración 4
+## Iteration 4
 
 - Vertical slice.
 - Contract tests.
 - Instrumentation.
 - Golden packet.
 
-No son fechas prometidas.
+These are not promised dates.
 
-Son el orden de dependencia.
+They are the dependency order.
 
 ---
 
-# 28. Checklist de inicio para cualquier agente
+# 28. Start checklist for any agent
 
 ```text
-[ ] Leí AGENTS.md
-[ ] Identifiqué base revision
-[ ] Revisé git status
-[ ] Leí el work item
-[ ] Consulté Codebase Memory
-[ ] Revisé coverage
-[ ] Revisé ADRs
-[ ] Declaré non-goals
-[ ] Definí tests
-[ ] Definí docs
+[ ] I read AGENTS.md
+[ ] I identified the base revision
+[ ] I checked git status
+[ ] I read the work item
+[ ] I queried Codebase Memory
+[ ] I checked coverage
+[ ] I reviewed the ADRs
+[ ] I declared non-goals
+[ ] I defined tests
+[ ] I defined docs
 ```
 
-# 29. Checklist de cierre
+# 29. Closing checklist
 
 ```text
-[ ] Diff revisado
-[ ] Tests pasan
+[ ] Diff reviewed
+[ ] Tests pass
 [ ] No secrets
-[ ] Docs actualizadas
-[ ] ADR actualizado
-[ ] Métricas guardadas
-[ ] Review independiente
-[ ] Codebase Memory actualizado
-[ ] Revision consistency verificada
-[ ] Rationale finalize ejecutado
-[ ] Work item cerrado
+[ ] Docs updated
+[ ] ADR updated
+[ ] Metrics saved
+[ ] Independent review
+[ ] Codebase Memory updated
+[ ] Revision consistency verified
+[ ] Rationale finalize run
+[ ] Work item closed
 ```
 
 ---
 
-# 30. Regla final
+# 30. Final rule
 
-> Los agentes no están construyendo únicamente código.  
-> Están construyendo el sistema y la memoria necesaria para que el siguiente agente pueda construirlo mejor.
+> Agents are not only building code.\
+> They are building the system and the memory the next agent needs to build it
+> better.
 
-El proyecto habrá aplicado correctamente este proceso cuando una nueva sesión de Claude Code, Codex u otro agente pueda:
+The project will have applied this process correctly when a new session of
+Claude Code, Codex, or another agent can:
 
-1. Clonar el repositorio.
-2. Leer instrucciones.
-3. Indexarlo.
-4. Comprender la arquitectura.
-5. Encontrar decisiones.
-6. Ejecutar tests.
-7. Continuar una tarea.
-8. Justificar sus cambios.
-9. Dejar el proyecto más comprensible que antes.
+1. Clone the repository.
+2. Read the instructions.
+3. Index it.
+4. Understand the architecture.
+5. Find the decisions.
+6. Run the tests.
+7. Continue a task.
+8. Justify its changes.
+9. Leave the project easier to understand than before.

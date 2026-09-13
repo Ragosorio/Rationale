@@ -1,68 +1,83 @@
-# Configuración, archivos y privacidad
+# Configuration, files, and privacy
 
-## Estructura del proyecto
+## Project layout
 
 ```text
 .rationale/
-├── config.yaml   # identidad del proyecto y autoridad declarada
-├── records/      # Records canónicos
-├── subjects/     # identidad conceptual
-├── schemas/      # schemas locales
-├── migrations/   # migraciones del formato
-├── approvals/    # estructura reservada del canon
-└── archive/      # propuestas anteriores a 1.0 archivadas por `migrate`
+├── config.yaml   # project identity and declared authority
+├── records/      # canonical Records
+├── subjects/     # conceptual identity
+├── schemas/      # local schemas
+├── migrations/   # format migrations
+├── approvals/    # reserved canon structure
+└── archive/      # pre-1.0 proposals archived by `migrate`
 
-.rationale-local/            # nunca se versiona
-├── activity/                # un NDJSON por sesión (ADR-0017)
-├── operations/              # snapshots de cada prepare_change
-├── conflicts/               # conflictos pendientes con Records fijados
+.rationale-local/            # never versioned
+├── activity/                # one NDJSON file per session (ADR-0017)
+├── operations/              # snapshots of each prepare_change
+├── conflicts/               # pending conflicts with pinned Records
 └── installed-agent-files.json
 ```
 
-Rationale añade `.rationale-local/` a `.git/info/exclude` antes de su primera
-escritura. La cache SQLite de búsqueda vive en `~/.cache/rationale/` y se puede
-regenerar.
+Rationale adds `.rationale-local/` to `.git/info/exclude` before its first
+write. The SQLite search cache lives in `~/.cache/rationale/` and can be
+regenerated.
 
-## Autoridad declarada
+Agent files written by `install-agent` are versioned with the project so the
+whole team gets them:
+
+```text
+CLAUDE.md, AGENTS.md          # delimited protocol block
+.cursor/rules/rationale.mdc   # Cursor rule
+.claude/skills/rationale/     # the rationale skill for Claude Code
+.claude/skills/rationale-*/   # Claude Code shortcuts
+.agents/skills/rationale/     # the rationale skill for Codex
+```
+
+`installed-agent-files.json` records a hash for every file Rationale owns, so
+reinstalling updates untouched files, keeps your edits, and uninstalling removes
+exactly what Rationale wrote.
+
+## Declared authority
 
 ```yaml
 authority:
-  "user:tu-nombre <tu-correo@example.com>":
+  "user:your-name <you@example.com>":
     role: architecture-owner
 ```
 
-El actor es tu identidad de Git. Quien no aparece aquí es contributor: puede
-usar Rationale con normalidad, pero no fijar, desfijar ni adoptar un reemplazo
-sobre una regla fijada.
+The actor is your Git identity. Anyone not listed here is a contributor: they
+can use Rationale normally, but cannot pin, unpin, or adopt a replacement for a
+pinned rule.
 
-## Variables de entorno
+## Environment variables
 
-- `RATIONALE_PROVIDER=none`: desactiva el proveedor estructural.
-- `RATIONALE_ACTIVITY=off`: desactiva la actividad local y los snapshots.
-- `RATIONALE_NO_MASCOT=1`: silencia a Chestie.
-- `RATIONALE_SKIP_AGENT_CONFIG=1`: evita configurar agentes en `init` y en el
-  instalador.
+- `RATIONALE_PROVIDER=none`: disables the structural provider.
+- `RATIONALE_ACTIVITY=off`: disables local activity and snapshots.
+- `RATIONALE_NO_MASCOT=1`: silences Chestie.
+- `RATIONALE_SKIP_AGENT_CONFIG=1`: skips agent configuration in `init` and in
+  the installer.
 
-Del instalador y de `rationale update`:
+For the installer and `rationale update`:
 
-- `RATIONALE_CHANNEL`: `stable` (por defecto desde 1.0, `GET /releases/latest`)
-  o `preview` (la Release más reciente, incluidas pre-releases).
-- `RATIONALE_VERSION`: fija una versión concreta, por ejemplo para rollback.
-- `RATIONALE_INSTALL_DIR`: cambia el directorio del binario.
+- `RATIONALE_CHANNEL`: `stable` (the default since 1.0, `GET /releases/latest`)
+  or `preview` (the most recent release, pre-releases included).
+- `RATIONALE_VERSION`: pins a specific version, for example to roll back.
+- `RATIONALE_INSTALL_DIR`: changes the binary's directory.
 
-## Privacidad
+## Privacy
 
-Rationale es local-first y no envía repositorios, prompts, Records ni secretos.
-La actividad local guarda identificadores y la intención declarada (una línea,
-280 caracteres como máximo), nunca contenido de Records, código ni
-conversaciones; retiene 14 días, 500 sesiones y 200 operaciones. El Control Room
-escucha solo en `127.0.0.1` y no escribe nada.
+Rationale is local-first and does not send repositories, prompts, Records, or
+secrets anywhere. Local activity stores identifiers and the declared intent
+(one line, at most 280 characters), never Record content, code, or
+conversations; it keeps 14 days, 500 sessions, and 200 operations. The Control
+Room listens only on `127.0.0.1` and writes nothing.
 
-Aun así, `.rationale/` puede contener decisiones internas y debe tratarse como
-parte del repositorio. Excluye `.env`, llaves, tokens, dumps y datos personales
-según la política del equipo.
+Even so, `.rationale/` can contain internal decisions and should be treated as
+part of the repository. Exclude `.env` files, keys, tokens, dumps, and personal
+data according to your team's policy.
 
-## Desinstalar sin perder decisiones
+## Uninstall without losing decisions
 
 ```bash
 rationale uninstall-agent
@@ -71,7 +86,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-uninstall.sh | sh
 ```
 
-La desinstalación elimina el binario y lo que Rationale escribió en la
-configuración de los agentes, pero conserva `.rationale/`. Consulta
-[`docs/runbooks/uninstall.md`](../runbooks/uninstall.md) antes de borrar el canon
-manualmente.
+Uninstalling removes the binary and what Rationale wrote into the agents'
+configuration, but keeps `.rationale/`. Read
+[`docs/runbooks/uninstall.md`](../runbooks/uninstall.md) before deleting the
+canon by hand.

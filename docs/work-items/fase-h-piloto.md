@@ -1,35 +1,36 @@
-# Fase H — piloto read-only y alfa instalable
+# Phase H — read-only pilot and installable alpha
 
-## Gate de entrada
+## Entry gate
 
-- Fase G completa y Release dogfood vigente `v0.0.0-dogfood.7` publicada.
-- Security baseline revisado y sin P0/P1 abiertos.
-- Instalador probado en una máquina limpia.
-- El dueño del proyecto autoriza expresamente los paths de Rationale,
-  Monorepo y BoostAPI que pueden leerse.
+- Phase G complete and the current dogfood release `v0.0.0-dogfood.7` published.
+- Security baseline reviewed with no open P0/P1 findings.
+- Installer tested on a clean machine.
+- The project owner expressly authorizes the Rationale, Monorepo, and BoostAPI
+  paths that may be read.
 
-## Casos y condiciones
+## Cases and conditions
 
-Se ejecutarán 20–30 cambios históricos internos autorizados, distribuidos entre
-los tres repositorios. Cada caso tendrá ground truth preregistrado y comparará:
+20–30 authorized internal historical changes will be run, distributed across the
+three repositories. Each case will have a pre-registered ground truth and will
+compare:
 
-1. código/Git;
-2. código + documentación;
+1. code/Git;
+2. code + documentation;
 3. Codebase Memory;
 4. Codebase Memory + Rationale.
 
-La primera pasada es read-only. Solo tras superar sus métricas se habilita
-captura asistida; no se activan bloqueos ni aprobaciones automáticas.
+The first pass is read-only. Assisted capture is enabled only after its metrics
+are met; no blocking or automatic approvals are activated.
 
-## Métricas de salida
+## Exit metrics
 
-- recall de restricciones críticas `>= 90%`;
-- precisión del contexto `>= 80%`;
-- contexto perjudicial `< 2%`;
-- falsos bloqueos `0`;
-- paquete mediano `<= 600` tokens y P95 `<= 1000`;
-- reducción de contexto manual `>= 50%`;
-- ningún assessment obsoleto presentado como exacto.
+- critical constraint recall `>= 90%`;
+- context precision `>= 80%`;
+- harmful context `< 2%`;
+- false blocks `0`;
+- median packet `<= 600` tokens and P95 `<= 1000`;
+- reduction of manual context `>= 50%`;
+- no stale assessment presented as exact.
 
-Cada fallo se conserva como evidencia, issue o Record disputado; no se elimina
-para mejorar artificialmente la métrica.
+Every failure is kept as evidence, an issue, or a disputed Record; it is never
+removed to improve the metric artificially.

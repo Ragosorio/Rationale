@@ -1,0 +1,47 @@
+id: constraint.founding-documents-keep-filenames-and-section-numbers
+kind: constraint
+severity: medium
+statement: The founding documents keep their filenames and their section numbering, even though their content is now written in English.
+rationale: About 228 citations across 90 files, including Rust comments, ADRs and .rationale/config.yaml, identify these documents by filename and cite them as §N. Renaming a file or renumbering its sections would silently break those references.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09bbcb3cb2d2756b6
+  session_id: session_1a09bad98aa00726ad0
+  asserted_at: 2026-09-13T17:22:11Z
+approvals: []
+binding_declarations:
+- id: binding.constraint.founding-documents-keep-filenames-and-section-numbers.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: Rationale_v0.5.md
+  provisional: true
+- id: binding.constraint.founding-documents-keep-filenames-and-section-numbers.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: Rationale_Arquitectura_Conceptual_v0.1.md
+  provisional: true
+- id: binding.constraint.founding-documents-keep-filenames-and-section-numbers.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: Rationale_Proceso_Construccion_Agentes_v0.1.md
+  provisional: true
+evidence: []
+risks: []
+bound_revision: 4cfddcad34ee3108d0834a750e354bff11ad9f30
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T17:22:11Z
+    operation_id: op_1a09bbcb3cb2d2756b6

@@ -1,51 +1,51 @@
-# Revisión adversarial: Fase F (captura, señales, Subject Resolver, `finalize_change`, `rationale review`)
+# Adversarial review: Phase F (capture, signals, Subject Resolver, `finalize_change`, `rationale review`)
 
-**Rol:** Review Agent independiente (`Proceso §4.4` — "otra sesión" como revisor válido), sin contexto previo de la sesión que implementó Fase F.
-**Encargo:** intentar refutar `src/storage.rs`, `src/capture.rs`, `src/signals.rs`, `src/subjects.rs`, `src/pipeline.rs::finalize`, `src/review.rs` y el ciclo completo propuesta→revisión→aprobación, sin autoaprobar nada.
-**Esta sesión no aprobó ni rechazó nada** — el veredicto queda para revisión humana, siguiendo el mismo patrón que `docs/work-items/adversarial-review-adr-0001-0002-0006.md` y `docs/work-items/adversarial-review-fase-e5-e6.md`.
+**Role:** independent Review Agent (`Proceso §4.4` — "another session" as a valid reviewer), with no prior context from the session that implemented Phase F.
+**Assignment:** try to refute `src/storage.rs`, `src/capture.rs`, `src/signals.rs`, `src/subjects.rs`, `src/pipeline.rs::finalize`, `src/review.rs`, and the full proposal→review→approval cycle, without self-approving anything.
+**This session approved or rejected nothing** — the verdict is left to human review, following the same pattern as `docs/work-items/adversarial-review-adr-0001-0002-0006.md` and `docs/work-items/adversarial-review-fase-e5-e6.md`.
 
-Metodología: lectura completa de `src/storage.rs`, `src/capture.rs`, `src/signals.rs`, `src/subjects.rs`, `src/pipeline.rs`, `src/review.rs`, `src/main.rs::cmd_review`, `src/project.rs`; revisión del commit `c9fd5b6` (fix de path traversal aplicado durante el cierre de Fase F); `cargo fmt --check` / `cargo clippy --all-targets -- -D warnings` / `cargo test --release` (95 tests); y, sobre todo, ataque empírico contra el **binario real compilado** (`target/release/rationale serve` / `rationale review`) usando un cliente Python que habla el framing `Content-Length` directamente (mismo enfoque que la revisión E5/E6) más invocaciones directas del CLI con `subprocess`, sobre proyectos Git sintéticos desechables en `/tmp/`. Ningún archivo de producción fue modificado; `git status` seguía limpio al terminar.
+Methodology: a full reading of `src/storage.rs`, `src/capture.rs`, `src/signals.rs`, `src/subjects.rs`, `src/pipeline.rs`, `src/review.rs`, `src/main.rs::cmd_review`, and `src/project.rs`; a review of commit `c9fd5b6` (the path traversal fix applied while closing Phase F); `cargo fmt --check` / `cargo clippy --all-targets -- -D warnings` / `cargo test --release` (95 tests); and, above all, an empirical attack against the **real compiled binary** (`target/release/rationale serve` / `rationale review`) using a Python client speaking the `Content-Length` framing directly (the same approach as the E5/E6 review) plus direct CLI invocations with `subprocess`, on throwaway synthetic Git projects in `/tmp/`. No production file was modified; `git status` was still clean at the end.
 
-Commit de partida: `c9fd5b6` (`fix(security): path traversal real vía record_id en finalize_change/review`), el más reciente en `git log` al iniciar esta revisión.
+Starting commit: `c9fd5b6` (`fix(security): path traversal real vía record_id en finalize_change/review`), the most recent in `git log` when this review started.
 
 ---
 
-## Resumen ejecutivo
+## Executive summary
 
-| Área | Hallazgo | Severidad |
+| Area | Finding | Severity |
 |---|---|---|
-| `subjects::list_subjects` / `storage::list_records` + `pipeline::finalize` | Un solo archivo YAML corrupto en `.rationale/subjects/` o `.rationale/records/` desactiva el Subject Resolver COMPLETO para toda futura propuesta, en silencio, sin ningún diagnóstico | **Alto** |
-| Ciclo propuesta→revisión (`review.rs` + `pipeline::finalize`) | TOCTOU real: una propuesta puede perderse en silencio (nunca se mueve a `.rejected/`) si se sobrescribe durante la ventana de revisión humana; una segunda aprobación concurrente sobre la misma propuesta sobrescribe la primera sin detección de colisión | **Alto** |
-| `review::describe_effect` (`println!` de contenido controlado por el cliente MCP) | Secuencias de escape ANSI/control en `intent`/`statement`/`risks` de `finalize_change` sobreviven intactas hasta el terminal del humano en `rationale review` | **Alto** |
-| `signals::signals_from_paths` (coincidencia por substring) | Falso positivo confirmado: un archivo cosmético sin relación con autorización real (`auth_helper_unrelated.rs`) dispara la señal `Authorization` y genera una propuesta de ruido | **Medio** |
-| `signals::determine_level` | Falso negativo confirmado: un bug real de doble cobro en pagos, sin keyword de path ni lenguaje normativo, se clasifica en el nivel más bajo (`Intent`), igual que un cambio trivial | **Medio** |
-| `subjects::resolve` — `ALIAS_SIMILARITY_THRESHOLD = 0.85` | Falso positivo confirmado: dos conceptos genuinamente distintos que comparten una plantilla de frase larga alcanzan 0.86 de similitud léxica y BLOQUEAN la propuesta completa | **Medio** |
-| `subjects::resolve` — `CANDIDATE_MIN_THRESHOLD = 0.2` | Falso negativo confirmado: el mismo concepto real (no doble cobro) expresado con vocabulario distinto no genera ningún candidato — fragmentación silenciosa de Subjects | **Medio** |
-| Path traversal en `record_id` (fix `c9fd5b6`) | Re-verificado independientemente: el fix sostiene; no se encontró bypass ni un lugar equivalente sin cubrir | Sostiene |
-| Nunca autoaprueba (`review::approve` es la única función que construye `Approval{status:"approved"}`) | Re-verificado de forma independiente, sin confiar en el hallazgo previo | Sostiene |
-| EOF / stdin no interactivo en `rationale review` | Nunca se interpreta como aprobación implícita — cae al camino "Saltado" | Sostiene |
-| `statement` corregido vacío en el flujo `'c'` | Rechazado por `storage::validate()` antes de tocar disco; la propuesta permanece pendiente, no se pierde | Sostiene |
-| Escritura concurrente cruzando procesos del SO sobre el mismo `record_id` | El rename atómico sostiene incluso con 12 procesos reales concurrentes — nunca corrompe el archivo | Sostiene |
-| `cargo fmt` / `cargo clippy -D warnings` / `cargo test --release` | 95/95 tests, cero warnings | Sostiene |
+| `subjects::list_subjects` / `storage::list_records` + `pipeline::finalize` | A single corrupt YAML file in `.rationale/subjects/` or `.rationale/records/` disables the WHOLE Subject Resolver for every future proposal, silently, with no diagnostic | **High** |
+| Proposal→review cycle (`review.rs` + `pipeline::finalize`) | A real TOCTOU: a proposal can be lost silently (never moved to `.rejected/`) if it is overwritten during the human review window; a second concurrent approval of the same proposal overwrites the first with no collision detection | **High** |
+| `review::describe_effect` (`println!` of content controlled by the MCP client) | ANSI/control escape sequences in `finalize_change`'s `intent`/`statement`/`risks` survive intact all the way to the human's terminal in `rationale review` | **High** |
+| `signals::signals_from_paths` (substring matching) | Confirmed false positive: a cosmetic file unrelated to real authorization (`auth_helper_unrelated.rs`) triggers the `Authorization` signal and generates a noise proposal | **Medium** |
+| `signals::determine_level` | Confirmed false negative: a real double-charge payments bug, with no path keyword or normative language, is classified at the lowest level (`Intent`), like a trivial change | **Medium** |
+| `subjects::resolve` — `ALIAS_SIMILARITY_THRESHOLD = 0.85` | Confirmed false positive: two genuinely different concepts sharing a long phrase template reach 0.86 lexical similarity and BLOCK the whole proposal | **Medium** |
+| `subjects::resolve` — `CANDIDATE_MIN_THRESHOLD = 0.2` | Confirmed false negative: the same real concept (no double charge) expressed with different vocabulary generates no candidate — silent Subject fragmentation | **Medium** |
+| Path traversal in `record_id` (fix `c9fd5b6`) | Re-verified independently: the fix holds; no bypass or equivalent uncovered place was found | Holds |
+| Never self-approves (`review::approve` is the only function that builds `Approval{status:"approved"}`) | Re-verified independently, without trusting the earlier finding | Holds |
+| EOF / non-interactive stdin in `rationale review` | Never interpreted as implicit approval — it falls into the "Skipped" path | Holds |
+| An empty corrected `statement` in the `'c'` flow | Rejected by `storage::validate()` before touching disk; the proposal stays pending and is not lost | Holds |
+| Concurrent writes across OS processes on the same `record_id` | The atomic rename holds even with 12 real concurrent processes — it never corrupts the file | Holds |
+| `cargo fmt` / `cargo clippy -D warnings` / `cargo test --release` | 95/95 tests, zero warnings | Holds |
 
-**7 hallazgos accionables** (0 críticos nuevos, 3 altos, 4 medios) + **6 confirmaciones que sostienen** bajo ataque empírico real.
+**7 actionable findings** (0 new critical, 3 high, 4 medium) + **6 confirmations that hold** under a real empirical attack.
 
 ---
 
-## Hallazgos completos
+## Full findings
 
-### 1. Un solo archivo corrupto en `.rationale/subjects/` o `.rationale/records/` apaga el Subject Resolver por completo, en silencio (Alto)
+### 1. A single corrupt file in `.rationale/subjects/` or `.rationale/records/` turns the Subject Resolver off completely, silently (High)
 
-`src/subjects.rs:82-90` (`list_subjects`) usa `?` sobre `read_subject(&path)` dentro del `for` que recorre el directorio: si UN SOLO archivo `.yaml` no parsea o le falta `id`/`title`, la función entera devuelve `Err`, descartando también los Subjects que sí se habían leído bien hasta ese punto. Lo mismo aplica a `storage::list_records` para Records.
+`src/subjects.rs:82-90` (`list_subjects`) uses `?` on `read_subject(&path)` inside the `for` that walks the directory: if A SINGLE `.yaml` file does not parse or lacks `id`/`title`, the whole function returns `Err`, also discarding the Subjects that had been read correctly up to that point. The same applies to `storage::list_records` for Records.
 
 `src/pipeline.rs:542-543`:
 ```rust
 let existing_subjects = subjects::list_subjects(&subjects_dir).unwrap_or_default();
 let existing_records = storage::list_records(&records_dir).unwrap_or_default();
 ```
-Ambas líneas silencian ese `Err` con `.unwrap_or_default()` — sin ningún `diagnostics.push(...)`. Esto contrasta directamente con `pipeline::prepare` (mismo módulo, líneas 87-105), que sí reporta explícitamente cuando falla la lectura de Subjects (`"advertencia: no se pudieron leer Subjects: {e}"`). `finalize` no tiene ese mismo cuidado.
+Both lines silence that `Err` with `.unwrap_or_default()` — with no `diagnostics.push(...)`. This contrasts directly with `pipeline::prepare` (same module, lines 87–105), which does report explicitly when reading Subjects fails (`"advertencia: no se pudieron leer Subjects: {e}"`). `finalize` does not take the same care.
 
-**Evidencia reproducible — caso Subjects.** Proyecto con un Subject casi idéntico en título al propuesto (debería bloquear como `Alias`):
+**Reproducible evidence — the Subjects case.** A project with a Subject almost identical in title to the proposed one (it should block as `Alias`):
 ```
 === BEFORE corrupting subjects/ : exact-title duplicate should be detected ===
 action: alias blocked_reason: candidato de Subject fuerte sin novelty_reason — ver subject_resolution.candidates
@@ -57,9 +57,9 @@ proposal_written: True
 ALL diagnostics: ['target declarado: .../src/auth/authz.rs',
  'propuesta escrita en .../proposals/constraint.dup-after.yaml (nivel=OperationalKnowledge, subject=authz.new-duplicate-attempt)']
 ```
-El archivo corrupto agregado fue trivial: `.rationale/subjects/broken.yaml` con contenido `"id: \ntitle: \n"`. Ningún diagnóstico menciona que algo falló al leer Subjects.
+The corrupt file added was trivial: `.rationale/subjects/broken.yaml` with the content `"id: \ntitle: \n"`. No diagnostic mentions that anything failed while reading Subjects.
 
-**Evidencia reproducible — caso Records (binding overlap).** Mismo patrón, pero vía `.rationale/records/`:
+**Reproducible evidence — the Records case (binding overlap).** The same pattern, but through `.rationale/records/`:
 ```
 === BEFORE corrupting records/: binding-overlap should surface the existing subject as a candidate ===
 action: alias candidates: [{'id': 'authz.entity-scoped-staff-access', 'signals': {'binding_overlap': 1.0, ...}}]
@@ -68,25 +68,25 @@ action: alias candidates: [{'id': 'authz.entity-scoped-staff-access', 'signals':
 action: create candidates: []
 diagnostics: ['target declarado: .../src/auth/authz.rs', 'propuesta escrita en .../proposals/constraint.overlap-after.yaml (nivel=OperationalKnowledge, subject=authz.new-attempt)']
 ```
-El archivo corrupto: `.rationale/records/broken.yaml` con `statement: ""` (un `Record` inválido cualquiera, exactamente el tipo de archivo que ya existe hoy en `.rationale/proposals/.rejected/` de este mismo repositorio tras mis propias pruebas — ver hallazgo 3 — o que podría quedar de una edición manual fallida).
+The corrupt file: `.rationale/records/broken.yaml` with `statement: ""` (any invalid `Record`, exactly the kind of file that already exists today in this repository's `.rationale/proposals/.rejected/` after my own tests — see finding 3 — or that a failed manual edit could leave behind).
 
-**Por qué es alto, no medio:** `Rationale_Arquitectura_Conceptual_v0.1.md §27` prohíbe explícitamente "Ocultar cobertura parcial". Este es exactamente ese caso: el Subject Resolver completo (Fase F4, la pieza central de esta fase junto con `finalize_change`) queda ciego a TODO el canon existente de Subjects y Records — no solo al archivo corrupto — sin que `FinalizeOutcome` lleve ninguna señal de ello. No requiere un atacante: un humano editando un Subject a mano con un YAML mal formado, o una escritura futura interrumpida sobre Subjects, produce el mismo efecto de forma completamente accidental y silenciosa. El resultado observable es indistinguible de "no existen Subjects/Records similares" cuando la realidad es "no pude leerlos".
+**Why it is high, not medium:** `Rationale_Arquitectura_Conceptual_v0.1.md §27` explicitly forbids "Hiding partial coverage". This is exactly that case: the whole Subject Resolver (Phase F4, the central piece of this phase together with `finalize_change`) goes blind to ALL of the existing canon of Subjects and Records — not only the corrupt file — without `FinalizeOutcome` carrying any signal of it. It does not require an attacker: a human editing a Subject by hand with malformed YAML, or a future interrupted write to Subjects, produces the same effect completely by accident and silently. The observable result is indistinguishable from "no similar Subjects/Records exist" when the reality is "I could not read them".
 
-**Corrección sugerida (no aplicada):** que `list_subjects`/`list_records` acumulen errores por archivo en vez de abortar al primero (ya existe precedente: `review::list_pending` omite silenciosamente entradas que no parsean, pero al menos no descarta las demás); y que `pipeline::finalize` reporte en `diagnostics` cualquier error de lectura de Subjects/Records, igual que ya hace `pipeline::prepare`.
+**Suggested fix (not applied):** have `list_subjects`/`list_records` accumulate errors per file instead of aborting on the first (there is already a precedent: `review::list_pending` silently skips entries that do not parse, but at least does not discard the others); and have `pipeline::finalize` report in `diagnostics` any error reading Subjects/Records, as `pipeline::prepare` already does.
 
 ---
 
-### 2. TOCTOU real en el ciclo propuesta→revisión: pérdida silenciosa de propuestas y de aprobaciones (Alto)
+### 2. A real TOCTOU in the proposal→review cycle: silent loss of proposals and approvals (High)
 
-`review::list_pending` (`src/review.rs:40-65`) lee **una vez** todo `.rationale/proposals/` al inicio de `cmd_review` (`src/main.rs:204`) y mantiene cada `Record` propuesto **en memoria** mientras espera input humano (que puede tardar minutos). `review::approve` (`src/review.rs:111-148`) nunca vuelve a leer el archivo de disco antes de promoverlo: escribe directamente el `Record` que tiene en memoria a `records/<id>.yaml` y luego borra `proposals/<id>.yaml` — sin comprobar que ese archivo siga conteniendo lo mismo que se le mostró al humano, ni que siga existiendo siquiera.
+`review::list_pending` (`src/review.rs:40-65`) reads all of `.rationale/proposals/` **once** at the start of `cmd_review` (`src/main.rs:204`) and keeps each proposed `Record` **in memory** while waiting for human input (which can take minutes). `review::approve` (`src/review.rs:111-148`) never reads the file from disk again before promoting it: it writes the in-memory `Record` directly to `records/<id>.yaml` and then deletes `proposals/<id>.yaml` — without checking that the file still contains what was shown to the human, or even that it still exists.
 
-**2a. Una propuesta nueva sobre el mismo `record_id`, escrita mientras la primera espera revisión, se pierde sin dejar rastro.**
+**2a. A new proposal on the same `record_id`, written while the first waits for review, is lost without a trace.**
 
-Secuencia reproducida contra el binario real:
-1. `finalize_change` escribe `proposals/constraint.race-test.yaml` con `statement: "FIRST VERSION..."`.
-2. Se arranca `rationale review` real; su `list_pending()` ya cargó la propuesta "FIRST VERSION" en memoria y está bloqueado esperando la respuesta del humano (confirmado leyendo su stdout hasta el prompt).
-3. **Mientras tanto**, una segunda llamada a `finalize_change` con el MISMO `record_id="constraint.race-test"` pero `statement: "SECOND VERSION..."` sobrescribe `proposals/constraint.race-test.yaml` en disco (escritura atómica exitosa, `proposal_written: true`).
-4. Se confirma "approve" al proceso de revisión, que promueve lo que tenía en memoria.
+A sequence reproduced against the real binary:
+1. `finalize_change` writes `proposals/constraint.race-test.yaml` with `statement: "FIRST VERSION..."`.
+2. A real `rationale review` is started; its `list_pending()` has already loaded the "FIRST VERSION" proposal into memory and is blocked waiting for the human's answer (confirmed by reading its stdout up to the prompt).
+3. **Meanwhile**, a second `finalize_change` call with the SAME `record_id="constraint.race-test"` but `statement: "SECOND VERSION..."` overwrites `proposals/constraint.race-test.yaml` on disk (a successful atomic write, `proposal_written: true`).
+4. "approve" is confirmed to the review process, which promotes what it had in memory.
 
 ```
 === proposals/constraint.race-test.yaml on disk RIGHT BEFORE approving ===
@@ -101,11 +101,11 @@ proposals/ contents: []
 === promoted record statement line ===
 statement: 'FIRST VERSION: staff must never receive global super_admin.'
 ```
-`records/` termina con "FIRST VERSION" (coherente con lo que el humano vio y aprobó — no hay engaño sobre lo que aprobó), pero `proposals/` queda **vacío**: la propuesta "SECOND VERSION" — que llegó a existir en disco, con `proposal_written: true` — desaparece por completo. No se mueve a `.rejected/` (que `review::reject` sí usa explícitamente "nunca se borra en silencio"), no queda en ningún log, no hay ningún diagnóstico. Es indistinguible de que esa propuesta nunca hubiera existido.
+`records/` ends with "FIRST VERSION" (consistent with what the human saw and approved — there is no deception about what they approved), but `proposals/` is left **empty**: the "SECOND VERSION" proposal — which did exist on disk, with `proposal_written: true` — disappears completely. It is not moved to `.rejected/` (which `review::reject` does use explicitly, "never deleted silently"), it remains in no log, and there is no diagnostic. It is indistinguishable from that proposal never having existed.
 
-**2b. Dos revisores humanos concurrentes sobre la misma propuesta: el segundo `approve` sobrescribe al primero sin detectar la colisión.**
+**2b. Two concurrent human reviewers on the same proposal: the second `approve` overwrites the first without detecting the collision.**
 
-Se lanzaron dos procesos `rationale review` reales casi simultáneamente contra el mismo proyecto con UNA propuesta pendiente (ambos ejecutan `list_pending()` antes de que ninguno apruebe). El primero aprueba y promueve con éxito. El segundo, que sigue con la MISMA copia en memoria (de antes de que el primero promoviera), también aprueba:
+Two real `rationale review` processes were launched almost simultaneously against the same project with ONE pending proposal (both run `list_pending()` before either approves). The first approves and promotes successfully. The second, still holding the SAME in-memory copy (from before the first promoted it), also approves:
 ```
 === Reviewer A result ===
 Aprobado -> .../records/constraint.double-reviewer-test.yaml
@@ -113,85 +113,85 @@ Aprobado -> .../records/constraint.double-reviewer-test.yaml
 === Reviewer B result (same proposal, approved after A already promoted it) ===
 Aprobado -> .../records/constraint.double-reviewer-test.yaml
 ```
-Ambos reportan éxito (`Aprobado -> ...`, sin ningún error), y el reviewer B nunca comprueba que `proposals/constraint.double-reviewer-test.yaml` ya no existía cuando intentó promoverlo (`std::fs::remove_file` en `approve()` usa `let _ = ...`, ignorando el fallo). En este experimento ambos procesos comparten la misma identidad Git local (`user.name`/`user.email`), así que el `approvals` final solo muestra una entrada — pero la segunda escritura de `write_record` **reemplaza el archivo completo**, no fusiona `approvals`: si el segundo revisor tuviera una identidad Git distinta (dos personas reales, o dos agentes con configuraciones distintas — el escenario natural de Fase G, dogfooding con más de un colaborador), la segunda escritura habría descartado la `Approval` real que el primer revisor ya había persistido, sin ningún aviso a ninguno de los dos.
+Both report success (`Aprobado -> ...`, without any error), and reviewer B never checks that `proposals/constraint.double-reviewer-test.yaml` no longer existed when it tried to promote it (`std::fs::remove_file` in `approve()` uses `let _ = ...`, ignoring the failure). In this experiment both processes share the same local Git identity (`user.name`/`user.email`), so the final `approvals` shows only one entry — but the second `write_record` **replaces the whole file**, it does not merge `approvals`: if the second reviewer had a different Git identity (two real people, or two agents with different configurations — the natural scenario of Phase G, dogfooding with more than one collaborator), the second write would have discarded the real `Approval` the first reviewer had already persisted, without warning either of them.
 
-**Por qué es alto:** el mecanismo entero de Fase F6 existe para que "nunca se autoaprueba, siempre con efecto visible y deliberado" (`review.rs:1-21`). Ambas variantes de esta race violan esa garantía en su forma más silenciosa: no es que algo se apruebe sin querer (el humano sí aprobó conscientemente lo que vio), es que el **resultado persistido en disco no corresponde a la única fuente de verdad esperada** — una propuesta real desaparece sin dejar evidencia (2a), o una aprobación real ya persistida puede ser pisada por otra sin detección de colisión (2b). Ninguno de los dos casos está cubierto por los tests existentes de `review.rs` o `tests/mcp_server.rs`, que solo prueban invocaciones secuenciales sin solape.
+**Why it is high:** the whole Phase F6 mechanism exists so that "it never self-approves, always with a visible and deliberate effect" (`review.rs:1-21`). Both variants of this race violate that guarantee in its most silent form: it is not that something gets approved unintentionally (the human did consciously approve what they saw), it is that the **result persisted on disk does not correspond to the single expected source of truth** — a real proposal disappears without evidence (2a), or a real, already persisted approval can be trampled by another without collision detection (2b). Neither case is covered by the existing tests of `review.rs` or `tests/mcp_server.rs`, which only test sequential, non-overlapping invocations.
 
-**Corrección sugerida:** antes de escribir en `approve()`, releer `proposal.path` y comparar contra la copia en memoria (o simplemente comparar mtime/hash); si difiere o el archivo ya no existe, abortar con un error explícito en vez de proceder silenciosamente. Considerar además un lock de archivo (`flock`) sobre `proposals/<id>.yaml` durante la ventana de revisión.
+**Suggested fix:** before writing in `approve()`, re-read `proposal.path` and compare it with the in-memory copy (or simply compare mtime/hash); if it differs or the file no longer exists, abort with an explicit error instead of proceeding silently. Also consider a file lock (`flock`) on `proposals/<id>.yaml` during the review window.
 
 ---
 
-### 3. Inyección de secuencias de control/ANSI en el terminal del revisor humano vía `intent`/`statement`/`risks` (Alto)
+### 3. Injection of control/ANSI sequences into the human reviewer's terminal through `intent`/`statement`/`risks` (High)
 
-`finalize_change` acepta `intent`, `statement` y `risks` como texto libre proveniente del cliente MCP (un agente, potencialmente comprometido o simplemente con un bug) — nunca se sanea. Estos campos se persisten tal cual en el `Record` propuesto y, más tarde, `review::describe_effect` (`src/review.rs:70-92`) los imprime con `println!` directamente en el terminal del humano durante `rationale review` — exactamente el momento que Fase F6 diseñó para que el humano vea "el efecto práctico" antes de aprobar (v0.5 §15.5).
+`finalize_change` accepts `intent`, `statement`, and `risks` as free text coming from the MCP client (an agent, potentially compromised or simply buggy) — it is never sanitized. These fields are persisted as-is in the proposed `Record` and, later, `review::describe_effect` (`src/review.rs:70-92`) prints them with `println!` straight to the human's terminal during `rationale review` — exactly the moment Phase F6 designed for the human to see "the practical effect" before approving (v0.5 §15.5).
 
-**Vector descartado primero (filenames vía Git):** se probó si un nombre de archivo real con secuencias de escape ANSI (legal en POSIX, solo prohíbe `/` y NUL) sobrevivía a través de `capture::diff_since` → `path_hint`. Confirmado que **no**: Git cita (quotea) automáticamente cualquier byte de control en un path con `--name-status`, incluso con `core.quotepath=false` (verificado con `xxd` sobre el diff crudo — los bytes de escape aparecen como el texto literal `\033`, nunca como el byte `0x1b` real). Este vector concreto no aplica — Git ya lo neutraliza antes de que Rationale lo vea.
+**A vector ruled out first (file names through Git):** it was tested whether a real file name with ANSI escape sequences (legal in POSIX, which only forbids `/` and NUL) survived through `capture::diff_since` → `path_hint`. Confirmed that it does **not**: Git automatically quotes any control byte in a path with `--name-status`, even with `core.quotepath=false` (verified with `xxd` on the raw diff — the escape bytes appear as the literal text `\033`, never as the real `0x1b` byte). This concrete vector does not apply — Git already neutralizes it before Rationale sees it.
 
-**Vector confirmado (texto libre del propio agente):** `intent`/`statement` no pasan por ningún filtro de Git. Se llamó a `finalize_change` con:
+**A confirmed vector (the agent's own free text):** `intent`/`statement` go through no Git filter. `finalize_change` was called with:
 ```python
 malicious_statement = ("Staff must never receive global super_admin.\x1b[2K\r"
                         "\x1b[32mAUTO-APPROVED BY SECURITY TEAM - no review needed\x1b[0m")
 malicious_intent = "Normal intent text \x1b[8mhidden-instruction-here\x1b[28m end"
 ```
-`yaml_serde` sí escapa correctamente estos bytes al persistir el YAML (`\e[2K` como escape de cadena, forma válida de YAML 1.1) — la persistencia en disco es segura. Pero al releer y mostrar con `rationale review`:
+`yaml_serde` does escape these bytes correctly when persisting the YAML (`\e[2K` as a string escape, a valid YAML 1.1 form) — persistence on disk is safe. But when re-reading and displaying with `rationale review`:
 ```
 === raw stdout bytes from `rationale review` ===
 b"...Afirmaci\xc3\xb3n propuesta: Staff must never receive global super_admin.\x1b[2K\r\x1b[32mAUTO-APPROVED BY SECURITY TEAM - no review needed\x1b[0m\nRaz\xc3\xb3n: Normal intent text \x1b[8mhidden-instruction-here\x1b[28m end\n..."
 Contains raw ESC byte (0x1b) in review's stdout: True
 ```
-Los bytes de escape reales (`0x1b`) llegan intactos al stdout que el humano lee — `\x1b[2K\r` borra la línea actual y mueve el cursor, `\x1b[32m...\x1b[0m` puede pintar un falso mensaje "AUTO-APPROVED BY SECURITY TEAM" en verde, y `\x1b[8m...\x1b[28m` (SGR "conceal") puede ocultar texto en terminales que lo soportan.
+The real escape bytes (`0x1b`) reach the stdout the human reads intact — `\x1b[2K\r` erases the current line and moves the cursor, `\x1b[32m...\x1b[0m` can paint a fake "AUTO-APPROVED BY SECURITY TEAM" message in green, and `\x1b[8m...\x1b[28m` (SGR "conceal") can hide text in terminals that support it.
 
-**Alcance real, sin exagerar:** esto NO permite saltarse la palabra de confirmación en sí — el humano todavía debe teclear `approve`/`approve-critical` literalmente, y ese chequeo (`src/main.rs:242`) compara el string tecleado, no afectado por lo que se muestra. El riesgo real es **engaño visual**: el humano puede aprobar creyendo que lee algo distinto de lo que el sistema realmente va a persistir (statement real oculto o sustituido visualmente por un banner falso), lo cual ataca directamente la única salvaguarda que Fase F6 ofrece ("una afirmación por pantalla... nunca el YAML completo" — pero la "pantalla" misma puede falsificarse).
+**The real scope, without exaggerating:** this does NOT allow skipping the confirmation word itself — the human still has to type `approve`/`approve-critical` literally, and that check (`src/main.rs:242`) compares the typed string, unaffected by what is displayed. The real risk is **visual deception**: the human may approve believing they read something different from what the system will actually persist (the real statement hidden or visually replaced by a fake banner), which directly attacks the only safeguard Phase F6 offers ("one statement per screen... never the full YAML" — but the "screen" itself can be faked).
 
-**Por qué es alto:** el punto de confianza humano es el único control real contra autoaprobación en todo el sistema (`review.rs:1-21`); un vector que permite manipular exactamente lo que ese humano ve, sin que nada en el pipeline lo detecte o lo sanee, ataca ese control en su raíz.
+**Why it is high:** the human trust point is the only real control against self-approval in the whole system (`review.rs:1-21`); a vector that allows manipulating exactly what that human sees, without anything in the pipeline detecting or sanitizing it, attacks that control at its root.
 
-**Corrección sugerida:** despojar (strip) caracteres de control (`\x00-\x1f` salvo `\n`/`\t` si se desea preservar formato multilínea intencional) de `statement`/`rationale`/`risks` antes de escribirlos en `describe_effect`, o al menos antes de persistirlos — la opción más simple es sanear en la frontera de entrada (`pipeline::finalize`), donde ya se sanea `record_id`.
+**Suggested fix:** strip control characters (`\x00-\x1f` except `\n`/`\t` if intentional multi-line formatting is to be preserved) from `statement`/`rationale`/`risks` before writing them in `describe_effect`, or at least before persisting them — the simplest option is to sanitize at the input boundary (`pipeline::finalize`), where `record_id` is already sanitized.
 
 ---
 
-### 4. `signals::signals_from_paths` — falso positivo real por coincidencia de substring (Medio)
+### 4. `signals::signals_from_paths` — a real false positive from substring matching (Medium)
 
-`PATH_KEYWORDS` (`src/signals.rs:37-56`) usa `path_lower.contains(kw)` — substring puro, no palabra completa. Un archivo puramente cosmético cuyo nombre simplemente contiene la subcadena `"auth"` dispara la señal `Authorization`, sin relación alguna con lógica de autorización real.
+`PATH_KEYWORDS` (`src/signals.rs:37-56`) uses `path_lower.contains(kw)` — a pure substring, not a whole word. A purely cosmetic file whose name simply contains the substring `"auth"` triggers the `Authorization` signal, with no relationship at all to real authorization logic.
 
-Evidencia reproducible contra el binario real:
+Reproducible evidence against the real binary:
 ```
 === FP test: auth_helper_unrelated.rs (decorative banner, no real auth logic) ===
 signals: ['authorization']
 level: decision
 proposal_written: True
 ```
-El archivo real usado: `src/auth_helper_unrelated.rs` con contenido `// renders a decorative header banner for the CLI splash screen` — cero relación con autorización. El commit real generó una propuesta de Nivel `Decision` completa.
+The real file used: `src/auth_helper_unrelated.rs` with the content `// renders a decorative header banner for the CLI splash screen` — zero relationship to authorization. The real commit generated a full `Decision`-level proposal.
 
-**Por qué importa (medio, no alto):** el propio módulo se declara honesto ("deliberadamente corta y ampliable... coincidencia por substring... barata"), y el mecanismo es aditivo (nunca bloquea, solo genera ruido) — pero el ruido erosiona exactamente la promesa central de Fase F ("Rationale no pregunta por todo cambio; activa captura asistida solo cuando detecta señales concretas", `signals.rs:4-10`). Palabras como `"client"` (bajo `ExternalIntegration`) son aún más amplias — coincidirían con casi cualquier archivo llamado `*_client.rs`, incluyendo los propios `src/providers/*.rs` de este repositorio.
+**Why it matters (medium, not high):** the module declares itself honest ("deliberately short and extensible... substring matching... cheap"), and the mechanism is additive (it never blocks, it only generates noise) — but the noise erodes exactly Phase F's central promise ("Rationale does not ask about every change; it activates assisted capture only when it detects concrete signals", `signals.rs:4-10`). Words like `"client"` (under `ExternalIntegration`) are even broader — they would match almost any file named `*_client.rs`, including this repository's own `src/providers/*.rs`.
 
-**Corrección sugerida:** usar coincidencia por palabra completa sobre segmentos de path (dividir por `/`, `_`, `-`, `.` y comparar tokens exactos) en vez de substring crudo — mismo patrón que `contains_word` ya usa para `NORMATIVE_WORDS` en el propio archivo (línea 68-75), que si evita el caso análogo (`avoid` dentro de `avoidance-list`, cubierto por el test `does_not_false_positive_on_substring_of_normative_word`). La inconsistencia entre ambas funciones del mismo módulo (una hace matching por palabra, la otra por substring crudo) no está justificada en los comentarios.
+**Suggested fix:** use whole-word matching on path segments (split by `/`, `_`, `-`, `.` and compare exact tokens) instead of a raw substring — the same pattern `contains_word` already uses for `NORMATIVE_WORDS` in the same file (lines 68–75), which does avoid the analogous case (`avoid` inside `avoidance-list`, covered by the test `does_not_false_positive_on_substring_of_normative_word`). The inconsistency between the two functions of the same module (one matches by word, the other by raw substring) is not justified in the comments.
 
 ---
 
-### 5. `signals::determine_level` — falso negativo real: un cambio críticamente peligroso se clasifica en el nivel más bajo (Medio)
+### 5. `signals::determine_level` — a real false negative: a critically dangerous change is classified at the lowest level (Medium)
 
-Un cambio real en lógica de liquidación de pagos que dobla el monto cobrado en ciertas condiciones, sin ningún keyword de `PATH_KEYWORDS` en el path y sin ninguna `NORMATIVE_WORDS` en `intent`/`statement`, se clasifica como `Intent` — el mismo nivel que un refactor trivial sin ninguna señal.
+A real change in payment settlement logic that doubles the amount charged under certain conditions, with no `PATH_KEYWORDS` keyword in the path and no `NORMATIVE_WORDS` in `intent`/`statement`, is classified as `Intent` — the same level as a trivial refactor with no signal.
 
-Evidencia reproducible:
+Reproducible evidence:
 ```
 === FN test: real critical payment-doubling bug, no keyword path, no normative language ===
 signals: []
 level: intent
 proposal_written: True
 ```
-Path usado deliberadamente sin ningún keyword: `src/core/ledger_math.rs`. `intent`: *"Updated the settlement calculation used when closing out international customer orders."* `statement`: *"International order settlement now doubles the charged amount when currency mismatch is detected."* `risks`: *"Customers could be charged twice the correct amount for international orders."* — ninguno de estos textos contiene `must`/`never`/`because`/`avoid`/`do not`. El campo `severity: "critical"` que el caller sí pasó **no influye en absoluto** en `determine_level` — es un campo completamente separado que solo afecta la palabra de confirmación en `rationale review`, no el nivel de captura.
+Path used deliberately without any keyword: `src/core/ledger_math.rs`. `intent`: *"Updated the settlement calculation used when closing out international customer orders."* `statement`: *"International order settlement now doubles the charged amount when currency mismatch is detected."* `risks`: *"Customers could be charged twice the correct amount for international orders."* — none of these texts contains `must`/`never`/`because`/`avoid`/`do not`. The `severity: "critical"` field the caller did pass **has no influence at all** on `determine_level` — it is a completely separate field that only affects the confirmation word in `rationale review`, not the capture level.
 
-**Por qué importa (medio, no alto):** el mecanismo sigue escribiendo una propuesta (`proposal_written: true`, nunca se pierde el evento), así que no hay pérdida de datos — pero el propósito explícito de los niveles (v0.5 §16) es priorizar dónde debe mirar primero un humano con tiempo limitado, y este es precisamente el caso — un bug financiero real y grave — donde priorizar mal tiene el costo más alto.
+**Why it matters (medium, not high):** the mechanism still writes a proposal (`proposal_written: true`; the event is never lost), so there is no data loss — but the explicit purpose of the levels (v0.5 §16) is to prioritize where a human with limited time should look first, and this is precisely the case — a real, serious financial bug — where getting the priority wrong costs the most.
 
-**Corrección sugerida:** ninguna trivial sin ampliar la taxonomía de keywords (que el propio módulo ya admite como incompleta a propósito) — la opción más barata es que `determine_level` considere el `severity` declarado por el caller como una señal adicional (no autoritativa, pero sí visible) cuando no hay match de dominio ni lenguaje normativo, en vez de ignorarlo del todo.
+**Suggested fix:** nothing trivial without expanding the keyword taxonomy (which the module already admits is deliberately incomplete) — the cheapest option is for `determine_level` to consider the caller's declared `severity` as an additional signal (not authoritative, but visible) when there is no domain match or normative language, instead of ignoring it entirely.
 
 ---
 
-### 6. `subjects::resolve` — el umbral `ALIAS_SIMILARITY_THRESHOLD = 0.85` bloquea dos conceptos genuinamente distintos por compartir una plantilla de frase (Medio)
+### 6. `subjects::resolve` — the `ALIAS_SIMILARITY_THRESHOLD = 0.85` threshold blocks two genuinely different concepts for sharing a phrase template (Medium)
 
-Jaccard sobre tokens normalizados (`lexical_similarity`, `src/subjects.rs:169-182`) no distingue "la misma frase con una palabra de dominio distinta" de "la misma idea". Dos títulos de gobernanza con una plantilla larga compartida, que describen constraints reales y distintos (gobernanza de migraciones de esquema vs. gobernanza de logging de auditoría), alcanzan 0.86 — por encima del umbral de `Alias` (0.85) — y la propuesta completa se BLOQUEA (no solo se marca como candidato).
+Jaccard over normalized tokens (`lexical_similarity`, `src/subjects.rs:169-182`) does not distinguish "the same sentence with a different domain word" from "the same idea". Two governance titles with a long shared template, describing real and different constraints (schema migration governance versus audit logging governance), reach 0.86 — above the `Alias` threshold (0.85) — and the whole proposal is BLOCKED (not just marked as a candidate).
 
-Evidencia reproducible contra el binario real:
+Reproducible evidence against the real binary:
 ```
 === Jaccard FP test: distinct concept (migration governance vs audit-logging governance) ===
 subject_resolution action: alias
@@ -199,40 +199,40 @@ candidates: [{"id": "db.migration-governance", "signals": {"binding_overlap": 0.
 blocked_reason: candidato de Subject fuerte sin novelty_reason — ver subject_resolution.candidates
 proposal_written: False
 ```
-Título existente: *"Ensure that the system never allows a background job to write directly to the production database without going through the approved **migration** pipeline"*. Título propuesto: la misma frase, sustituyendo solo *"migration"* por *"audit logging"*. `binding_overlap: 0.0` (ningún archivo en común) — la única señal que dispara el bloqueo es puramente léxica.
+Existing title: *"Ensure that the system never allows a background job to write directly to the production database without going through the approved **migration** pipeline"*. Proposed title: the same sentence, replacing only *"migration"* with *"audit logging"*. `binding_overlap: 0.0` (no file in common) — the only signal that triggers the block is purely lexical.
 
-**Por qué importa (medio, no alto):** a diferencia de `retrieval::detect_conflict` (que solo añade una advertencia, nunca bloquea — v0.5 §19.1), aquí `finalize_change` sí bloquea la escritura de la propuesta por completo (`proposal_written: false`) a menos que el caller provea `novelty_reason` explícito. Esto significa que cualquier organización que use plantillas de redacción consistentes para sus constraints (razonable, incluso recomendable) generará falsos bloqueos recurrentes, entrenando a los agentes a rellenar `novelty_reason` casi por reflejo — exactamente el "aceptar todo" que v0.5 §294 quiere evitar, solo que en la dirección opuesta (aceptar la anulación del bloqueo, no la aprobación).
+**Why it matters (medium, not high):** unlike `retrieval::detect_conflict` (which only adds a warning and never blocks — v0.5 §19.1), here `finalize_change` does block writing the proposal completely (`proposal_written: false`) unless the caller provides an explicit `novelty_reason`. This means any organization using consistent drafting templates for its constraints (reasonable, even recommendable) will generate recurring false blocks, training agents to fill in `novelty_reason` almost reflexively — exactly the "accept everything" that v0.5 §294 wants to avoid, only in the opposite direction (accepting the override of the block, not the approval).
 
-**Corrección sugerida:** ponderar `lexical_similarity` con algo más que Jaccard de tokens crudos — por ejemplo, excluir stopwords estructurales del cómputo (`ensure`, `that`, `the`, `system`, `never`, `allows`, `to`, `without`, `going`, `through`, `approved`, `pipeline` son puro andamiaje sintáctico, no señal de concepto) antes de aplicar el umbral. No es un cambio trivial sin evidencia adicional sobre qué tan comunes son las plantillas repetidas en Records reales — pero el umbral actual (0.85, sin justificación documentada más allá del número) no resiste este contraejemplo.
+**Suggested fix:** weight `lexical_similarity` with something more than raw token Jaccard — for example, excluding structural stopwords from the computation (`ensure`, `that`, `the`, `system`, `never`, `allows`, `to`, `without`, `going`, `through`, `approved`, `pipeline` are pure syntactic scaffolding, not a concept signal) before applying the threshold. It is not a trivial change without additional evidence about how common repeated templates are in real Records — but the current threshold (0.85, with no documented justification beyond the number) does not withstand this counterexample.
 
 ---
 
-### 7. `subjects::resolve` — el mismo concepto real, vocabulario distinto, nunca surge como candidato (Medio)
+### 7. `subjects::resolve` — the same real concept with different vocabulary never surfaces as a candidate (Medium)
 
-Contraparte exacta del hallazgo 6: un Subject ya existente (`payments.no-double-charge`, título *"Payments must never be processed twice for the same order"*) y una propuesta nueva que describe el MISMO concepto (evitar doble cobro, esta vez en reintentos de checkout) con vocabulario completamente distinto (*"Idempotent settlement retries must not re-bill the customer's card on transient network failures"*) no comparten suficientes tokens ni para superar `CANDIDATE_MIN_THRESHOLD` (0.2).
+The exact counterpart of finding 6: an existing Subject (`payments.no-double-charge`, titled *"Payments must never be processed twice for the same order"*) and a new proposal describing the SAME concept (avoiding a double charge, this time in checkout retries) with completely different vocabulary (*"Idempotent settlement retries must not re-bill the customer's card on transient network failures"*) do not share enough tokens even to pass `CANDIDATE_MIN_THRESHOLD` (0.2).
 
-Evidencia reproducible:
+Reproducible evidence:
 ```
 === Jaccard FN test: same real concept (no double billing), different vocabulary ===
 subject_resolution action: create
 candidates: []
 proposal_written: True
 ```
-`candidates: []` — ni siquiera aparece como candidato débil para que un humano lo revise en `rationale review`; el Subject nuevo se crea sin ninguna señal de que ya existe un Subject gobernando la misma preocupación real.
+`candidates: []` — it does not even appear as a weak candidate for a human to review in `rationale review`; the new Subject is created without any signal that a Subject already governs the same real concern.
 
-**Por qué importa (medio, no alto):** esto es fragmentación silenciosa del canon — exactamente lo que el Subject Resolver (Fase F4) existe para prevenir (v0.5 §9.1, pasos 2-5). No bloquea nada ni corrompe datos, pero erosiona la garantía central de la fase con el paso del tiempo: cada concepto real terminaría con N Subjects distintos según qué agente lo redactó primero, sin que nadie lo note hasta una auditoría manual.
+**Why it matters (medium, not high):** this is silent fragmentation of the canon — exactly what the Subject Resolver (Phase F4) exists to prevent (v0.5 §9.1, steps 2–5). It blocks nothing and corrupts no data, but it erodes the phase's central guarantee over time: each real concept would end up with N different Subjects depending on which agent drafted it first, without anyone noticing until a manual audit.
 
-**Corrección sugerida:** el propio módulo ya reconoce esto como límite conocido y diferido (`resolve()` doc: "5. Similitud semántica local. -> diferido, §28.3 (embeddings)") — es coherente con la decisión arquitectónica de v0.5 de no usar embeddings todavía. No es un bug de implementación tanto como una limitación estructural ya documentada; se incluye aquí porque el encargo pidió construir el contraejemplo explícito, y queda confirmado con datos reales, no solo teóricos.
+**Suggested fix:** the module itself already recognizes this as a known, deferred limit (`resolve()` doc: "5. Local semantic similarity. -> deferred, §28.3 (embeddings)") — consistent with v0.5's architectural decision not to use embeddings yet. It is less an implementation bug than an already documented structural limitation; it is included here because the assignment asked for the explicit counterexample, and it is confirmed with real, not only theoretical, data.
 
 ---
 
-## Lo que sostiene bajo ataque
+## What holds under attack
 
-1. **El fix de path traversal (`c9fd5b6`) sostiene, y no se encontró un lugar equivalente sin cubrir.** Se re-verificó `storage::validate_safe_id` de forma independiente (no solo lectura de código): `../../../../etc/pwned`, `..`, `.`, `sub/dir`, `back\slash`, `nul\0byte` — todos rechazados por los tests existentes, reconfirmado con `cargo test`. Se buscó explícitamente, vía `grep`, si `subject_id`/`subject_title` alguna vez se usan para construir un path — confirmado que NO (`src/pipeline.rs:86,376,540` solo hacen `config.rationale_dir.join("subjects")`, un literal fijo; Fase F no escribe Subjects nuevos todavía, consistente con `docs/architecture/code-map.md`). Se probó además si un nombre de archivo Git real con secuencias de control podía llegar sin escapar hasta `path_hint` (ver hallazgo 3) — Git lo neutraliza antes de que Rationale lo vea, incluso con `core.quotepath=false` (verificado con `xxd`).
+1. **The path traversal fix (`c9fd5b6`) holds, and no equivalent uncovered place was found.** `storage::validate_safe_id` was re-verified independently (not only by reading code): `../../../../etc/pwned`, `..`, `.`, `sub/dir`, `back\slash`, `nul\0byte` — all rejected by the existing tests, reconfirmed with `cargo test`. It was explicitly searched, through `grep`, whether `subject_id`/`subject_title` are ever used to build a path — confirmed that they are NOT (`src/pipeline.rs:86,376,540` only do `config.rationale_dir.join("subjects")`, a fixed literal; Phase F does not write new Subjects yet, consistent with `docs/architecture/code-map.md`). It was also tested whether a real Git file name with control sequences could reach `path_hint` unescaped (see finding 3) — Git neutralizes it before Rationale sees it, even with `core.quotepath=false` (verified with `xxd`).
 
-2. **La garantía "nunca autoaprueba" se re-verificó de forma independiente, sin confiar en el hallazgo previo de esta misma revisión.** `grep -rn "status: \"approved\"" src/` encuentra 4 sitios; los 3 que no son `review.rs:130` están dentro de `#[cfg(test)]` (fixtures de `retrieval.rs` y `assessment.rs` para probar que los Records ya-aprobados se muestran correctamente — nunca código de producción). `grep` sobre `src/mcp/server.rs` confirma que el módulo `review` nunca se referencia desde la superficie MCP (ni `finalize_change` ni ninguna otra tool) — la única forma de producir una `Approval` real sigue siendo `rationale review`, un proceso CLI interactivo separado.
+2. **The "never self-approves" guarantee was re-verified independently, without trusting this review's earlier finding.** `grep -rn "status: \"approved\"" src/` finds 4 places; the 3 that are not `review.rs:130` are inside `#[cfg(test)]` (fixtures in `retrieval.rs` and `assessment.rs` to test that already approved Records are displayed correctly — never production code). `grep` over `src/mcp/server.rs` confirms that the `review` module is never referenced from the MCP surface (neither `finalize_change` nor any other tool) — the only way to produce a real `Approval` is still `rationale review`, a separate interactive CLI process.
 
-3. **EOF / stdin no interactivo nunca se interpreta como aprobación implícita.** Se corrió `rationale review --project-root <dir>` con `stdin=/dev/null` contra una propuesta real de severidad `critical`:
+3. **EOF / non-interactive stdin is never interpreted as implicit approval.** `rationale review --project-root <dir>` was run with `stdin=/dev/null` against a real `critical` proposal:
    ```
    returncode: 0
    ...
@@ -241,61 +241,61 @@ proposal_written: True
    records/ contents: []
    proposals/ contents: ['constraint.eof-test.yaml']
    ```
-   `stdin.read_line` devuelve `Ok(0)` en EOF (no es un error), la cadena vacía resultante no coincide con ninguna palabra de confirmación válida, y cae al camino `else` ("Saltado"). La propuesta crítica permanece intacta y pendiente — el diseño sostiene contra este vector concreto.
+   `stdin.read_line` returns `Ok(0)` on EOF (it is not an error), the resulting empty string matches no valid confirmation word, and it falls into the `else` path ("Skipped"). The critical proposal stays intact and pending — the design holds against this concrete vector.
 
-4. **`statement` corregido vacío en el flujo `'c'` se rechaza antes de tocar disco, sin perder la propuesta.** Se envió una línea vacía como nuevo statement seguida de la palabra de confirmación real:
+4. **An empty corrected `statement` in the `'c'` flow is rejected before touching disk, without losing the proposal.** An empty line was sent as the new statement followed by the real confirmation word:
    ```
    error aprobando: Record inválido: falta campo obligatorio 'statement'
    records/: []
    proposals/: ['constraint.empty-correction-test.yaml']
    ```
-   `storage::validate()` (compartida entre lectura y escritura) rechaza el `Record` antes de que `write_record` toque disco; `approve()` propaga el error vía `?`, así que `std::fs::remove_file(&proposal.path)` nunca se ejecuta — la propuesta original permanece intacta en `proposals/`, no se pierde.
+   `storage::validate()` (shared between reading and writing) rejects the `Record` before `write_record` touches disk; `approve()` propagates the error through `?`, so `std::fs::remove_file(&proposal.path)` never runs — the original proposal stays intact in `proposals/` and is not lost.
 
-5. **Escritura concurrente CRUZANDO PROCESOS reales del SO sobre el mismo `record_id` nunca corrompe el archivo.** A diferencia del test unitario existente (`concurrent_writes_to_same_record_never_corrupt_the_file`, que usa hilos dentro de un mismo proceso), se lanzaron **12 procesos `rationale serve` reales y separados**, cada uno llamando `finalize_change` con el mismo `record_id` simultáneamente:
+5. **Concurrent writes ACROSS real OS processes on the same `record_id` never corrupt the file.** Unlike the existing unit test (`concurrent_writes_to_same_record_never_corrupt_the_file`, which uses threads within one process), **12 real, separate `rationale serve` processes** were launched, each calling `finalize_change` with the same `record_id` simultaneously:
    ```
    12/12 finalize_change calls reported proposal_written=True
    === final proposal file content ===
    statement: statement-from-writer-11
-   ... (YAML completo, bien formado, un único candidato limpio)
+   ... (complete, well-formed YAML, a single clean candidate)
    leftover tmp files: []
    ```
-   El resultado final es exactamente uno de los 12 candidatos, completo y válido — nunca una mezcla ni un archivo a medio escribir, y sin temporales huérfanos. El patrón de escritura atómica (archivo temporal + `rename` en el mismo directorio) sostiene también entre procesos del SO, no solo entre hilos.
+   The final result is exactly one of the 12 candidates, complete and valid — never a mixture or a half-written file, and with no orphaned temporary files. The atomic write pattern (temporary file + `rename` in the same directory) also holds across OS processes, not only across threads.
 
-6. **`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` y `cargo test --release` pasan limpio**: 79 tests unitarios + 8 de integración MCP + 8 de validación de schema = 95/95, cero advertencias, en este entorno.
+6. **`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --release` pass cleanly**: 79 unit tests + 8 MCP integration + 8 schema validation = 95/95, zero warnings, in this environment.
 
 ---
 
-## Resumen de severidades
+## Severity summary
 
-| Severidad | Cantidad | Hallazgos |
+| Severity | Count | Findings |
 |---|---:|---|
-| Crítico | 0 (nuevo) | El único crítico de esta fase (path traversal vía `record_id`) ya fue encontrado y corregido antes de esta revisión (`c9fd5b6`); re-verificado independientemente, sostiene. |
-| Alto | 3 | 1 (lectura de Subjects/Records corrupta apaga el Resolver en silencio), 2 (TOCTOU propuesta↔revisión: pérdida de propuestas y de aprobaciones), 3 (inyección de control/ANSI en el terminal del revisor) |
-| Medio | 4 | 4 (`signals_from_paths` falso positivo por substring), 5 (`determine_level` falso negativo en cambio crítico sin keyword/lenguaje normativo), 6 (Jaccard `Alias` falso positivo bloquea propuesta legítima), 7 (Jaccard falso negativo permite fragmentación silenciosa de Subjects) |
-| Menor | 0 | — |
-| Sostiene | 6 | fix de path traversal re-verificado; garantía de no-autoaprobación re-verificada independientemente; EOF/stdin no interactivo nunca aprueba; corrección vacía rechazada sin pérdida; concurrencia cruzando procesos nunca corrompe; suite completa limpia |
+| Critical | 0 (new) | The only critical finding of this phase (path traversal through `record_id`) was already found and fixed before this review (`c9fd5b6`); re-verified independently, it holds. |
+| High | 3 | 1 (corrupt Subjects/Records reading silently turns the Resolver off), 2 (proposal↔review TOCTOU: loss of proposals and approvals), 3 (control/ANSI injection into the reviewer's terminal) |
+| Medium | 4 | 4 (`signals_from_paths` false positive from substrings), 5 (`determine_level` false negative on a critical change without a keyword/normative language), 6 (Jaccard `Alias` false positive blocks a legitimate proposal), 7 (Jaccard false negative allows silent Subject fragmentation) |
+| Minor | 0 | — |
+| Holds | 6 | path traversal fix re-verified; no-self-approval guarantee re-verified independently; EOF/non-interactive stdin never approves; empty correction rejected without loss; cross-process concurrency never corrupts; full suite clean |
 
-**Recomendación sobre bloqueo (a criterio de esta revisión, la decisión final es del dueño humano):** los hallazgos 1, 2 y 3 (los tres "Alto") comparten una característica que los hace más urgentes que los "Medio": los tres son **silenciosos** — ninguno produce un error visible, un panic capturado, o siquiera una entrada en `diagnostics`; en los tres casos el sistema reporta éxito (`proposal_written: true` o `Aprobado -> ...`) mientras hace algo distinto de lo que su propia documentación promete (cobertura completa, ninguna pérdida silenciosa, "una afirmación por pantalla" fiel a lo que se persiste). Los hallazgos 4-7 son reales y merecen corregirse, pero son ruido o gaps de precisión conocidos y ya parcialmente reconocidos en los comentarios del propio código (`signals.rs`/`subjects.rs` se declaran "deliberadamente crudos"), no violaciones silenciosas de una garantía ya prometida como cumplida.
+**Recommendation on blocking (in this review's judgment; the final decision belongs to the human owner):** findings 1, 2, and 3 (the three "High") share a trait that makes them more urgent than the "Medium" ones: all three are **silent** — none produces a visible error, a caught panic, or even an entry in `diagnostics`; in all three cases the system reports success (`proposal_written: true` or `Aprobado -> ...`) while doing something different from what its own documentation promises (full coverage, no silent loss, "one statement per screen" faithful to what is persisted). Findings 4–7 are real and deserve fixing, but they are noise or known precision gaps already partly acknowledged in the code's own comments (`signals.rs`/`subjects.rs` declare themselves "deliberately crude"), not silent violations of a guarantee already promised as met.
 
-La decisión sobre qué corregir, y si Fase F se considera cerrada tal cual o requiere una iteración de seguridad adicional (al estilo del propio `c9fd5b6`, que corrigió un hallazgo de esta misma naturaleza durante el cierre de esta fase), queda enteramente para el dueño humano del proyecto (`evaluation.no-self-certification`).
+The decision on what to fix, and whether Phase F is considered closed as is or requires an additional security iteration (in the style of `c9fd5b6` itself, which fixed a finding of this same nature while closing this phase), rests entirely with the project's human owner (`evaluation.no-self-certification`).
 
 ---
 
-## Apéndice F8 — revalidación posterior a la auditoría de Codex
+## Appendix F8 — revalidation after Codex's audit
 
-La auditoría independiente posterior confirmó tres P1 y cuatro P2 sobre el
-estado de este informe. F8 aplicó las correcciones siguientes:
+The later independent audit confirmed three P1 and four P2 findings against the
+state of this report. F8 applied the following fixes:
 
-| Hallazgo | Corrección | Evidencia actual |
+| Finding | Fix | Current evidence |
 |---|---|---|
-| `authority: reviewer` fuera del schema | `AuthorityRole` enum, autoridad declarada por actor en `.rationale/config.yaml`, default `contributor`, validación en `storage::validate` | `storage::tests::approval_authority_must_match_declared_schema_enum`, `tests/schema_validation.rs` |
-| `novelty_reason` libre y no persistida | Objeto estructurado (`contrasted_subject`, `difference_kind`, `difference`, `evidence`), candidato obligatorio, persistencia en `Resolution` y YAML | `subjects::tests::novelty_reason_requires_a_real_candidate_and_auditable_difference`, `novelty_reason_is_structured_validated_and_persisted` |
-| TOCTOU entre comprobar y promover | claim atómico por `rename` hacia `.rationale/proposals/.in-review/`; solo un consumidor gana y el estado intermedio es recuperable | `tests/review_concurrency.rs`, `approve_detects_proposal_already_promoted_by_another_session` |
-| Propuesta corrupta omitida en review | `list_pending_detailed` acumula errores y `cmd_review` los reporta por stderr | `list_pending_reports_corrupt_yaml_instead_of_hiding_it` |
-| Drift documental | Actualizados `Cargo.toml`, protocolo del spike, security guide, bindings y README de schemas | revisión de enlaces Markdown: 0 rotos |
-| Sin CI multiplataforma | Añadida `.github/workflows/ci.yml` para Linux y macOS | workflow versionado; ejecución remota pendiente de GitHub |
+| `authority: reviewer` outside the schema | An `AuthorityRole` enum, authority declared per actor in `.rationale/config.yaml`, default `contributor`, validation in `storage::validate` | `storage::tests::approval_authority_must_match_declared_schema_enum`, `tests/schema_validation.rs` |
+| Free-form, unpersisted `novelty_reason` | A structured object (`contrasted_subject`, `difference_kind`, `difference`, `evidence`), a mandatory candidate, persistence in `Resolution` and YAML | `subjects::tests::novelty_reason_requires_a_real_candidate_and_auditable_difference`, `novelty_reason_is_structured_validated_and_persisted` |
+| TOCTOU between checking and promoting | An atomic claim through `rename` into `.rationale/proposals/.in-review/`; only one consumer wins and the intermediate state is recoverable | `tests/review_concurrency.rs`, `approve_detects_proposal_already_promoted_by_another_session` |
+| A corrupt proposal skipped in review | `list_pending_detailed` accumulates errors and `cmd_review` reports them on stderr | `list_pending_reports_corrupt_yaml_instead_of_hiding_it` |
+| Documentation drift | Updated `Cargo.toml`, the spike protocol, the security guide, bindings, and the schemas README | Markdown link review: 0 broken |
+| No cross-platform CI | Added `.github/workflows/ci.yml` for Linux and macOS | versioned workflow; remote execution pending on GitHub |
 
-El estado de la suite en este estado de trabajo es **110 tests ejecutados**: 88
-unitarios, 11 MCP, 1 concurrencia de procesos reales y 10 de schemas. La
-revalidación local ejecuta todos los tests y mantiene la prohibición de
-autoaprobación; la aceptación de decisiones fundacionales permanece humana.
+The suite in this working state is **110 tests run**: 88 unit, 11 MCP, 1 real
+process concurrency, and 10 schema tests. The local revalidation runs every test
+and keeps the prohibition on self-approval; accepting foundational decisions
+remains human.

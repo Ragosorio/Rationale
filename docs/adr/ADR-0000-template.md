@@ -1,38 +1,38 @@
-# ADR-XXXX: <título de la decisión>
+# ADR-XXXX: <decision title>
 
 **Status:** proposed | accepted | rejected | superseded
 **Date:** YYYY-MM-DD
-**Deciders:** <agente(s) / humano>
-**Supersedes / Superseded by:** <ADR-XXXX o ninguno>
+**Deciders:** <agent(s) / human>
+**Supersedes / Superseded by:** <ADR-XXXX or none>
 
 ## Context
 
-<Qué problema obliga a decidir. Qué restricciones ya existen (`Rationale_v0.5.md`, `Rationale_Arquitectura_Conceptual_v0.1.md`). Qué evidencia motivó abrir este ADR.>
+<What problem forces a decision. Which constraints already exist (`Rationale_v0.5.md`, `Rationale_Arquitectura_Conceptual_v0.1.md`). What evidence led to opening this ADR.>
 
 ## Decision
 
-<La decisión exacta, en una o dos frases verificables. No una preferencia — una decisión.>
+<The exact decision, in one or two verifiable sentences. Not a preference — a decision.>
 
 ## Evidence
 
-<Datos, benchmarks, reproducciones, observaciones de research notes o experimentos que sustentan la decisión. Enlazar archivos concretos.>
+<Data, benchmarks, reproductions, observations from research notes or experiments that support the decision. Link concrete files.>
 
 ## Alternatives considered
 
-<Cada alternativa real evaluada y por qué se descartó. No se permite "elegimos X porque es rápido" sin evidencia — ver `Rationale_Arquitectura_Conceptual_v0.1.md §22`.>
+<Every real alternative evaluated and why it was discarded. "We chose X because it is fast" without evidence is not allowed — see `Rationale_Arquitectura_Conceptual_v0.1.md §22`.>
 
 ## Consequences
 
-<Qué se vuelve más fácil, qué se vuelve más difícil, qué queda bloqueado, qué se habilita.>
+<What becomes easier, what becomes harder, what is blocked, what is enabled.>
 
 ## Risks
 
-<Qué puede salir mal con esta decisión y cómo se mitigaría.>
+<What can go wrong with this decision and how it would be mitigated.>
 
 ## Validation
 
-<Cómo se comprobó la decisión: tests, spikes, reproducción independiente.>
+<How the decision was checked: tests, spikes, independent reproduction.>
 
 ## Revisit trigger
 
-<Bajo qué condición concreta este ADR debería reabrirse — no "si cambian de opinión", sino una señal observable.>
+<Under which concrete condition this ADR should be reopened — not "if we change our minds", but an observable signal.>

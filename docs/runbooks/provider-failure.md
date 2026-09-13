@@ -1,43 +1,60 @@
 # Provider failure
 
-Rationale nunca bloquea si el proveedor estructural (`codebase-memory-mcp`) no está disponible — "fail open" (`Arquitectura §13.5`). Este runbook explica cómo se ve la degradación y cómo diagnosticarla.
+Rationale never blocks when the structural provider (`codebase-memory-mcp`) is
+unavailable: it fails open (`Arquitectura §13.5`). This runbook explains what
+degradation looks like and how to diagnose it.
 
-## Cómo se ve una falla de proveedor
+## What a provider failure looks like
 
 ```bash
 rationale health
 ```
 
 ```json
-{"provider_status":"unreachable","provider_error":"No such file or directory (os error 2)"}
+{"provider_status":"unavailable","provider_coverage":"unknown","provider_error":"No such file or directory (os error 2)"}
 ```
 
-o, si el binario existe pero no responde a tiempo:
+`provider_status` is `successful`, `degraded`, or `unavailable`, and
+`provider_coverage` is `complete`, `partial`, or `unknown`.
 
-```json
-{"provider_status":"unavailable","provider_coverage":"unknown"}
-```
+No Rationale command fails because of this. `prepare_change` still returns the
+full packet (constraints, conflicts, risks); structural fields lose coverage,
+`resolved_target` may be `null`, and a warning appears in `warnings`. Warning
+text is currently emitted in Spanish, for example
+`"no se pudo iniciar Codebase Memory: ..."` ("could not start Codebase Memory").
 
-Ningún comando de Rationale falla por esto — `prepare_change` sigue devolviendo el packet completo (constraints, conflictos, riesgos), solo que `resolved_target` queda `null` y aparece una advertencia en `warnings` (`"no se pudo iniciar Codebase Memory: ..."`).
+## Diagnosis
 
-## Diagnóstico
-
-1. **¿Está el binario en el PATH?**
+1. **Is the binary on `PATH`?**
 
    ```bash
    which codebase-memory-mcp
    ```
 
-2. **¿Responde directamente?** (mismo framing que usa Rationale — ver `docs/research/codebase-memory/11-performance-observations.md` para el script de referencia)
+2. **Does it respond directly?** It uses the same framing Rationale does; see
+   `docs/research/codebase-memory/11-performance-observations.md` for the
+   reference script.
 
    ```bash
    codebase-memory-mcp --version
    ```
 
-3. **¿El servidor MCP de Rationale usa la sesión persistente correcta?** Si `rationale serve` lleva mucho tiempo corriendo, la sesión al proveedor se estableció una sola vez al arrancar (ADR-0002/ADR-0007) — un problema de proveedor que apareció DESPUÉS de arrancar el servidor no se resuelve solo; hay que reiniciar `rationale serve`.
+3. **Is Rationale's MCP server using a stale session?** When `rationale serve`
+   has been running for a long time, its provider session was established once
+   at startup (ADR-0002/ADR-0007). A provider problem that appeared after the
+   server started does not fix itself: restart `rationale serve`, usually by
+   restarting the agent.
 
-## Qué nunca hace Rationale ante esta falla
+4. **Did Codebase Memory lose the project it had indexed?** Rationale detects a
+   stale project mapping, forgets it, and re-resolves the project through the
+   provider's public tools on the next call. Run `rationale health` again.
 
-- Nunca inventa un `resolved_target`.
-- Nunca trata "el proveedor no respondió" como "el símbolo no existe" (`Rationale_v0.5.md §19.2` — ausencia de evidencia no es evidencia de ausencia).
-- Nunca deja de responder — un timeout de proveedor mata el proceso hijo y reporta `Unavailable` dentro de segundos (`providers::codebase_memory::tests::provider_timeout_reports_unavailable_and_kills_process` lo verifica).
+## What Rationale never does in this situation
+
+- It never invents a `resolved_target`.
+- It never treats "the provider did not respond" as "the symbol does not exist"
+  (`Rationale_v0.5.md §19.2`: absence of evidence is not evidence of absence).
+- It never stops responding: a provider timeout kills the child process and
+  reports `unavailable` within seconds
+  (`providers::codebase_memory::tests::provider_timeout_reports_unavailable_and_kills_process`
+  verifies it).

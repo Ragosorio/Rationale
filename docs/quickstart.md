@@ -1,115 +1,127 @@
 # Quickstart
 
-Cinco minutos, sin haber visto el proyecto antes.
+Five minutes, with no prior knowledge of the project.
 
-## Qué hace por ti
+## What it does for you
 
-Tu memoria de código (Codebase Memory) sabe **dónde** está el código y **cómo**
-se conecta. Rationale sabe **por qué** existe y **qué** debe seguir siendo
-cierto. Juntos evitan que un agente derribe una valla sin saber qué protegía —
-la [valla de Chesterton](https://es.wikipedia.org/wiki/Valla_de_Chesterton): no
-quites algo hasta saber por qué está ahí.
+Your code memory (Codebase Memory) knows **where** the code is and **how** it
+connects. Rationale knows **why** it exists and **what** must stay true.
+Together they keep an agent from tearing down a fence without knowing what it
+protected — [Chesterton's fence](https://en.wikipedia.org/wiki/G._K._Chesterton#Chesterton's_fence):
+do not remove something until you know why it is there.
 
-Es local-first: sin servidor, sin cuenta, sin API de pago. Codebase Memory es
-opcional — sin él Rationale sigue funcionando con cobertura degradada.
+It is local-first: no server, no account, no paid API. Codebase Memory is
+optional; without it Rationale keeps working with degraded coverage.
 
-## Instalar
+## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash   # recomendado
+curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash   # recommended
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh
 ```
 
-Esto coloca el binario en `~/.local/bin` (o `$RATIONALE_INSTALL_DIR`), verifica
-SHA-256 y registra el servidor MCP para los agentes que detecta (Claude Code,
-Codex, Cursor) con la ruta absoluta del binario. Todavía no toca ningún
-proyecto. En Windows, usa el instalador de PowerShell del
+This places the binary in `~/.local/bin` (or `$RATIONALE_INSTALL_DIR`),
+verifies SHA-256, and registers the MCP server for the agents it detects
+(Claude Code, Codex, Cursor) with the binary's absolute path. It does not touch
+any project yet. On Windows, use the PowerShell installer from the
 [`README`](../README.md#windows-powershell).
 
-Las actualizaciones siguientes:
+Later updates:
 
 ```bash
 rationale update
 ```
 
-## Inicializar un proyecto
+## Initialize a project
 
-Dentro del proyecto que quieres proteger:
+Inside the project you want to protect:
 
 ```bash
 rationale init
 rationale health
 ```
 
-`init` crea `.rationale/` (el canon del proyecto) y escribe el protocolo de
-invocación para los agentes que detecta. Si prefieres hacerlo después, usa
-`rationale init --skip-agent-config` y corre `rationale install-agent` cuando
-quieras.
+`init` creates `.rationale/` (the project's canon) and writes the invocation
+protocol for the agents it detects. To do that later instead, run
+`rationale init --skip-agent-config` and then `rationale install-agent` when
+you are ready. Restart your agent afterwards so it loads the tools.
 
-## Qué se instaló y dónde vive cada cosa
+## What was installed and where it lives
 
-| Qué | Dónde | Se versiona en Git |
+| What | Where | Versioned in Git |
 |---|---|---|
-| El binario `rationale` | `~/.local/bin/rationale` | No — es una herramienta |
-| **El canon del proyecto** | `<tu-proyecto>/.rationale/` — Records, Subjects, configuración | **Sí** — se revisa en PR y se comparte con el equipo |
-| Instrucciones para tu agente | `CLAUDE.md` / `AGENTS.md` / `.cursor/rules/rationale.mdc`, en un bloque delimitado, y skills en `.claude/skills/` | Sí |
-| Registro del servidor MCP | `~/.claude.json`, `~/.cursor/mcp.json` o `codex mcp` — por usuario | No — nunca en el proyecto |
-| Actividad y operaciones | `<proyecto>/.rationale-local/` | No — excluido automáticamente, nunca sale de la máquina |
+| The `rationale` binary | `~/.local/bin/rationale` | No — it is a tool |
+| **The project's canon** | `<your-project>/.rationale/` — Records, Subjects, configuration | **Yes** — reviewed in pull requests and shared with the team |
+| Instructions for your agent | A delimited block in `CLAUDE.md`, `AGENTS.md`, or `.cursor/rules/rationale.mdc` | Yes |
+| The `rationale` skill and shortcuts | `.claude/skills/` (Claude Code) and `.agents/skills/rationale/` (Codex) | Yes |
+| MCP server registration | `~/.claude.json`, `~/.cursor/mcp.json`, or `codex mcp` — per user | No — never in the project |
+| Activity and operations | `<project>/.rationale-local/` | No — excluded automatically, never leaves the machine |
 
-## El flujo real
+The complete `rationale` skill is installed by `install-agent` starting with the
+release after v1.0.0. With v1.0.0, install it from GitHub with
+`npx skills add Ragosorio/Rationale`. See [the skill guide](user-guide/skills.md).
 
-Le pides a tu agente algo como:
+## The real flow
 
-> "Quiero que los reintentos de pago se detengan en tres intentos."
+You ask your agent something like:
 
-Sin que lo menciones, el agente (guiado por el protocolo instalado):
+> "Make payment retries stop after three attempts."
 
-1. Usa Codebase Memory para encontrar `charge`, sus callers y su ubicación.
-2. Llama a `prepare_change(target, intent)` y recibe las reglas y decisiones que
-   gobiernan ese código, por qué existen sus relaciones y qué conflictos tiene
-   tu intención.
-3. Hace el cambio y corre los tests.
-4. Llama a `finalize_change` con el conocimiento que sigue siendo cierto — por
-   ejemplo, «los pagos que ya llegaron al banco nunca se reintentan». Rationale
-   lo escribe en `.rationale/records/` en esa misma llamada.
+Without you mentioning it, the agent, guided by the installed protocol:
 
-La próxima conversación, con cualquier agente, recibe esa regla antes de tocar
+1. Uses Codebase Memory to find `charge`, its callers, and where it lives.
+2. Calls `prepare_change(target, intent)` and receives the rules and decisions
+   that govern that code, why its relationships exist, and which conflicts your
+   intent has.
+3. Makes the change and runs the tests.
+4. Calls `finalize_change` with the knowledge that stays true — for example,
+   "payments that already reached the bank are never retried." Rationale writes
+   it to `.rationale/records/` in that same call.
+
+The next conversation, with any agent, receives that rule before touching
 `charge`.
 
-## Míralo en vivo
+You can also drive it explicitly. In Claude Code, `/rationale` loads the full
+skill, and `/rationale-preflight <target> <intent>` and `/rationale-capture`
+run single steps. In Codex, use `$rationale`, or ask in plain language:
+"Prepare this change with Rationale for `<target>` with intent `<intent>`."
+
+Agents answer in the language you write in. The instructions they read are in
+English, and they keep tool names, Record ids, and commands as they are.
+
+## Watch it live
 
 ```bash
 rationale ui
 ```
 
-El [Control Room](user-guide/control-room.md) abre en `127.0.0.1:9748`: el
-subgrafo que recibió el agente, la memoria que lo explica y la actividad de cada
-sesión mientras ocurre.
+The [Control Room](user-guide/control-room.md) opens on `127.0.0.1:9748`: the
+subgraph the agent received, the memory that explains it, and every session's
+activity as it happens.
 
-## Fija lo que no debe moverse
+## Pin what must not move
 
 ```bash
 rationale pin <record-id>
 ```
 
-Un agente puede usar una regla fijada, pero no reemplazarla. Si lo intenta, no
-se escribe nada y recibes un conflicto:
+An agent can use a pinned rule but cannot replace it. If it tries, nothing is
+written and you get a conflict:
 
 ```bash
 rationale conflicts
 rationale resolve <conflict-id> keep-pinned
 ```
 
-Fijar exige que tu actor de Git esté declarado bajo `authority:` en
+Pinning requires your Git actor to be declared under `authority:` in
 `.rationale/config.yaml`.
 
-## Prompt maestro
+## Master prompt
 
-`install-agent` escribe el [prompt maestro](prompt-master.md) en las
-instrucciones de cada agente. La [versión en español](prompt-master.es.md) sirve
-para leerlo o pegarlo a mano en un cliente que Rationale no configura.
+`install-agent` writes the [master prompt](prompt-master.md) into each agent's
+instructions. Paste it by hand only for a client Rationale does not configure.
 
-## Verificar que quedó bien
+## Check that it worked
 
 ```bash
 rationale --version
@@ -117,22 +129,22 @@ rationale health
 rationale doctor --check
 ```
 
-`health` imprime JSON con `project_id`, `git_revision` y `provider_status`. Si
-algo falla, ver [`docs/runbooks/diagnostics.md`](runbooks/diagnostics.md).
+`health` prints JSON with `project_id`, `git_revision`, and `provider_status`.
+If something fails, see [`docs/runbooks/diagnostics.md`](runbooks/diagnostics.md).
 
-## Quitarlo
+## Remove it
 
 ```bash
-rationale uninstall-agent                # revierte instrucciones y skills de este proyecto
-rationale uninstall-agent --global-only  # revierte los registros MCP del usuario
+rationale uninstall-agent                # reverts this project's instructions and skills
+rationale uninstall-agent --global-only  # reverts the user's MCP registrations
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-uninstall.sh | sh
 ```
 
-Ninguno toca `.rationale/` — es tu canon, y borrarlo es una decisión tuya. Ver
-[`docs/runbooks/uninstall.md`](runbooks/uninstall.md).
+None of them touch `.rationale/` — it is your canon, and deleting it is your
+decision. See [`docs/runbooks/uninstall.md`](runbooks/uninstall.md).
 
-## Siguiente paso
+## Next step
 
-Si vas a construir sobre Rationale, sigue con el
-[índice de documentación](README.md), [CONTRIBUTING.md](../CONTRIBUTING.md) y
-los documentos fundacionales listados en el [`README`](../README.md#documentos-fundacionales).
+If you are going to build on Rationale, continue with the
+[documentation index](README.md), [CONTRIBUTING.md](../CONTRIBUTING.md), and
+the foundational documents listed in the [`README`](../README.md#foundational-documents).

@@ -1,91 +1,91 @@
-# Protocolo del spike de lenguaje — Rust vs Go
+# Language spike protocol — Rust vs Go
 
-**Estado:** ejecutado en Fase C. Este documento conserva el criterio de evaluación que se congeló antes del spike; los resultados están en [`candidates.md`](candidates.md), [`compatibility-matrix.md`](compatibility-matrix.md), [`benchmark-results.json`](benchmark-results.json) y [`spike-notes.md`](spike-notes.md), precisamente para evitar el sesgo de fijar el criterio después de ver qué lenguaje "se sintió mejor" (`Rationale_Arquitectura_Conceptual_v0.1.md §8`).
+**Status:** run in Phase C. This document keeps the evaluation criteria that were frozen before the spike; the results are in [`candidates.md`](candidates.md), [`compatibility-matrix.md`](compatibility-matrix.md), [`benchmark-results.json`](benchmark-results.json), and [`spike-notes.md`](spike-notes.md), precisely to avoid the bias of setting the criteria after seeing which language "felt better" (`Rationale_Arquitectura_Conceptual_v0.1.md §8`).
 
-El ADR-0001 conserva estado `proposed` hasta la aprobación humana; la implementación posterior no constituye autoaprobación (`Rationale_Proceso_Construccion_Agentes_v0.1.md §9`).
+ADR-0001 keeps its `proposed` status until human approval; the later implementation does not constitute self-approval (`Rationale_Proceso_Construccion_Agentes_v0.1.md §9`).
 
-## Candidatos
+## Candidates
 
-**Rust vs Go**, según decisión del equipo. El documento de arquitectura conceptual (`Arquitectura_Conceptual_v0.1.md §8.1`) también lista C y TypeScript/Node.js como candidatos posibles; se descartan de este spike por decisión explícita, no por evaluación:
+**Rust vs Go**, by the team's decision. The conceptual architecture document (`Arquitectura_Conceptual_v0.1.md §8.1`) also lists C and TypeScript/Node.js as possible candidates; they are excluded from this spike by explicit decision, not by evaluation:
 
-- **C**: Codebase Memory ya está escrito en C. Se descarta como candidato del núcleo de Rationale precisamente para preservar la frontera de protocolo/adaptador en vez de compartir lenguaje o proceso (`Arquitectura_Conceptual_v0.1.md §28.1` del doc conceptual, y §8.1 de este documento: "no debe elegirse únicamente porque Codebase Memory usa C").
-- **TypeScript/Node.js**: reservado para prototipos, tooling o harnesses de evaluación, no para el núcleo distribuido (`Arquitectura_Conceptual_v0.1.md §8.1`).
+- **C**: Codebase Memory is already written in C. It is discarded as a candidate for Rationale's core precisely to preserve the protocol/adapter boundary instead of sharing a language or process (`Arquitectura_Conceptual_v0.1.md §28.1` of the conceptual document, and §8.1 of that document: "it must not be chosen only because Codebase Memory uses C").
+- **TypeScript/Node.js**: reserved for prototypes, tooling, or evaluation harnesses, not for the distributed core (`Arquitectura_Conceptual_v0.1.md §8.1`).
 
-Si el resultado de este spike es insatisfactorio para ambos candidatos, se documentará como tal y se reabrirá la comparación — no se fuerza una elección entre dos opciones débiles.
+If this spike's result is unsatisfactory for both candidates, it will be documented as such and the comparison reopened — a choice between two weak options is not forced.
 
-## Carga idéntica (`Proceso §9.1`)
+## Identical workload (`Proceso §9.1`)
 
-Cada candidato debe implementar exactamente la misma función mínima, sin atajos ni funcionalidad adicional en ninguno de los dos:
+Each candidate must implement exactly the same minimal function, with no shortcuts or additional functionality in either:
 
 ```text
 Input:
   target + intent + revision
 
 Operations:
-  1. Leer un Record (YAML) desde disco.
-  2. Abrir una base SQLite (crear si no existe, insertar y leer una fila).
-  3. Llamar o mockear un proveedor estructural externo (subprocess o llamada MCP simulada).
-  4. Verificar una revisión (comparar dos strings de revisión, ej. Git SHA).
-  5. Rankear una constraint (ordenar una lista pequeña por un campo numérico).
-  6. Emitir JSON a stdout.
+  1. Read a Record (YAML) from disk.
+  2. Open a SQLite database (create it if it does not exist, insert and read a row).
+  3. Call or mock an external structural provider (a subprocess or a simulated MCP call).
+  4. Verify a revision (compare two revision strings, e.g. Git SHAs).
+  5. Rank a constraint (sort a small list by a numeric field).
+  6. Emit JSON to stdout.
 
 Measurements:
   - Startup time (cold).
-  - Latency end-to-end de la operación completa.
-  - Memoria residente pico.
-  - Tamaño del binario compilado (release, sin símbolos de debug).
-  - Velocidad de la suite de tests.
-  - Viabilidad de cross-compilation / estrategia de CI para macOS, Linux y Windows.
+  - End-to-end latency of the full operation.
+  - Peak resident memory.
+  - Size of the compiled binary (release, without debug symbols).
+  - Speed of the test suite.
+  - Feasibility of cross-compilation / a CI strategy for macOS, Linux, and Windows.
 ```
 
-**Regla de igualdad de carga:** no se permite que un candidato implemente un demo trivial y el otro una versión más completa (`Proceso §9.2`). Ambos deben construir exactamente las seis operaciones, ni más ni menos.
+**Workload equality rule:** one candidate may not implement a trivial demo while the other implements a more complete version (`Proceso §9.2`). Both must build exactly the six operations, no more and no less.
 
-## Criterios ponderados (`Arquitectura_Conceptual_v0.1.md §8.2`)
+## Weighted criteria (`Arquitectura_Conceptual_v0.1.md §8.2`)
 
 ```text
-20% Seguridad de memoria y confiabilidad
-15% Distribución como binario
-15% Rendimiento y latencia
-10% MCP y JSON-RPC
-10% SQLite y filesystem
-10% Compatibilidad macOS/Linux/Windows
-10% Mantenibilidad con agentes
-5%  Tiempo de compilación y desarrollo
-5%  Interoperabilidad con procesos C
+20% Memory safety and reliability
+15% Distribution as a binary
+15% Performance and latency
+10% MCP and JSON-RPC
+10% SQLite and filesystem
+10% macOS/Linux/Windows compatibility
+10% Maintainability with agents
+5%  Compilation and development time
+5%  Interoperability with C processes
 ```
 
-Cada candidato debe probar además, más allá de la carga mínima:
+Beyond the minimal workload, each candidate must also test:
 
-- Servidor MCP mínimo.
-- Cliente hacia Codebase Memory o wrapper CLI.
+- A minimal MCP server.
+- A client toward Codebase Memory or a CLI wrapper.
 - File locking.
-- Subprocess.
-- Cancelación.
-- Deadline.
-- Build arm64.
+- Subprocesses.
+- Cancellation.
+- A deadline.
+- An arm64 build.
 - Binary size.
 - Test tooling.
-- Fuzzing o property tests (viabilidad, no necesariamente implementación completa en el spike).
-- Packaging (viabilidad).
+- Fuzzing or property tests (feasibility, not necessarily a complete implementation in the spike).
+- Packaging (feasibility).
 
-## Entregables esperados del spike
+## Expected spike deliverables
 
 ```text
 docs/research/language/
-├── spike-protocol.md        (este documento)
-├── candidates.md            (notas por candidato tras ejecutar el spike)
-├── benchmark-results.json   (mediciones crudas)
-├── compatibility-matrix.md  (macOS/Linux/Windows por candidato)
-├── spike-notes.md           (observaciones cualitativas: mantenibilidad con agentes, ergonomía)
-└── ADR-0001-core-language.md → vive en docs/adr/, no aquí
+├── spike-protocol.md        (this document)
+├── candidates.md            (notes per candidate after running the spike)
+├── benchmark-results.json   (raw measurements)
+├── compatibility-matrix.md  (macOS/Linux/Windows per candidate)
+├── spike-notes.md           (qualitative observations: maintainability with agents, ergonomics)
+└── ADR-0001-core-language.md → lives in docs/adr/, not here
 ```
 
-Ninguno de estos archivos existe todavía. Este documento únicamente fija el protocolo.
+When this protocol was written, none of these files existed yet; the document only set the protocol.
 
-## Qué invalida el spike
+## What invalidates the spike
 
-Según `Arquitectura_Conceptual_v0.1.md §22`, el ADR resultante no puede decir solamente "elegimos X porque es rápido". Debe registrar evidencia, tradeoffs, alternativas descartadas y por qué, riesgo de reversión y fecha de revisión.
+According to `Arquitectura_Conceptual_v0.1.md §22`, the resulting ADR cannot say only "we chose X because it is fast". It must record evidence, trade-offs, discarded alternatives and why, reversal risk, and a review date.
 
-## Próximo paso
+## Next step
 
-Ejecutar el spike (Fase C, fuera de alcance de este plan de bootstrap) implementando la carga idéntica en ambos candidatos, midiendo con el mismo hardware (`docs/environment/reference-development-machine.md`) y bajo las mismas condiciones.
+Run the spike (Phase C, outside the scope of this bootstrap plan), implementing the identical workload in both candidates, measuring on the same hardware (`docs/environment/reference-development-machine.md`) and under the same conditions.

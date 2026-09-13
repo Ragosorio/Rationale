@@ -1,69 +1,74 @@
 # Uninstall
 
-La desinstalación elimina primero los registros MCP globales que todavía
-apuntan a ese binario y después elimina el ejecutable. Conserva todo el canon
-`.rationale/`.
+Uninstalling first removes the global MCP registrations that still point at the
+binary, then removes the executable. It keeps the whole `.rationale/` canon.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-uninstall.sh | sh
 ```
 
-Los datos canónicos no se eliminan nunca de forma automática.
+Canonical data is never deleted automatically.
 
-Esto solo desinstala el binario. Si `rationale init`/`install-agent` avisó a
-algún agente **dentro de un proyecto** (bloque en `CLAUDE.md`/`AGENTS.md` o
-`.cursor/rules/rationale.mdc`), revertir eso es por proyecto:
+This only uninstalls the binary. If `rationale init` or `install-agent`
+configured an agent **inside a project** (a block in `CLAUDE.md` or
+`AGENTS.md`, `.cursor/rules/rationale.mdc`, or skills under `.claude/skills/`
+and `.agents/skills/rationale/`), reverting that is per project:
 
 ```bash
-cd /ruta/al/proyecto
+cd /path/to/project
 rationale uninstall-agent
 ```
 
-Para revertir solo Claude Code, Codex y Cursor a nivel del usuario, sin quitar
-los bloques de ningún proyecto:
+To revert only the user-level registrations for Claude Code, Codex, and Cursor,
+without removing any project's blocks:
 
 ```bash
 rationale uninstall-agent --global-only
 ```
 
-Borra solo lo que `install-agent` escribió (según `.rationale-local/installed-agent-files.json`), dejando cualquier contenido previo del usuario en esos archivos intacto.
+It deletes only what `install-agent` wrote, according to
+`.rationale-local/installed-agent-files.json`, and leaves any earlier user
+content in those files intact. Skill files you edited are kept.
 
-## Lo que es seguro borrar siempre
-
-```bash
-rm -rf ~/.cache/rationale                    # capa derivada de TODOS los proyectos — ver cache-reset.md
-rm -f /ruta/al/proyecto/.mcp.json            # si solo lo usabas para Rationale
-rm -rf /ruta/a/Rationale/target              # artefactos de build
-```
-
-`.rationale-local/` de cada proyecto (logs de instrumentación, nunca versionado) también es seguro de borrar:
+## Always safe to delete
 
 ```bash
-rm -rf /ruta/al/proyecto/.rationale-local
+rm -rf ~/.cache/rationale                    # the derived layer of ALL projects — see cache-reset.md
+rm -f /path/to/project/.mcp.json             # only if an old version wrote it and you used it just for Rationale
+rm -rf /path/to/Rationale/target             # build artifacts
 ```
 
-## Lo que NUNCA se debe borrar sin pensarlo (es el canon, versionado en Git)
+Each project's `.rationale-local/` (local activity and operations, never
+versioned) is also safe to delete:
 
+```bash
+rm -rf /path/to/project/.rationale-local
 ```
-.rationale/records/      # decisiones aprobadas — borrar esto pierde autoridad real
-.rationale/subjects/      # identidad conceptual de cada comportamiento gobernado
+
+## Never delete without thinking (it is the canon, versioned in Git)
+
+```text
+.rationale/records/      # Records — deleting them loses real authority
+.rationale/subjects/     # the conceptual identity of each governed behavior
 .rationale/approvals/
 .rationale/bindings/
 ```
 
-Si de verdad quieres quitar Rationale de un proyecto por completo:
+If you really want to remove Rationale from a project entirely:
 
 ```bash
-git rm -r .rationale/ .mcp.json   # queda en el historial de Git, recuperable
+rationale uninstall-agent          # removes protocol blocks and skills it wrote
+git rm -r .rationale/              # stays in Git history, recoverable
 git commit -m "remove Rationale from this project"
 ```
 
-**Nunca `rm -rf .rationale/` seguido de un force-push** — eso sí sería destruir decisiones aprobadas sin posibilidad de recuperación. Usar `git rm` deja el historial intacto.
+**Never run `rm -rf .rationale/` followed by a force-push** — that would destroy
+decisions with no way to recover them. `git rm` keeps the history intact.
 
-## Propuestas anteriores a 1.0
+## Pre-1.0 proposals
 
-Desde 1.0 el trabajo normal no crea propuestas. Si un proyecto conserva
-`.rationale/proposals/` de una versión anterior, pásalas primero por
-`rationale migrate`: las válidas se vuelven Records y las ruidosas se archivan
-con su motivo. Una propuesta nunca tuvo autoridad, así que borrar las que no
-interesan es seguro; `git rm` las conserva en el historial.
+Since 1.0, normal work creates no proposals. If a project still has
+`.rationale/proposals/` from an earlier version, run them through
+`rationale migrate` first: valid ones become Records and noisy ones are archived
+with their reason. A proposal never had authority, so deleting the ones you do
+not want is safe; `git rm` keeps them in history.

@@ -1,8 +1,12 @@
 # Runbooks
 
-Según `Rationale_Proceso_Construccion_Agentes_v0.1.md §10.5`: build, test, install, update, uninstall, cache reset, provider failure, migration, release, diagnostics.
+Following `Rationale_Proceso_Construccion_Agentes_v0.1.md §10.5`: build, test,
+install, update, uninstall, cache reset, provider failure, migration, release,
+and diagnostics.
 
-El núcleo real existe desde Fase D (`src/`) y Fase E lo completó (modelo canónico, capa derivada, Context Compiler, servidor MCP) — los runbooks de abajo documentan comandos reales, verificados corriéndolos, no comportamiento inventado. El runbook de release se implementa en la workflow de GitHub y scripts de `scripts/`; la promoción de dogfood a alfa depende de los gates humanos y del piloto documentados en `docs/work-items/`.
+The runbooks below document real commands, verified by running them against the
+current binary and scripts rather than describing intended behavior. The release
+runbook is implemented by the GitHub workflow and the scripts in `scripts/`.
 
 - [`build-and-test.md`](build-and-test.md)
 - [`install.md`](install.md)
@@ -10,3 +14,4 @@ El núcleo real existe desde Fase D (`src/`) y Fase E lo completó (modelo canó
 - [`provider-failure.md`](provider-failure.md)
 - [`diagnostics.md`](diagnostics.md)
 - [`uninstall.md`](uninstall.md)
+- [`release.md`](release.md)

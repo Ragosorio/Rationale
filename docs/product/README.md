@@ -1,3 +1,11 @@
 # Product
 
-La definición de producto vive en [`Rationale_v0.5.md`](../../Rationale_v0.5.md). Este directorio se reserva para métricas agregadas, resultados de piloto y material de definición pública (`Rationale_v0.5.md §33`) una vez existan resultados reales que reportar. No debe usarse todavía para marketing ni landing page (`Rationale_Arquitectura_Conceptual_v0.1.md §2`, §24 del proceso).
+The product definition lives in [`Rationale_v0.5.md`](../../Rationale_v0.5.md),
+with the 1.0 model change recorded in
+[`docs/work-items/vnext-implementation-plan.md`](../work-items/vnext-implementation-plan.md).
+
+This directory is reserved for aggregate metrics, pilot results, and public
+definition material (`Rationale_v0.5.md §33`) once there are real results to
+report. The public website lives in [`site/`](../../site/) and is published at
+[rationale-pearl.vercel.app](https://rationale-pearl.vercel.app); its claims must
+link to evidence in this repository.

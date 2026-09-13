@@ -1,330 +1,348 @@
 # Rationale
 
-## Arquitectura conceptual 0.1
+## Conceptual architecture 0.1
 
-### Contrato técnico previo a implementación
+### Technical contract prior to implementation
 
-**Versión de arquitectura:** 0.1  
-**Fecha de corte:** 2026-07-24  
-**Estado:** arquitectura conceptual, deliberadamente no definitiva  
-**Documento conceptual obligatorio:** `Rationale_v0.5.md`  
-**Documento operativo complementario:** `Rationale_Proceso_Construccion_Agentes_v0.1.md`
+**Architecture version:** 0.1\
+**Cutoff date:** 2026-07-24\
+**Status:** conceptual architecture, deliberately not final\
+**Required conceptual document:** `Rationale_v0.5.md`\
+**Complementary operating document:** `Rationale_Proceso_Construccion_Agentes_v0.1.md`
+
+> **Status (1.0):** this document captured the boundaries Rationale was built
+> against. The decisions it left open were settled in the ADRs
+> ([`docs/adr/index.md`](docs/adr/index.md)) and the 1.0 plan
+> ([`docs/work-items/vnext-implementation-plan.md`](docs/work-items/vnext-implementation-plan.md)).
+> Where this document and an accepted ADR disagree, the ADR describes what was
+> built. The factual map of the current code is
+> [`docs/architecture/code-map.md`](docs/architecture/code-map.md).
 
 ---
 
-# 0. Advertencia principal
+# 0. Main warning
 
-Este documento no pretende fingir que la arquitectura final ya fue descubierta.
+This document does not pretend that the final architecture has already been
+discovered.
 
-Define:
+It defines:
 
-- Las fronteras que el producto necesita.
-- Los componentes conceptuales que deben existir.
-- Los contratos que deben verificarse.
-- Los experimentos que deben ejecutarse.
-- Las decisiones que todavía no pueden tomarse responsablemente.
-- El orden correcto para analizar, construir, validar, empaquetar y distribuir Rationale.
+- The boundaries the product needs.
+- The conceptual components that must exist.
+- The contracts that must be verified.
+- The experiments that must be run.
+- The decisions that cannot yet be made responsibly.
+- The right order to analyze, build, validate, package, and distribute
+  Rationale.
 
-La arquitectura final no debe implementarse copiando este documento de forma mecánica.
+The final architecture must not be implemented by mechanically copying this
+document.
 
-Antes de fijar:
+Before fixing:
 
-- Lenguaje.
+- Language.
 - Runtime.
 - IPC.
-- Modelo de concurrencia.
-- SDK de MCP.
-- Integración con Codebase Memory.
-- Formato físico de índices.
-- Instaladores.
+- Concurrency model.
+- MCP SDK.
+- Codebase Memory integration.
+- Physical index format.
+- Installers.
 - Hooks.
 - Daemon.
-- Distribución.
+- Distribution.
 
-el equipo y los agentes deben analizar la versión actual de Codebase Memory, construir pequeños prototipos y registrar los resultados.
+the team and the agents must analyze the current version of Codebase Memory,
+build small prototypes, and record the results.
 
-La regla será:
+The rule will be:
 
-> La arquitectura conceptual define las responsabilidades.  
-> La investigación técnica define su implementación.
+> The conceptual architecture defines the responsibilities.\
+> Technical research defines their implementation.
 
-Si una observación real de Codebase Memory contradice una suposición de este documento, no debe ocultarse ni forzarse.
+If a real observation of Codebase Memory contradicts an assumption in this
+document, it must not be hidden or forced.
 
-Debe:
+It must be:
 
-1. Documentarse.
-2. Reproducirse.
-3. Medirse.
-4. Convertirse en una decisión explícita.
-5. Actualizar la arquitectura mediante un ADR.
+1. Documented.
+2. Reproduced.
+3. Measured.
+4. Turned into an explicit decision.
+5. Used to update the architecture through an ADR.
 
 ---
 
-# 1. Relación con el documento conceptual
+# 1. Relationship with the conceptual document
 
-`Rationale_v0.5.md` continúa siendo la fuente de verdad sobre:
+`Rationale_v0.5.md` remains the source of truth on:
 
-- El problema.
-- La definición del producto.
-- La Valla de Chesterton.
-- La humildad epistemológica.
-- Los Subjects.
+- The problem.
+- The product definition.
+- Chesterton's Fence.
+- Epistemic humility.
+- Subjects.
 - Records.
 - Bindings.
 - Evidence.
 - Approvals.
 - Assessments.
-- Procedencia.
-- Autoridad.
-- Aplicabilidad.
-- Consistencia por revisión.
+- Provenance.
+- Authority.
+- Applicability.
+- Per-revision consistency.
 - Monorepos.
 - Context budget.
 - Context utility density.
 - Baseline mode.
 - Intent-aware mode.
 - Cold start.
-- Captura progresiva.
-- Seguridad.
-- Métricas.
-- Experimento de validación.
-- Roadmap del producto.
+- Progressive capture.
+- Security.
+- Metrics.
+- Validation experiment.
+- Product roadmap.
 
-Este documento no sustituye esa definición.
+This document does not replace that definition.
 
-La arquitectura debe considerarse inválida si implementa un sistema que contradiga el contrato conceptual.
+The architecture must be considered invalid if it implements a system that
+contradicts the conceptual contract.
 
-En caso de conflicto, la prioridad será:
+In case of conflict, the priority will be:
 
 ```text
-1. Evidencia real y reproducible del sistema
+1. Real, reproducible evidence from the system
 2. Rationale_v0.5.md
-3. ADRs aprobados
-4. Arquitectura conceptual vigente
-5. Planes de implementación
-6. Código no documentado
+3. Approved ADRs
+4. Current conceptual architecture
+5. Implementation plans
+6. Undocumented code
 ```
 
-El código nunca debe convertirse accidentalmente en la única explicación de una decisión arquitectónica.
+Code must never accidentally become the only explanation of an architectural
+decision.
 
 ---
 
-# 2. Objetivo de la arquitectura 0.1
+# 2. Goal of architecture 0.1
 
-La arquitectura 0.1 debe permitir empezar a construir una primera vertical de Rationale sin comprometer prematuramente la implementación final.
+Architecture 0.1 must make it possible to start building a first vertical slice
+of Rationale without prematurely committing to the final implementation.
 
-Debe responder:
+It must answer:
 
-- Qué componentes necesita el sistema.
-- Qué datos son canónicos.
-- Qué datos son derivados.
-- Cómo se integra con Codebase Memory.
-- Cómo se conserva consistencia entre Git, Codebase Memory y Rationale.
-- Cómo se recupera contexto con bajo costo.
-- Cómo se instrumenta el producto.
-- Cómo se prueba en su propio repositorio.
-- Cómo se prueba en un monorepo real.
-- Cómo se instala inicialmente para desarrollo.
-- Qué deberá empaquetarse más adelante.
-- Qué decisiones necesitan investigación antes de escribirse en código.
+- Which components the system needs.
+- Which data is canonical.
+- Which data is derived.
+- How it integrates with Codebase Memory.
+- How consistency is kept between Git, Codebase Memory, and Rationale.
+- How context is retrieved at low cost.
+- How the product is instrumented.
+- How it is tested on its own repository.
+- How it is tested on a real monorepo.
+- How it is initially installed for development.
+- What must be packaged later.
+- Which decisions need research before they are written into code.
 
-No debe intentar resolver todavía:
+It must not yet try to solve:
 
-- El instalador universal definitivo.
-- Una interfaz gráfica final.
-- Una landing page.
-- Sincronización remota entre organizaciones.
-- Un servicio SaaS.
-- Un marketplace.
-- Una base de datos central.
-- Facturación.
-- Una extensión completa para cada IDE.
-- Compatibilidad perfecta con todos los agentes.
-- Un protocolo público estable.
-- Linaje conceptual automático perfecto.
+- The final universal installer.
+- A final graphical interface.
+- A landing page.
+- Remote synchronization between organizations.
+- A SaaS service.
+- A marketplace.
+- A central database.
+- Billing.
+- A full extension for every IDE.
+- Perfect compatibility with every agent.
+- A stable public protocol.
+- Perfect automatic conceptual lineage.
 
 ---
 
-# 3. Orden obligatorio del proyecto
+# 3. Mandatory project order
 
-El orden de trabajo será:
+The order of work will be:
 
 ```text
-1. Consolidar concepto
-2. Analizar Codebase Memory
-3. Analizar entorno local
-4. Seleccionar lenguaje y toolchain
-5. Construir vertical mínima
-6. Instrumentar
-7. Dogfood en Rationale
-8. Ejecutar piloto en monorepo real
-9. Corregir arquitectura
-10. Completar herramienta
-11. Empaquetar macOS, Linux y Windows
-12. Diseñar experiencia de instalación
-13. Publicar documentación de usuario
-14. Crear landing page
+1. Consolidate the concept
+2. Analyze Codebase Memory
+3. Analyze the local environment
+4. Select language and toolchain
+5. Build a minimal vertical slice
+6. Instrument
+7. Dogfood on Rationale
+8. Run a pilot on a real monorepo
+9. Correct the architecture
+10. Complete the tool
+11. Package for macOS, Linux, and Windows
+12. Design the installation experience
+13. Publish user documentation
+14. Create the landing page
 ```
 
-La landing page no forma parte de la primera construcción.
+The landing page is not part of the first build.
 
-El empaquetado multiplataforma tampoco debe bloquear la validación del núcleo.
+Multi-platform packaging must not block validation of the core either.
 
-Primero se debe demostrar que la herramienta:
+First it must be shown that the tool:
 
-- Recupera contexto correcto.
-- Reduce contexto manual.
-- No introduce falsedades.
-- Respeta revisiones.
-- Se integra de forma útil con Codebase Memory.
-- Mejora resultados reales de agentes.
+- Retrieves the right context.
+- Reduces manual context.
+- Does not introduce falsehoods.
+- Respects revisions.
+- Integrates usefully with Codebase Memory.
+- Improves real agent results.
 
 ---
 
-# 4. Restricciones fundamentales
+# 4. Fundamental constraints
 
 ## 4.1 Local-first
 
-El núcleo debe poder ejecutarse localmente.
+The core must be able to run locally.
 
-No deberá requerir obligatoriamente:
+It must not require:
 
-- API propia.
-- Servidor remoto.
-- Base de datos administrada.
-- Servicio de embeddings.
-- Cuenta de Rationale.
+- Its own API.
+- A remote server.
+- A managed database.
+- An embeddings service.
+- A Rationale account.
 - Docker.
-- Clúster.
-- Telemetría central.
-- Licencia de pago.
+- A cluster.
+- Central telemetry.
+- A paid license.
 
-Los agentes externos utilizados para programar pueden tener sus propios costos o suscripciones.
+The external agents used for programming may have their own costs or
+subscriptions.
 
-Esos costos no deben transformarse en una dependencia del runtime de Rationale.
+Those costs must not become a runtime dependency of Rationale.
 
-## 4.2 Sin LLM embebido obligatorio
+## 4.2 No mandatory embedded LLM
 
-Rationale no necesita incorporar un modelo de lenguaje para existir.
+Rationale does not need to embed a language model in order to exist.
 
-El modelo que ya usa el desarrollador será el consumidor del contexto.
+The model the developer already uses will be the consumer of the context.
 
-El núcleo debe ser capaz de:
+The core must be able to:
 
-- Leer registros.
-- Validar esquemas.
-- Resolver alcance.
-- Evaluar autoridad.
-- Consultar proveedores.
-- Construir paquetes.
-- Aplicar presupuestos.
-- Detectar inconsistencias.
-- Emitir métricas.
+- Read records.
+- Validate schemas.
+- Resolve scope.
+- Evaluate authority.
+- Query providers.
+- Build packets.
+- Apply budgets.
+- Detect inconsistencies.
+- Emit metrics.
 
-sin realizar una llamada externa a un LLM.
+without making an external call to an LLM.
 
-Un modelo local o remoto puede utilizarse de manera opcional para:
+A local or remote model may optionally be used to:
 
-- Proponer un resumen.
-- Proponer Claims.
-- Proponer un Subject.
-- Ayudar en arqueología.
-- Clasificar candidatos.
+- Propose a summary.
+- Propose Claims.
+- Propose a Subject.
+- Help with archaeology.
+- Classify candidates.
 
-Pero sus resultados deben entrar como `inferred` y nunca como autoridad automática.
+But its results must enter as `inferred` and never as automatic authority.
 
-## 4.3 Offline después de instalar dependencias
+## 4.3 Offline after installing dependencies
 
-El flujo principal debe poder funcionar sin conexión cuando:
+The main flow must be able to work offline when:
 
-- El código está disponible localmente.
-- Codebase Memory está instalado.
-- Las dependencias necesarias fueron descargadas.
-- El agente puede operar sin red o no necesita nuevas llamadas externas.
+- The code is available locally.
+- Codebase Memory is installed.
+- The required dependencies have been downloaded.
+- The agent can operate without a network or needs no new external calls.
 
-## 4.4 Modularidad
+## 4.4 Modularity
 
-Cada componente debe tener:
+Every component must have:
 
-- Responsabilidad clara.
-- Contrato explícito.
-- Pruebas propias.
-- Dependencias dirigidas.
-- Capacidad de reemplazo.
+- A clear responsibility.
+- An explicit contract.
+- Its own tests.
+- Directed dependencies.
+- The ability to be replaced.
 
-La modularidad no significa crear decenas de paquetes prematuramente.
+Modularity does not mean creating dozens of packages prematurely.
 
-La implementación inicial deberá preferir un monolito modular.
+The initial implementation must prefer a modular monolith.
 
-## 4.5 Escalabilidad razonable
+## 4.5 Reasonable scalability
 
-La primera meta no es indexar la totalidad del software mundial.
+The first goal is not to index all the software in the world.
 
-Debe escalar correctamente para:
+It must scale correctly for:
 
-- Repositorios pequeños.
-- Monorepos medianos.
-- Proyectos con múltiples paquetes.
-- Un proyecto empresarial real.
-- Varios agentes locales.
-- Miles de registros causales a largo plazo.
+- Small repositories.
+- Medium monorepos.
+- Projects with multiple packages.
+- A real enterprise project.
+- Several local agents.
+- Thousands of causal records over the long term.
 
-La arquitectura debe medir antes de prometer.
+The architecture must measure before promising.
 
-## 4.6 Fallar con humildad
+## 4.6 Fail with humility
 
-Cuando no exista cobertura suficiente, Rationale debe decirlo.
+When there is not enough coverage, Rationale must say so.
 
-No puede convertir:
+It cannot turn:
 
 ```text
-No encontré una relación.
+I did not find a relationship.
 ```
 
-en:
+into:
 
 ```text
-La relación no existe.
+The relationship does not exist.
 ```
 
-No puede convertir:
+It cannot turn:
 
 ```text
-El índice está atrasado.
+The index is behind.
 ```
 
-en:
+into:
 
 ```text
-La decisión sigue vigente.
+The decision still holds.
 ```
 
 ---
 
-# 5. Entorno principal de desarrollo
+# 5. Main development environment
 
-El entorno principal conocido es:
+The known main environment is:
 
 ```text
-Equipo: MacBook Air
+Machine: MacBook Air
 Chip: Apple M4
-Arquitectura: arm64 / Apple Silicon
-Memoria: 16 GB RAM
-Sistema operativo: macOS
+Architecture: arm64 / Apple Silicon
+Memory: 16 GB RAM
+Operating system: macOS
 ```
 
-La versión exacta de macOS y el almacenamiento disponible deben registrarse al iniciar el repositorio.
+The exact macOS version and available storage must be recorded when the
+repository is started.
 
-El perfil no debe guardar:
+The profile must not store:
 
-- Número de serie.
+- Serial number.
 - Hardware UUID.
-- Identificadores privados.
-- Rutas personales innecesarias.
+- Private identifiers.
+- Unnecessary personal paths.
 - Tokens.
-- Credenciales.
+- Credentials.
 
-## 5.1 Comandos de inventario
+## 5.1 Inventory commands
 
 ```bash
 system_profiler SPHardwareDataType
@@ -339,72 +357,73 @@ clang --version
 xcode-select -p
 ```
 
-Se deberá crear un script reproducible:
+A reproducible script must be created:
 
 ```text
 scripts/dev/collect-environment.sh
 ```
 
-El script producirá:
+The script will produce:
 
 ```text
 .rationale-local/environment.json
 ```
 
-Esta carpeta estará en `.gitignore`.
+That folder will be in `.gitignore`.
 
-Una versión anonimizada podrá documentarse en:
+An anonymized version may be documented in:
 
 ```text
 docs/environment/reference-development-machine.md
 ```
 
-## 5.2 Implicaciones para el diseño
+## 5.2 Design implications
 
-En una MacBook Air M4 con 16 GB:
+On a MacBook Air M4 with 16 GB:
 
-- La arquitectura debe evitar procesos residentes innecesarios.
-- No debe duplicar índices completos en memoria.
-- Las pruebas de gran escala deben tener límites.
-- Los benchmarks deben registrar memoria pico.
-- El daemon, si existe, debe ser opcional y austero.
-- Las operaciones frecuentes deben usar caché local.
-- El sistema debe soportar Apple Silicon desde el inicio.
-- El desarrollo inicial puede priorizar macOS arm64.
-- La implementación no debe usar APIs exclusivas de macOS en el núcleo.
+- The architecture must avoid unnecessary resident processes.
+- It must not duplicate full indexes in memory.
+- Large-scale tests must have limits.
+- Benchmarks must record peak memory.
+- The daemon, if it exists, must be optional and lean.
+- Frequent operations must use a local cache.
+- The system must support Apple Silicon from the start.
+- Initial development may prioritize macOS arm64.
+- The implementation must not use macOS-only APIs in the core.
 
 ---
 
-# 6. Codebase Memory como objeto de investigación
+# 6. Codebase Memory as an object of research
 
-Codebase Memory no será tratado únicamente como una dependencia.
+Codebase Memory will not be treated only as a dependency.
 
-Será también un sistema que debe estudiarse.
+It will also be a system to study.
 
-El repositorio oficial deberá clonarse para comprender:
+The official repository must be cloned to understand:
 
-- Cómo descubre proyectos.
-- Cómo identifica workspaces.
-- Cómo almacena el grafo.
-- Cómo expone MCP.
-- Cómo ejecuta CLI.
-- Cómo coordina daemon y watchers.
-- Cómo representa revisiones.
-- Cómo reporta cobertura.
-- Cómo resuelve símbolos.
-- Cómo calcula impacto.
-- Cómo maneja monorepos.
-- Cómo instala configuraciones de agentes.
-- Cómo empaqueta binarios.
-- Cómo protege stdout de MCP.
-- Cómo implementa deadlines.
-- Cómo falla cuando no tiene información.
+- How it discovers projects.
+- How it identifies workspaces.
+- How it stores the graph.
+- How it exposes MCP.
+- How it runs the CLI.
+- How it coordinates the daemon and watchers.
+- How it represents revisions.
+- How it reports coverage.
+- How it resolves symbols.
+- How it computes impact.
+- How it handles monorepos.
+- How it installs agent configurations.
+- How it packages binaries.
+- How it protects MCP stdout.
+- How it implements deadlines.
+- How it fails when it has no information.
 
-## 6.1 Estructura del workspace de investigación
+## 6.1 Research workspace layout
 
-No se debe copiar Codebase Memory dentro del código fuente de Rationale como una dependencia accidental.
+Codebase Memory must not be copied into Rationale's source code as an
+accidental dependency.
 
-Se recomienda:
+The recommended layout is:
 
 ```text
 rationale-lab/
@@ -417,21 +436,21 @@ rationale-lab/
     └── historical-cases/
 ```
 
-`upstream/codebase-memory-mcp/` será:
+`upstream/codebase-memory-mcp/` will be:
 
-- Un clon independiente.
-- De solo lectura para el trabajo normal.
-- Fijado a un commit.
-- Actualizable conscientemente.
-- No incluido automáticamente en los releases de Rationale.
+- An independent clone.
+- Read-only for normal work.
+- Pinned to a commit.
+- Updated deliberately.
+- Not automatically included in Rationale releases.
 
-La revisión analizada se registrará en:
+The analyzed revision will be recorded in:
 
 ```text
 docs/research/codebase-memory/source-lock.yaml
 ```
 
-Ejemplo:
+Example:
 
 ```yaml
 repository: DeusData/codebase-memory-mcp
@@ -441,34 +460,34 @@ analyzed_at: 2026-07-24
 binary_version: <detected>
 ```
 
-## 6.2 Dos formas de usar Codebase Memory durante el desarrollo
+## 6.2 Two ways to use Codebase Memory during development
 
-### Binario publicado
+### Published binary
 
-Se utilizará para:
+It will be used to:
 
-- Indexar Rationale.
-- Indexar el clon de Codebase Memory.
-- Obtener una referencia de comportamiento estable.
-- Evitar que un build local modificado contamine la observación.
-- Usar sus herramientas desde Claude Code, Codex u otros agentes.
+- Index Rationale.
+- Index the Codebase Memory clone.
+- Get a stable behavioral reference.
+- Keep a modified local build from contaminating the observation.
+- Use its tools from Claude Code, Codex, or other agents.
 
-### Build desde código fuente
+### Build from source
 
-Se utilizará para:
+It will be used to:
 
-- Entender su arquitectura.
-- Ejecutar su suite.
-- Reproducir problemas.
-- Leer implementaciones.
-- Confirmar contratos.
-- Probar compatibilidad.
-- Investigar rendimiento.
-- Comparar CLI contra MCP.
+- Understand its architecture.
+- Run its suite.
+- Reproduce problems.
+- Read implementations.
+- Confirm contracts.
+- Test compatibility.
+- Investigate performance.
+- Compare CLI against MCP.
 
-Ambos resultados deben distinguirse.
+The two kinds of results must be kept apart.
 
-## 6.3 Bootstrap de investigación
+## 6.3 Research bootstrap
 
 ```bash
 mkdir -p ../upstream
@@ -479,64 +498,66 @@ scripts/build.sh
 make -f Makefile.cbm test
 ```
 
-Los comandos exactos pueden cambiar.
+The exact commands may change.
 
-Los agentes deben leer primero la documentación actual del repositorio.
+Agents must read the repository's current documentation first.
 
-## 6.4 Codebase Memory se indexará a sí mismo
+## 6.4 Codebase Memory will index itself
 
-El análisis inicial debe incluir:
+The initial analysis must include:
 
 ```text
-A. Indexar codebase-memory-mcp con el binario oficial.
-B. Consultar su arquitectura.
-C. Consultar los módulos MCP, store, daemon, watcher, pipeline y CLI.
-D. Comparar los resultados estructurales contra el código.
-E. Registrar errores, omisiones o cobertura parcial.
+A. Index codebase-memory-mcp with the official binary.
+B. Query its architecture.
+C. Query the MCP, store, daemon, watcher, pipeline, and CLI modules.
+D. Compare the structural results against the code.
+E. Record errors, omissions, or partial coverage.
 ```
 
-Esto permitirá observar:
+This will make it possible to observe:
 
-- Qué tan confiable es el proveedor.
-- Qué metadatos entrega.
-- Qué llamadas son más útiles.
-- Qué llamadas son costosas.
-- Qué limitaciones existen.
-- Qué datos necesita el adaptador.
+- How reliable the provider is.
+- Which metadata it returns.
+- Which calls are most useful.
+- Which calls are expensive.
+- Which limitations exist.
+- Which data the adapter needs.
 
-## 6.5 Rationale también será indexado desde el primer día
+## 6.5 Rationale will also be indexed from day one
 
-Antes de cada cambio no trivial, los agentes deberán poder consultar:
+Before every non-trivial change, agents must be able to query:
 
-- Arquitectura actual.
-- Símbolos.
-- Dependencias.
-- Impacto.
-- Cobertura.
-- Cambios no confirmados.
+- Current architecture.
+- Symbols.
+- Dependencies.
+- Impact.
+- Coverage.
+- Uncommitted changes.
 
-Codebase Memory funcionará como soporte de construcción incluso antes de que Rationale pueda utilizarse a sí mismo.
+Codebase Memory will support the build even before Rationale can be used on
+itself.
 
-## 6.6 Hechos observados que deben revalidarse
+## 6.6 Observed facts that must be revalidated
 
-En la revisión analizada durante la creación de este documento, Codebase Memory declara:
+In the revision analyzed while this document was written, Codebase Memory
+declares:
 
-- Implementación principal en C.
-- Binario estático para macOS, Linux y Windows.
-- Uso local.
+- Main implementation in C.
+- Static binary for macOS, Linux, and Windows.
+- Local use.
 - SQLite.
 - Tree-sitter.
-- MCP y CLI.
-- Daemon compartido.
+- MCP and CLI.
+- Shared daemon.
 - Watchers.
-- Soporte de workspaces y relaciones entre paquetes con límites de cobertura.
-- Gestión de ADR.
-- Detección de cambios.
-- Índice derivado.
-- Hooks no bloqueantes.
-- Distribución sin runtime obligatorio.
+- Support for workspaces and cross-package relationships, with coverage limits.
+- ADR management.
+- Change detection.
+- Derived index.
+- Non-blocking hooks.
+- Distribution with no required runtime.
 
-Su build actual muestra módulos separados para:
+Its current build shows separate modules for:
 
 - Foundation.
 - Store.
@@ -550,17 +571,19 @@ Su build actual muestra módulos separados para:
 - Git.
 - CLI.
 - UI.
-- Tests y reproducciones de bugs.
+- Tests and bug reproductions.
 
-Estos hechos sirven para preparar preguntas.
+These facts help prepare questions.
 
-No autorizan a copiar su arquitectura sin evaluación.
+They do not authorize copying its architecture without evaluation.
 
 ---
 
-# 7. Protocolo de análisis de Codebase Memory
 
-Antes de congelar la arquitectura de implementación, se deben producir los siguientes documentos.
+# 7. Codebase Memory analysis protocol
+
+Before freezing the implementation architecture, the following documents must
+be produced.
 
 ```text
 docs/research/codebase-memory/
@@ -579,143 +602,144 @@ docs/research/codebase-memory/
 └── 12-integration-recommendation.md
 ```
 
-Cada análisis deberá contener:
+Each analysis must contain:
 
 ```text
 Observed:
-Qué hace realmente.
+What it actually does.
 
 Claimed:
-Qué promete la documentación.
+What the documentation promises.
 
 Verified:
-Qué fue reproducido.
+What was reproduced.
 
 Unknown:
-Qué todavía no está claro.
+What is still unclear.
 
 Risk:
-Qué podría afectar a Rationale.
+What could affect Rationale.
 
 Decision impact:
-Qué decisión arquitectónica depende de esto.
+Which architectural decision depends on this.
 ```
 
-## 7.1 Preguntas obligatorias
+## 7.1 Mandatory questions
 
-- ¿Cuál es la forma más estable de invocarlo desde otro proceso?
-- ¿MCP cliente-a-servidor es mejor que CLI subprocess para la primera vertical?
-- ¿Cómo reporta el proyecto indexado?
-- ¿Cómo reporta la revisión indexada?
-- ¿Cómo distingue working tree de HEAD?
-- ¿Cómo reporta cobertura parcial?
-- ¿Puede consultarse sin iniciar daemon?
-- ¿Qué latencia tiene el CLI frente a una sesión MCP persistente?
-- ¿Qué ocurre si dos agentes lo usan?
-- ¿Qué ocurre si se actualiza el binario durante una sesión?
-- ¿Qué datos pueden considerarse públicos?
-- ¿Qué datos pertenecen a internals inestables?
-- ¿Qué límites reales tiene en monorepos?
-- ¿Qué contratos pueden testearse sin leer su SQLite directamente?
-- ¿Qué compatibilidad existe con Windows y Linux?
-- ¿Cómo instala hooks e instrucciones?
-- ¿Cómo desinstala lo que modifica?
-- ¿Qué puede reutilizar Rationale como patrón?
-- ¿Qué debe permanecer completamente desacoplado?
+- What is the most stable way to invoke it from another process?
+- Is client-to-server MCP better than a CLI subprocess for the first vertical
+  slice?
+- How does it report the indexed project?
+- How does it report the indexed revision?
+- How does it tell the working tree apart from HEAD?
+- How does it report partial coverage?
+- Can it be queried without starting the daemon?
+- What latency does the CLI have compared with a persistent MCP session?
+- What happens if two agents use it?
+- What happens if the binary is updated during a session?
+- Which data can be considered public?
+- Which data belongs to unstable internals?
+- What are its real limits in monorepos?
+- Which contracts can be tested without reading its SQLite directly?
+- What compatibility exists with Windows and Linux?
+- How does it install hooks and instructions?
+- How does it uninstall what it modifies?
+- What can Rationale reuse as a pattern?
+- What must stay completely decoupled?
 
-## 7.2 Regla de integración
+## 7.2 Integration rule
 
-Rationale no deberá:
+Rationale must not:
 
-- Leer directamente tablas internas de Codebase Memory.
-- Importar headers internos.
-- Asumir rutas privadas.
-- Copiar su cache.
-- Compartir locks internos.
-- Enlazar contra su binario como librería sin un contrato aprobado.
-- Depender de nombres de nodos no documentados sin capability negotiation.
+- Read Codebase Memory's internal tables directly.
+- Import internal headers.
+- Assume private paths.
+- Copy its cache.
+- Share internal locks.
+- Link against its binary as a library without an approved contract.
+- Depend on undocumented node names without capability negotiation.
 
-La frontera preferida será pública:
+The preferred boundary will be public:
 
 ```text
 MCP
-o
-CLI estructurado
+or
+structured CLI
 ```
 
-La selección se decidirá mediante un spike.
+The choice will be decided through a spike.
 
 ---
 
-# 8. Selección del lenguaje
+# 8. Language selection
 
-El lenguaje del núcleo no está decidido en la arquitectura 0.1.
+The core language is not decided in architecture 0.1.
 
-Esto es intencional.
+This is intentional.
 
-No debe elegirse únicamente porque:
+It must not be chosen only because:
 
-- Codebase Memory usa C.
-- Existe un SDK popular.
-- Un agente escribe mejor cierto lenguaje.
-- El prototipo se siente rápido.
-- Una persona prefiere un lenguaje.
+- Codebase Memory uses C.
+- A popular SDK exists.
+- An agent writes a certain language better.
+- The prototype feels fast.
+- A person prefers a language.
 
-Debe elegirse por evidencia.
+It must be chosen on evidence.
 
-## 8.1 Candidatos iniciales
+## 8.1 Initial candidates
 
-La investigación deberá evaluar al menos:
+The research must evaluate at least:
 
 - Rust.
 - Go.
 - C.
-- TypeScript/Node.js para prototipo o tooling.
-- Otra opción únicamente si existe una razón concreta.
+- TypeScript/Node.js for prototyping or tooling.
+- Another option only if there is a concrete reason.
 
-Python puede utilizarse para:
+Python may be used for:
 
-- Experimentos.
+- Experiments.
 - Harnesses.
-- Análisis de datos.
+- Data analysis.
 - Scripts.
 
-No debe convertirse automáticamente en el núcleo distribuido.
+It must not automatically become the distributed core.
 
-## 8.2 Criterios ponderados
+## 8.2 Weighted criteria
 
 ```text
-20% Seguridad de memoria y confiabilidad
-15% Distribución como binario
-15% Rendimiento y latencia
-10% MCP y JSON-RPC
-10% SQLite y filesystem
-10% Compatibilidad macOS/Linux/Windows
-10% Mantenibilidad con agentes
-5%  Tiempo de compilación y desarrollo
-5%  Interoperabilidad con procesos C
+20% Memory safety and reliability
+15% Distribution as a binary
+15% Performance and latency
+10% MCP and JSON-RPC
+10% SQLite and filesystem
+10% macOS/Linux/Windows compatibility
+10% Maintainability with agents
+5%  Compile time and development speed
+5%  Interoperability with C processes
 ```
 
-Cada candidato debe probar:
+Each candidate must prove:
 
-- Servidor MCP mínimo.
-- Cliente hacia Codebase Memory o wrapper CLI.
-- Lectura y validación de registros.
+- A minimal MCP server.
+- A client for Codebase Memory or a CLI wrapper.
+- Reading and validating records.
 - SQLite.
 - File locking.
-- Subprocess.
-- Cancelación.
-- Deadline.
-- Build arm64.
-- Cross-compilation o estrategia de CI.
+- Subprocesses.
+- Cancellation.
+- Deadlines.
+- arm64 build.
+- Cross-compilation or a CI strategy.
 - Binary size.
 - Startup time.
-- Memoria.
+- Memory.
 - Test tooling.
-- Fuzzing o property tests.
+- Fuzzing or property tests.
 - Packaging.
 
-## 8.3 Entregables
+## 8.3 Deliverables
 
 ```text
 docs/research/language/
@@ -726,34 +750,34 @@ docs/research/language/
 └── ADR-0001-core-language.md
 ```
 
-La decisión debe registrar:
+The decision must record:
 
-- Evidencia.
+- Evidence.
 - Tradeoffs.
-- Alternativas.
-- Por qué se descartaron.
-- Riesgo de reversión.
-- Fecha de revisión.
+- Alternatives.
+- Why they were discarded.
+- Reversal risk.
+- Review date.
 
-## 8.4 Arquitectura independiente del lenguaje
+## 8.4 Language-independent architecture
 
-Hasta aprobar el ADR:
+Until the ADR is approved:
 
-- Los nombres de módulos serán conceptuales.
-- Las interfaces usarán pseudocódigo.
-- No se definirán crates, packages o modules definitivos.
-- Los scripts no asumirán un package manager.
-- El CI tendrá placeholders.
-- La estructura evitará acoplar documentación a Rust, Go o C.
+- Module names will be conceptual.
+- Interfaces will use pseudocode.
+- No final crates, packages, or modules will be defined.
+- Scripts will not assume a package manager.
+- CI will have placeholders.
+- The layout will avoid coupling documentation to Rust, Go, or C.
 
 ---
 
-# 9. Vista general del sistema
+# 9. System overview
 
 ```text
 ┌──────────────────────────────────────────────────────┐
 │ Coding Agent                                         │
-│ Claude Code / Codex / otro cliente MCP               │
+│ Claude Code / Codex / other MCP client               │
 └───────────────────────────┬──────────────────────────┘
                             │
                             │ MCP / CLI / hook surface
@@ -784,7 +808,7 @@ Hasta aprobar el ADR:
                 ▼                   ▼
 ┌──────────────────────────┐  ┌────────────────────────┐
 │ Structural Provider      │  │ Rationale Data         │
-│ Adapter                   │  │                        │
+│ Adapter                  │  │                        │
 │                          │  │ Canonical Git records  │
 │ Codebase Memory          │  │ Local derived index    │
 │ Future providers         │  │ Session state          │
@@ -798,17 +822,17 @@ Hasta aprobar el ADR:
 
 ---
 
-# 10. Capas de datos
+# 10. Data layers
 
-## 10.1 Capa canónica compartida
+## 10.1 Shared canonical layer
 
-Ubicación:
+Location:
 
 ```text
 <project-root>/.rationale/
 ```
 
-Contendrá únicamente datos portables y revisables.
+It will contain only portable, reviewable data.
 
 ```text
 .rationale/
@@ -821,118 +845,118 @@ Contendrá únicamente datos portables y revisables.
 └── migrations/
 ```
 
-Características:
+Characteristics:
 
-- Versionada en Git.
-- Revisable en PR.
-- Legible sin la herramienta.
-- Sin cache.
-- Sin embeddings obligatorios.
-- Sin paths absolutos de una máquina.
-- Sin tokens.
-- Sin datos secretos innecesarios.
-- Con schema version.
+- Versioned in Git.
+- Reviewable in a PR.
+- Readable without the tool.
+- No cache.
+- No mandatory embeddings.
+- No machine-specific absolute paths.
+- No tokens.
+- No unnecessary secret data.
+- With a schema version.
 
-## 10.2 Capa derivada local
+## 10.2 Local derived layer
 
-Ubicación conceptual:
+Conceptual location:
 
 ```text
 <user-cache>/rationale/projects/<project-id>/
 ```
 
-En macOS deberá respetarse una ruta apropiada.
+On macOS an appropriate path must be respected.
 
-La decisión exacta se realizará durante implementación.
+The exact decision will be made during implementation.
 
-Podría mapearse a:
+It could map to:
 
 ```text
 ~/Library/Caches/Rationale/
 ```
 
-o a un root configurable compatible con XDG.
+or to a configurable XDG-compatible root.
 
-Contendrá:
+It will contain:
 
 - SQLite.
-- Resoluciones de bindings.
-- Índices FTS.
+- Binding resolutions.
+- FTS indexes.
 - Scores.
-- Cobertura.
+- Coverage.
 - Provider capabilities.
-- Revisión indexada.
-- Cache de paquetes.
-- Métricas locales.
-- Estado de hooks.
+- Indexed revision.
+- Packet cache.
+- Local metrics.
+- Hook state.
 - Locks.
-- Logs privados.
+- Private logs.
 
-Será:
+It will be:
 
 - Regenerable.
-- No versionada.
-- Específica de máquina.
-- Borrable.
-- Migrable.
-- Con permisos restrictivos.
+- Not versioned.
+- Machine-specific.
+- Deletable.
+- Migratable.
+- Restrictively permissioned.
 
-## 10.3 Capa efímera
+## 10.3 Ephemeral layer
 
-Contendrá:
+It will contain:
 
-- Intent actual.
+- Current intent.
 - Targets.
-- Hipótesis.
-- Señales.
+- Hypotheses.
+- Signals.
 - Context packet.
 - Tool call state.
-- Drafts de Records.
-- Resultado provisional de evaluación.
+- Record drafts.
+- Provisional evaluation result.
 
-Debe tener:
+It must have:
 
-- TTL.
-- Identificador de sesión.
-- Revisión base.
-- Limpieza segura.
-- No promoción automática a conocimiento aprobado.
+- A TTL.
+- A session identifier.
+- A base revision.
+- Safe cleanup.
+- No automatic promotion to approved knowledge.
 
 ---
 
-# 11. Módulos conceptuales
+# 11. Conceptual modules
 
 ## 11.1 Application Boundary
 
-Responsabilidades:
+Responsibilities:
 
-- Exponer MCP.
-- Exponer CLI.
-- Validar argumentos.
-- Negociar versión.
-- Formatear respuestas.
-- Aplicar deadlines externos.
-- Mantener stdout de MCP limpio.
-- Enviar logs a stderr o archivo.
-- Traducir errores internos a estados explícitos.
+- Expose MCP.
+- Expose the CLI.
+- Validate arguments.
+- Negotiate versions.
+- Format responses.
+- Apply external deadlines.
+- Keep MCP stdout clean.
+- Send logs to stderr or a file.
+- Translate internal errors into explicit states.
 
-No contiene lógica de dominio.
+It contains no domain logic.
 
 ## 11.2 Configuration
 
-Responsabilidades:
+Responsibilities:
 
-- Encontrar project root.
-- Leer `.rationale/config.yaml`.
-- Resolver cache root.
-- Aplicar límites.
-- Leer modo de operación.
-- Activar proveedores.
-- Configurar privacidad.
-- Configurar políticas de bloqueo.
-- Configurar hooks opcionales.
+- Find the project root.
+- Read `.rationale/config.yaml`.
+- Resolve the cache root.
+- Apply limits.
+- Read the operating mode.
+- Enable providers.
+- Configure privacy.
+- Configure blocking policies.
+- Configure optional hooks.
 
-Debe soportar:
+It must support:
 
 ```text
 project config
@@ -941,22 +965,22 @@ environment overrides
 safe defaults
 ```
 
-La precedencia debe documentarse.
+The precedence must be documented.
 
 ## 11.3 Project and Workspace Discovery
 
-Responsabilidades:
+Responsibilities:
 
-- Detectar raíz Git.
-- Detectar monorepo.
-- Identificar packages.
-- Resolver ProjectScope.
-- Normalizar paths.
-- Distinguir workspace root de package.
-- Mapear target a scopes.
-- Evitar escapar del root.
+- Detect the Git root.
+- Detect a monorepo.
+- Identify packages.
+- Resolve ProjectScope.
+- Normalize paths.
+- Tell the workspace root apart from a package.
+- Map a target to scopes.
+- Avoid escaping the root.
 
-Debe comprender que:
+It must understand that:
 
 ```text
 repository != package
@@ -966,17 +990,17 @@ domain != subject
 
 ## 11.4 Revision Coordinator
 
-Responsabilidades:
+Responsibilities:
 
-- Leer Git HEAD.
-- Identificar working tree.
-- Obtener revisión del proveedor.
-- Obtener revisión de assessments.
-- Calcular consistency status.
-- Impedir respuestas que aparenten exactitud cuando las revisiones no coinciden.
-- Activar fast path o revalidación.
+- Read Git HEAD.
+- Identify the working tree.
+- Get the provider revision.
+- Get the assessments revision.
+- Compute the consistency status.
+- Prevent responses that look exact when the revisions do not match.
+- Trigger the fast path or revalidation.
 
-Entrada conceptual:
+Conceptual input:
 
 ```json
 {
@@ -987,7 +1011,7 @@ Entrada conceptual:
 }
 ```
 
-Salida:
+Output:
 
 ```text
 exact
@@ -1000,20 +1024,20 @@ unknown
 
 ## 11.5 Structural Provider Adapter
 
-Responsabilidades:
+Responsibilities:
 
 - Capability negotiation.
-- Resolver targets.
-- Obtener relaciones.
-- Obtener impacto.
-- Obtener cambios.
-- Obtener coverage.
-- Obtener provider revision.
-- Producir evidencia estructural.
-- Aplicar timeout.
-- Normalizar errores.
+- Resolve targets.
+- Get relationships.
+- Get impact.
+- Get changes.
+- Get coverage.
+- Get the provider revision.
+- Produce structural evidence.
+- Apply timeouts.
+- Normalize errors.
 
-Contrato conceptual:
+Conceptual contract:
 
 ```text
 capabilities()
@@ -1027,7 +1051,7 @@ coverage()
 architecture()
 ```
 
-Cada respuesta debe incluir:
+Every response must include:
 
 ```text
 provider
@@ -1043,36 +1067,36 @@ latency
 
 ## 11.6 Canonical Store
 
-Responsabilidades:
+Responsibilities:
 
-- Leer registros.
-- Validar schemas.
-- Escribir cambios atómicos.
-- Mantener schema versions.
-- Proteger IDs.
-- Mantener supersession.
-- Resolver approvals.
-- No mezclar cache.
+- Read records.
+- Validate schemas.
+- Write atomic changes.
+- Maintain schema versions.
+- Protect IDs.
+- Maintain supersession.
+- Resolve approvals.
+- Not mix in cache.
 
 ## 11.7 Derived Index
 
-Responsabilidades:
+Responsibilities:
 
-- Indexar Records.
+- Index Records.
 - FTS.
 - Aliases.
 - Scope paths.
 - Binding resolutions.
 - Candidate retrieval.
-- Deduplicación.
-- Cache de assessments.
-- Invalidación por revisión.
+- Deduplication.
+- Assessment cache.
+- Invalidation by revision.
 
-La base derivada nunca puede ser la única copia de una decisión.
+The derived database can never be the only copy of a decision.
 
 ## 11.8 Subject Resolver
 
-Orden inicial:
+Initial order:
 
 ```text
 1. Exact ID
@@ -1083,40 +1107,41 @@ Orden inicial:
 6. Optional semantic candidates
 ```
 
-No puede:
+It cannot:
 
-- Crear un Subject automáticamente por similitud.
-- Fusionar Subjects automáticamente.
-- Tratar un embedding como identidad.
+- Create a Subject automatically by similarity.
+- Merge Subjects automatically.
+- Treat an embedding as identity.
 
-Cuando proponga uno nuevo y haya candidatos similares, deberá requerir `novelty_reason`.
+When it proposes a new one and similar candidates exist, it must require
+`novelty_reason`.
 
 ## 11.9 Binding Resolver
 
-Responsabilidades:
+Responsibilities:
 
-- Leer declaraciones portables.
-- Resolverlas contra proveedor actual.
-- Registrar revisión.
-- Registrar coverage.
-- Detectar stale/unresolved.
-- Mantener historial derivado.
-- Resolver package/workspace scope.
-- No editar la declaración canónica de forma silenciosa.
+- Read portable declarations.
+- Resolve them against the current provider.
+- Record the revision.
+- Record coverage.
+- Detect stale/unresolved bindings.
+- Keep derived history.
+- Resolve package/workspace scope.
+- Not silently edit the canonical declaration.
 
 ## 11.10 Trust, Authority and Policy Evaluator
 
-Responsabilidades:
+Responsibilities:
 
-- Diferenciar observado, declarado e inferido.
-- Resolver Approval.
-- Verificar autoridad por dominio.
-- Calcular aplicabilidad.
-- Identificar contradicciones.
-- Decidir atención.
-- Aplicar reglas de bloqueo.
+- Distinguish observed, declared, and inferred.
+- Resolve Approval.
+- Verify authority per domain.
+- Compute applicability.
+- Identify contradictions.
+- Decide attention.
+- Apply blocking rules.
 
-Solo puede bloquear cuando:
+It may only block when:
 
 ```text
 critical
@@ -1128,40 +1153,40 @@ AND deterministic-contradiction
 
 ## 11.11 Context Compiler
 
-Responsabilidades:
+Responsibilities:
 
-- Interpretar target.
-- Interpretar intención si existe.
-- Recuperar candidatos.
-- Filtrar por alcance.
-- Filtrar por aplicabilidad.
-- Priorizar restricciones.
-- Deduplicar.
-- Respetar token budget.
-- Emitir incertidumbre.
-- Registrar por qué incluyó cada elemento.
+- Interpret the target.
+- Interpret the intent, if any.
+- Retrieve candidates.
+- Filter by scope.
+- Filter by applicability.
+- Prioritize constraints.
+- Deduplicate.
+- Respect the token budget.
+- Emit uncertainty.
+- Record why it included each item.
 
-No debe generar un ensayo.
+It must not generate an essay.
 
-Debe generar un paquete operativo.
+It must generate an operational packet.
 
 ## 11.12 Capture and Finalization
 
-Responsabilidades:
+Responsibilities:
 
-- Capturar hechos mecánicos.
-- Recibir señales.
-- Comparar diff.
-- Proponer Records.
-- Proponer Subjects.
-- Solicitar confirmación mínima.
-- Guardar evidence.
-- Actualizar bindings.
-- No aprobar sus propias inferencias.
+- Capture mechanical facts.
+- Receive signals.
+- Compare the diff.
+- Propose Records.
+- Propose Subjects.
+- Request minimal confirmation.
+- Save evidence.
+- Update bindings.
+- Not approve its own inferences.
 
 ## 11.13 Lifecycle Accelerators
 
-Incluye:
+Includes:
 
 - Git hooks.
 - File watcher.
@@ -1169,42 +1194,43 @@ Incluye:
 - Agent hooks.
 - Post-commit detection.
 
-Son opcionales.
+They are optional.
 
-La corrección principal debe depender del revision gate, no de que un hook siempre funcione.
+Correctness must primarily depend on the revision gate, not on a hook always
+working.
 
 ## 11.14 Evaluation and Telemetry
 
-Responsabilidades:
+Responsibilities:
 
-- Registrar latencia.
-- Registrar tokens cuando estén disponibles.
-- Registrar tamaño del packet.
-- Registrar elementos.
-- Registrar tool calls.
-- Registrar resultado de tests.
-- Registrar condición experimental.
-- Exportar datos para análisis.
-- No enviar datos automáticamente.
+- Record latency.
+- Record tokens when available.
+- Record packet size.
+- Record items.
+- Record tool calls.
+- Record test results.
+- Record the experimental condition.
+- Export data for analysis.
+- Not send data automatically.
 
 ---
 
-# 12. Interfaces públicas iniciales
+# 12. Initial public interfaces
 
-La superficie pública inicial debe ser pequeña.
+The initial public surface must be small.
 
 ## `prepare_change`
 
-Entrada:
+Input:
 
 - Targets.
-- Intent opcional.
-- Symptoms opcionales.
+- Optional intent.
+- Optional symptoms.
 - Base revision.
 - Budget.
 - Scope hints.
 
-Salida:
+Output:
 
 - Critical constraints.
 - Conflicts.
@@ -1219,27 +1245,27 @@ Salida:
 
 ## `explain_target`
 
-Explica:
+Explains:
 
 - Subject.
-- Decisiones activas.
-- Motivo.
-- Evidencia.
-- Restricciones.
-- Incertidumbre.
-- Revisión.
+- Active decisions.
+- Reason.
+- Evidence.
+- Constraints.
+- Uncertainty.
+- Revision.
 
 ## `finalize_change`
 
-Entrada:
+Input:
 
 - Base.
-- Head o working tree.
+- Head or working tree.
 - Tests.
 - Signals.
 - Optional human confirmations.
 
-Salida:
+Output:
 
 - Mechanical evidence.
 - Proposed records.
@@ -1249,18 +1275,18 @@ Salida:
 
 ## `review_record`
 
-Permite:
+Allows:
 
-- Aprobar.
-- Disputar.
-- Corregir.
-- Supersede.
-- Cambiar authority.
-- Añadir evidence.
+- Approving.
+- Disputing.
+- Correcting.
+- Superseding.
+- Changing authority.
+- Adding evidence.
 
 ## `trace_rationale`
 
-Recorre:
+Walks:
 
 ```text
 target
@@ -1275,9 +1301,9 @@ target
 
 ## `health`
 
-Informa:
+Reports:
 
-- Proyecto.
+- Project.
 - Git revision.
 - Provider.
 - Provider revision.
@@ -1289,11 +1315,12 @@ Informa:
 - Hook status.
 - Latency summary.
 
-Las operaciones administrativas adicionales pueden existir en CLI sin inflar MCP.
+Additional administrative operations may exist in the CLI without inflating
+MCP.
 
 ---
 
-# 13. Flujos principales
+# 13. Main flows
 
 ## 13.1 Baseline fast path
 
@@ -1311,17 +1338,17 @@ Read precomputed critical bindings
 Return compact context or no-op
 ```
 
-Restricciones:
+Constraints:
 
-- Sin embeddings.
-- Sin arqueología.
-- Sin LLM.
-- Sin reindex completo.
-- Sin llamadas largas.
+- No embeddings.
+- No archaeology.
+- No LLM.
+- No full reindex.
+- No long calls.
 - Fail open.
-- No bloquear lectura.
+- Do not block reading.
 
-Objetivos iniciales:
+Initial targets:
 
 ```text
 P50 warm ≤ 50 ms
@@ -1329,7 +1356,7 @@ P95 warm ≤ 150 ms
 Hard deadline ≤ 250 ms
 ```
 
-Son objetivos del piloto, no garantías públicas.
+These are pilot targets, not public guarantees.
 
 ## 13.2 Intent-aware preflight
 
@@ -1351,17 +1378,17 @@ Ranking and budget
 Context packet
 ```
 
-Puede ejecutar análisis más costoso.
+It may run more expensive analysis.
 
-Debe seguir siendo acotado.
+It must remain bounded.
 
-Objetivo provisional:
+Provisional target:
 
 ```text
 P95 warm, excluding indexing ≤ 2 s
 ```
 
-Debe medirse antes de prometer.
+It must be measured before it is promised.
 
 ## 13.3 Finalize
 
@@ -1385,7 +1412,7 @@ Write canonical files atomically
 Reindex derived state
 ```
 
-## 13.4 Commit fuera del flujo
+## 13.4 Commit outside the flow
 
 ```text
 Human commits without finalize
@@ -1403,7 +1430,7 @@ Rationale degrades confidence
 Selective revalidation
 ```
 
-No debe fingir que está actualizado.
+It must not pretend to be up to date.
 
 ## 13.5 Provider unavailable
 
@@ -1423,15 +1450,15 @@ Do not issue new deterministic block based on absent structure
 
 # 14. Monorepos
 
-La raíz canónica inicial será una sola:
+The initial canonical root will be a single one:
 
 ```text
 <monorepo-root>/.rationale/
 ```
 
-Los records no se duplicarán por package.
+Records will not be duplicated per package.
 
-Cada Subject y Binding puede declarar:
+Every Subject and Binding may declare:
 
 ```yaml
 scope:
@@ -1444,9 +1471,9 @@ scope:
     - examples/**
 ```
 
-La recuperación cruzada requiere un camino de relevancia.
+Cross-package retrieval requires a relevance path.
 
-Ejemplo:
+Example:
 
 ```text
 backend authorization decision
@@ -1454,9 +1481,9 @@ backend authorization decision
 → frontend permission rendering
 ```
 
-No basta con estar en el mismo repositorio.
+Being in the same repository is not enough.
 
-El contexto compiler debe aplicar:
+The context compiler must apply:
 
 - Package overlap.
 - Domain relationship.
@@ -1466,97 +1493,99 @@ El contexto compiler debe aplicar:
 - Severity.
 - Budget.
 
-## 14.1 Limitación del proveedor
+## 14.1 Provider limitation
 
-La arquitectura no asumirá que Codebase Memory resuelve perfectamente cada workspace.
+The architecture will not assume that Codebase Memory resolves every workspace
+perfectly.
 
-Toda relación entre paquetes deberá incluir coverage y provider revision.
+Every cross-package relationship must include coverage and the provider
+revision.
 
-## 14.2 Piloto real
+## 14.2 Real pilot
 
-El monorepo del trabajo será el principal entorno de validación después de dogfooding.
+The work monorepo will be the main validation environment after dogfooding.
 
-Antes de usarlo:
+Before using it:
 
-- Se anonimizarán resultados compartidos.
-- No se copiará código sensible a datasets públicos.
-- Los records con información empresarial tendrán sensitivity.
-- La evaluación podrá almacenar hashes y métricas en lugar de contenido.
+- Shared results will be anonymized.
+- Sensitive code will not be copied into public datasets.
+- Records with company information will carry a sensitivity.
+- The evaluation may store hashes and metrics instead of content.
 
 ---
 
-# 15. Seguridad
+# 15. Security
 
 ## 15.1 Repository content is data
 
-Todo texto del repositorio debe tratarse como datos no confiables.
+All repository text must be treated as untrusted data.
 
-Incluye:
+This includes:
 
-- Nombres.
-- Comentarios.
+- Names.
+- Comments.
 - Records.
 - Issues.
 - Commits.
 - Paths.
 - Evidence.
-- Metadata del proveedor.
+- Provider metadata.
 
-Nunca se debe concatenar contenido arbitrario como instrucciones del sistema.
+Arbitrary content must never be concatenated as system instructions.
 
-## 15.2 Sanitización
+## 15.2 Sanitization
 
-- Limitar longitud.
-- Validar UTF-8.
-- Eliminar controles.
-- Escapar formatos.
-- Separar metadata de instrucciones.
-- Etiquetar contenido no confiable.
-- Aplicar schema.
+- Limit length.
+- Validate UTF-8.
+- Strip control characters.
+- Escape formats.
+- Separate metadata from instructions.
+- Label untrusted content.
+- Apply the schema.
 
 ## 15.3 Paths
 
-- Canonicalizar.
-- Impedir traversal.
-- No seguir symlinks fuera del root sin política.
-- Proteger writes.
-- Usar archivos temporales y rename atómico.
-- Permisos owner-only en cache sensible.
+- Canonicalize.
+- Prevent traversal.
+- Do not follow symlinks outside the root without a policy.
+- Protect writes.
+- Use temporary files and atomic rename.
+- Owner-only permissions on sensitive cache.
 
 ## 15.4 Secrets
 
-Rationale no debe indexar deliberadamente:
+Rationale must not deliberately index:
 
 - `.env`.
 - Tokens.
 - Private keys.
-- Credenciales.
+- Credentials.
 - Dumps.
-- Datos personales.
+- Personal data.
 
-Debe respetar:
+It must respect:
 
 - `.gitignore`.
-- Configuración adicional.
+- Additional configuration.
 - Sensitivity.
 - Redaction.
 
 ## 15.5 External skills
 
-Toda skill externa deberá:
+Every external skill must be:
 
-- Revisarse.
-- Fijarse a versión o commit.
-- Verificarse licencia.
-- Inspeccionarse antes de ejecutar.
-- Registrarse.
-- No obtener permisos globales por defecto.
+- Reviewed.
+- Pinned to a version or commit.
+- License-checked.
+- Inspected before running.
+- Recorded.
+- Denied global permissions by default.
 
 ---
 
-# 16. Observabilidad
+# 16. Observability
 
-El sistema deberá producir logs estructurados locales.
+The system must produce local structured logs.
 
 ```json
 {
@@ -1574,15 +1603,15 @@ El sistema deberá producir logs estructurados locales.
 }
 ```
 
-No debe incluir por defecto:
+By default it must not include:
 
-- Código.
-- Prompt completo.
+- Code.
+- The full prompt.
 - Secrets.
-- Texto sensible.
-- Identidad personal.
+- Sensitive text.
+- Personal identity.
 
-Niveles:
+Levels:
 
 ```text
 error
@@ -1592,182 +1621,182 @@ debug
 trace
 ```
 
-Los eventos de evaluación tendrán un formato separado.
+Evaluation events will have a separate format.
 
 ---
 
-# 17. Rendimiento y recursos
+# 17. Performance and resources
 
-## 17.1 Principio
+## 17.1 Principle
 
-Rationale no debe duplicar el trabajo estructural de Codebase Memory.
+Rationale must not duplicate Codebase Memory's structural work.
 
-Su carga propia debe concentrarse en:
+Its own load must focus on:
 
-- Lectura.
-- Validación.
+- Reading.
+- Validation.
 - FTS.
-- Joins pequeños.
+- Small joins.
 - Ranking.
 - Policy evaluation.
-- Serialización.
+- Serialization.
 
-## 17.2 Presupuestos provisionales
+## 17.2 Provisional budgets
 
-En la MacBook Air M4 de 16 GB:
+On the 16 GB MacBook Air M4:
 
 ```text
 Baseline warm P95: ≤ 150 ms
 Baseline hard deadline: ≤ 250 ms
-Intent-aware warm P95: ≤ 2 s, sin index
+Intent-aware warm P95: ≤ 2 s, excluding indexing
 Steady resident memory target: ≤ 300 MB
-Canonical store: proporcional a Records, normalmente pequeño
-Derived cache: configurable y regenerable
+Canonical store: proportional to Records, normally small
+Derived cache: configurable and regenerable
 ```
 
-Estos valores son hipótesis.
+These values are hypotheses.
 
-Se revisarán después del piloto.
+They will be reviewed after the pilot.
 
 ## 17.3 Backpressure
 
-- Límites de concurrencia.
-- Cancelación.
+- Concurrency limits.
+- Cancellation.
 - Timeouts.
 - Query budgets.
 - Queue bounds.
 - Cache cap.
-- No spawn infinito de subprocesses.
-- Lock por proyecto para writes.
-- Reads concurrentes cuando sea seguro.
+- No unbounded subprocess spawning.
+- Per-project lock for writes.
+- Concurrent reads when safe.
 
 ---
 
-# 18. Costos
+# 18. Costs
 
-## 18.1 Costos obligatorios del núcleo
+## 18.1 Mandatory core costs
 
-Objetivo:
+Goal:
 
 ```text
-Costo obligatorio de infraestructura: $0
+Mandatory infrastructure cost: $0
 ```
 
-El núcleo deberá usar:
+The core must use:
 
-- Máquina local.
+- The local machine.
 - Git.
-- Filesystem.
-- SQLite u otra dependencia embebida.
-- Codebase Memory local.
-- Dependencias open source compatibles.
+- The filesystem.
+- SQLite or another embedded dependency.
+- Local Codebase Memory.
+- Compatible open-source dependencies.
 
-## 18.2 Costos externos no controlados
+## 18.2 Uncontrolled external costs
 
-Pueden existir:
+These may exist:
 
-- Suscripción de Claude Code.
-- Uso de Codex u OpenAI.
+- Claude Code subscription.
+- Codex or OpenAI usage.
 - API tokens.
-- CI fuera del free tier.
-- Almacenamiento de artifacts.
-- Firma de código.
-- Notarización.
-- Certificado de Windows.
-- Dominio.
-- Hosting de la landing page.
+- CI beyond the free tier.
+- Artifact storage.
+- Code signing.
+- Notarization.
+- Windows certificate.
+- Domain.
+- Landing page hosting.
 
-No serán dependencia del MVP local.
+They will not be dependencies of the local MVP.
 
-## 18.3 Inventario provisional de dependencias
+## 18.3 Provisional dependency inventory
 
-Mientras el lenguaje no esté seleccionado, las dependencias se dividirán por función.
+While the language is not selected, dependencies will be grouped by function.
 
-### Dependencias obligatorias para investigación y desarrollo inicial
+### Required dependencies for research and initial development
 
-| Dependencia | Propósito | Runtime de Rationale | Costo obligatorio |
+| Dependency | Purpose | Rationale runtime | Mandatory cost |
 |---|---|---:|---:|
-| Git | Revisión, historial y colaboración | Sí | $0 |
-| Codebase Memory | Proveedor estructural inicial | Sí para la integración inicial | $0 |
-| Xcode Command Line Tools en macOS | Compiladores y herramientas base | No necesariamente | $0 |
-| C compiler y C++ compiler | Construir y estudiar Codebase Memory | No necesariamente | $0 |
-| zlib | Build actual de Codebase Memory | No necesariamente | $0 |
-| Shell y herramientas POSIX | Scripts de bootstrap | Desarrollo | $0 |
-| Agente MCP compatible | Consumir Rationale durante desarrollo | Externo | Variable/existente |
+| Git | Revision, history, and collaboration | Yes | $0 |
+| Codebase Memory | Initial structural provider | Yes, for the initial integration | $0 |
+| Xcode Command Line Tools on macOS | Compilers and base tools | Not necessarily | $0 |
+| C compiler and C++ compiler | Build and study Codebase Memory | Not necessarily | $0 |
+| zlib | Current Codebase Memory build | Not necessarily | $0 |
+| Shell and POSIX tools | Bootstrap scripts | Development | $0 |
+| Compatible MCP agent | Consume Rationale during development | External | Variable/existing |
 
-### Dependencias probables del núcleo, todavía no seleccionadas
+### Likely core dependencies, not yet selected
 
-| Capacidad | Tipo de dependencia esperada | Restricción |
+| Capability | Expected dependency type | Constraint |
 |---|---|---|
-| MCP / JSON-RPC | SDK o implementación pequeña | Debe ser mantenible y local |
-| Persistencia derivada | SQLite embebido | Sin servidor |
-| Serialización | YAML, JSON o ambos | Schema versioned |
-| Schema validation | Librería local | Errores deterministas |
-| Hashing | Implementación estándar | Sin servicio remoto |
-| File locking | API portable | macOS, Linux y Windows |
-| Logging | Estructurado y local | Sin telemetry obligatoria |
-| CLI | Librería o estándar | Instalación simple |
-| Testing | Framework del lenguaje | Unit, contract, property y fuzz |
-| Compression | Opcional | Solo si la evidencia lo justifica |
+| MCP / JSON-RPC | SDK or small implementation | Must be maintainable and local |
+| Derived persistence | Embedded SQLite | No server |
+| Serialization | YAML, JSON, or both | Schema versioned |
+| Schema validation | Local library | Deterministic errors |
+| Hashing | Standard implementation | No remote service |
+| File locking | Portable API | macOS, Linux, and Windows |
+| Logging | Structured and local | No mandatory telemetry |
+| CLI | Library or standard | Simple installation |
+| Testing | Language framework | Unit, contract, property, and fuzz |
+| Compression | Optional | Only if evidence justifies it |
 
-### Dependencias de evaluación
+### Evaluation dependencies
 
-Podrán usarse únicamente como tooling:
+They may be used only as tooling:
 
-- Python para análisis estadístico.
-- Scripts para bootstrap confidence intervals.
-- Parsers NDJSON.
-- Herramientas de gráficos.
-- Fixtures y datasets locales.
+- Python for statistical analysis.
+- Scripts for bootstrap confidence intervals.
+- NDJSON parsers.
+- Charting tools.
+- Local fixtures and datasets.
 
-No serán necesariamente parte del binario distribuido.
+They will not necessarily be part of the distributed binary.
 
-### Dependencias opcionales
+### Optional dependencies
 
-- Ollama u otro modelo local.
+- Ollama or another local model.
 - GitHub CLI.
-- UI local.
-- Integraciones específicas por IDE.
-- Firma y notarización.
-- CI remoto.
+- Local UI.
+- IDE-specific integrations.
+- Signing and notarization.
+- Remote CI.
 
-Ninguna opción podrá convertirse accidentalmente en requisito del núcleo.
+No option may accidentally become a core requirement.
 
-## 18.4 Política de dependencias
+## 18.4 Dependency policy
 
-Cada dependencia deberá registrar:
+Every dependency must record:
 
-- Licencia.
-- Versión.
-- Tamaño.
-- Riesgo.
-- Motivo.
-- Alternativas.
-- CVEs conocidas.
-- Si se puede vendorizar.
-- Si requiere runtime.
-- Si agrega llamadas externas.
+- License.
+- Version.
+- Size.
+- Risk.
+- Reason.
+- Alternatives.
+- Known CVEs.
+- Whether it can be vendored.
+- Whether it requires a runtime.
+- Whether it adds external calls.
 
-Se mantendrá un inventario legible por máquina:
+A machine-readable inventory will be kept:
 
 ```text
 docs/dependencies/inventory.yaml
 ```
 
-Cada actualización de dependencia deberá:
+Every dependency update must:
 
-1. Pasar tests.
-2. Registrar cambio.
-3. Revisar licencia.
-4. Revisar advisories.
-5. Medir impacto cuando afecte hot paths.
-6. Poder revertirse.
+1. Pass tests.
+2. Record the change.
+3. Check the license.
+4. Check advisories.
+5. Measure impact when it affects hot paths.
+6. Be revertible.
 
 ---
 
 # 19. Testing
 
-## 19.1 Pirámide
+## 19.1 Pyramid
 
 ```text
 Unit
@@ -1782,7 +1811,7 @@ Evaluation
 Cross-platform
 ```
 
-## 19.2 Tests obligatorios
+## 19.2 Mandatory tests
 
 - Schema validation.
 - Atomic writes.
@@ -1806,11 +1835,11 @@ Cross-platform
 - Baseline deadline.
 - Context packet determinism.
 
-## 19.3 Contract tests con Codebase Memory
+## 19.3 Contract tests with Codebase Memory
 
-Se crearán fixtures propios.
+Our own fixtures will be created.
 
-No dependerán solamente del repositorio upstream.
+They will not depend only on the upstream repository.
 
 ```text
 tests/fixtures/codebase-memory/
@@ -1824,91 +1853,92 @@ tests/fixtures/codebase-memory/
 
 ## 19.4 Golden packets
 
-Para inputs fijos:
+For fixed inputs:
 
-- El packet debe ser estable.
-- El orden debe ser determinista.
-- El budget debe respetarse.
-- La incertidumbre debe preservarse.
+- The packet must be stable.
+- The order must be deterministic.
+- The budget must be respected.
+- Uncertainty must be preserved.
 
 ---
 
-# 20. Evaluación del producto
+# 20. Product evaluation
 
-La arquitectura incluirá instrumentación desde la primera vertical.
+The architecture will include instrumentation from the first vertical slice.
 
-No se agregará al final.
+It will not be added at the end.
 
-## 20.1 Unidad
+## 20.1 Unit
 
-La unidad es:
+The unit is:
 
 ```text
 task execution
 ```
 
-Incluye:
+It includes:
 
-- Modelo/agente.
-- Condición.
-- Prompt inicial.
+- Model/agent.
+- Condition.
+- Initial prompt.
 - Context packet.
 - Tool calls.
-- Revisión.
-- Resultado.
+- Revision.
+- Result.
 - Tests.
 - Tokens.
-- Latencia.
-- Intervención humana.
+- Latency.
+- Human intervention.
 
-## 20.2 Condiciones
+## 20.2 Conditions
 
 ```text
-A. Código + Git
-B. Documentación tradicional
+A. Code + Git
+B. Traditional documentation
 C. Codebase Memory
 D. Codebase Memory + Rationale
-E. Prompt de experto
+E. Expert prompt
 ```
 
-## 20.3 Autoinstrumentación
+## 20.3 Self-instrumentation
 
-Los agentes que construyan el proyecto podrán registrar:
+The agents building the project may record:
 
-- Herramientas invocadas.
+- Tools invoked.
 - Files read.
-- Context recibido.
-- Errores.
-- Intentos.
+- Context received.
+- Errors.
+- Attempts.
 - Tests.
-- Duración.
-- Tokens si el cliente los expone.
+- Duration.
+- Tokens, if the client exposes them.
 
-Si los tokens no están disponibles, se registrarán proxies:
+If tokens are not available, proxies will be recorded:
 
-- Caracteres.
-- Palabras.
+- Characters.
+- Words.
 - Bytes.
 - Tool result size.
-- Número de mensajes.
+- Number of messages.
 
-## 20.4 Límite epistemológico
+## 20.4 Epistemic limit
 
-El mismo agente que implementó una función no puede ser la única entidad que puntúe su calidad.
+The same agent that implemented a function cannot be the only entity that
+scores its quality.
 
-Se requiere al menos una combinación de:
+At least a combination of the following is required:
 
-- Tests deterministas.
-- Evaluador separado.
-- Otra ejecución.
-- Otro modelo.
-- Revisión humana.
-- Rubrica ciega.
-- Ground truth predefinido.
+- Deterministic tests.
+- A separate evaluator.
+- Another run.
+- Another model.
+- Human review.
+- A blind rubric.
+- Predefined ground truth.
 
-## 20.5 Éxito
+## 20.5 Success
 
-La arquitectura funciona si permite medir:
+The architecture works if it makes it possible to measure:
 
 - Critical constraint recall.
 - Context precision.
@@ -1923,9 +1953,9 @@ La arquitectura funciona si permite medir:
 
 ---
 
-# 21. Estructura propuesta del repositorio
+# 21. Proposed repository layout
 
-Hasta decidir lenguaje:
+Until the language is decided:
 
 ```text
 rationale/
@@ -1977,11 +2007,11 @@ rationale/
 └── .rationale-local/      # ignored
 ```
 
-La estructura concreta se adaptará al lenguaje aprobado.
+The concrete layout will adapt to the approved language.
 
 ---
 
-# 22. ADRs iniciales obligatorios
+# 22. Mandatory initial ADRs
 
 ```text
 ADR-0001 Core language and toolchain
@@ -1998,52 +2028,52 @@ ADR-0011 Licensing and dependency policy
 ADR-0012 Telemetry and privacy
 ```
 
-Ningún ADR puede decir solamente:
+No ADR may say only:
 
 ```text
-Elegimos X porque es rápido.
+We chose X because it is fast.
 ```
 
-Debe contener evidencia.
+It must contain evidence.
 
 ---
 
-# 23. Fases de implementación
+# 23. Implementation phases
 
-## Fase A — Repository bootstrap
+## Phase A — Repository bootstrap
 
-- Crear repo.
-- Copiar documentos.
-- Crear AGENTS.md.
-- Crear estructura docs.
-- Crear templates.
-- Configurar Git.
-- Configurar Codebase Memory.
-- Capturar entorno.
-- No elegir lenguaje aún.
+- Create the repo.
+- Copy the documents.
+- Create AGENTS.md.
+- Create the docs structure.
+- Create templates.
+- Configure Git.
+- Configure Codebase Memory.
+- Capture the environment.
+- Do not choose the language yet.
 
-## Fase B — Upstream analysis
+## Phase B — Upstream analysis
 
-- Clonar Codebase Memory.
+- Clone Codebase Memory.
 - Build.
 - Tests.
-- Index self.
+- Index itself.
 - Index Rationale.
-- Documentar contratos.
-- Medir CLI vs MCP.
-- Analizar monorepos.
-- Producir recomendación.
+- Document contracts.
+- Measure CLI vs MCP.
+- Analyze monorepos.
+- Produce a recommendation.
 
-## Fase C — Language spike
+## Phase C — Language spike
 
-- Implementar prototipos.
-- Medir.
+- Implement prototypes.
+- Measure.
 - ADR-0001.
-- Crear toolchain.
+- Create the toolchain.
 
-## Fase D — Vertical slice
+## Phase D — Vertical slice
 
-Debe hacer:
+It must:
 
 ```text
 init
@@ -2054,9 +2084,9 @@ check revisions
 return one compact constraint
 ```
 
-No debe incluir toda la visión.
+It must not include the whole vision.
 
-## Fase E — Local store and compiler
+## Phase E — Local store and compiler
 
 - Subjects.
 - Records.
@@ -2067,7 +2097,7 @@ No debe incluir toda la visión.
 - Budget.
 - Packets.
 
-## Fase F — Capture
+## Phase F — Capture
 
 - Signals.
 - Diff.
@@ -2075,37 +2105,37 @@ No debe incluir toda la visión.
 - finalize_change.
 - Confirmation.
 
-## Fase G — Dogfood
+## Phase G — Dogfood
 
-Rationale se instalará en Rationale.
+Rationale will be installed in Rationale.
 
-Se usarán sus propios Records para construirlo.
+Its own Records will be used to build it.
 
-La herramienta no podrá aprobar automáticamente sus decisiones fundacionales.
+The tool will not be able to automatically approve its foundational decisions.
 
-## Fase H — Monorepo pilot
+## Phase H — Monorepo pilot
 
-- Instalar en proyecto real.
-- Seleccionar 20–30 cambios históricos.
-- Ejecutar condiciones.
-- Medir.
-- Corregir.
+- Install it in a real project.
+- Select 20–30 historical changes.
+- Run the conditions.
+- Measure.
+- Correct.
 
-## Fase I — Architecture 0.2
+## Phase I — Architecture 0.2
 
-Después de evidencia:
+After evidence:
 
-- Actualizar módulos.
-- Cerrar decisiones.
-- Eliminar componentes innecesarios.
-- Estabilizar APIs internas.
+- Update modules.
+- Close decisions.
+- Remove unnecessary components.
+- Stabilize internal APIs.
 
-## Fase J — Packaging
+## Phase J — Packaging
 
-Solo después de validación:
+Only after validation:
 
 - macOS arm64.
-- macOS amd64 si se mantiene.
+- macOS amd64, if kept.
 - Linux amd64.
 - Linux arm64.
 - Windows amd64.
@@ -2115,9 +2145,9 @@ Solo después de validación:
 - Uninstall.
 - Rollback.
 
-## Fase K — Distribution experience
+## Phase K — Distribution experience
 
-- Documentación de usuario.
+- User documentation.
 - Quick start.
 - Troubleshooting.
 - Security.
@@ -2126,9 +2156,9 @@ Solo después de validación:
 
 ---
 
-# 24. Instalación conceptual
+# 24. Conceptual installation
 
-## Desarrollo
+## Development
 
 ```text
 clone rationale
@@ -2140,9 +2170,9 @@ run tests
 start agent
 ```
 
-## Proyecto consumidor
+## Consumer project
 
-La experiencia final deseada:
+The desired final experience:
 
 ```text
 install rationale
@@ -2153,15 +2183,15 @@ rationale install-agent
 rationale health
 ```
 
-Los comandos son conceptuales.
+The commands are conceptual.
 
-No se implementarán hasta definir CLI.
+They will not be implemented until the CLI is defined.
 
-## Archivos modificados
+## Modified files
 
-El instalador debe registrar exactamente:
+The installer must record exactly:
 
-- Binario.
+- Binary.
 - Config.
 - Hooks.
 - Agent entries.
@@ -2169,18 +2199,18 @@ El instalador debe registrar exactamente:
 - Cache.
 - PATH changes.
 
-Uninstall debe poder revertir lo que instaló.
+Uninstall must be able to revert what it installed.
 
 ---
 
-# 25. Trazabilidad con Rationale 0.5
+# 25. Traceability to Rationale 0.5
 
-| Requisito conceptual | Componente |
+| Conceptual requirement | Component |
 |---|---|
-| Contexto causal | Canonical Store + Context Compiler |
-| Humildad epistemológica | Trust Evaluator |
-| Autoridad | Approval + Policy Evaluator |
-| Revisión | Revision Coordinator |
+| Causal context | Canonical Store + Context Compiler |
+| Epistemic humility | Trust Evaluator |
+| Authority | Approval + Policy Evaluator |
+| Revision | Revision Coordinator |
 | Concept-first | Subject Resolver |
 | Code-anchored | Binding Resolver |
 | Monorepo | Workspace Discovery + Scope |
@@ -2207,102 +2237,112 @@ Uninstall debe poder revertir lo que instaló.
 
 ---
 
-# 26. Criterios de salida de arquitectura 0.1
+# 26. Exit criteria for architecture 0.1
 
-La arquitectura 0.1 podrá considerarse lista para implementar cuando:
+Architecture 0.1 may be considered ready to implement when:
 
-- El documento conceptual 0.5 está versionado.
-- El repositorio de Codebase Memory fue clonado y fijado.
-- El build upstream funciona en la MacBook Air M4.
-- Se ejecutaron sus tests relevantes.
-- Codebase Memory indexó su propio repo.
-- Codebase Memory indexó Rationale.
-- Se documentó MCP vs CLI.
-- Se documentó revision and coverage.
-- Se documentaron límites de monorepo.
-- Se completaron spikes de lenguaje.
-- ADR-0001 fue aprobado.
-- Existe una vertical slice planificada.
-- Existe instrumentation schema.
-- Existe security baseline.
-- Existe proceso de agentes.
-- No hay dependencia pagada obligatoria.
-
----
-
-# 27. Lo que ningún agente debe hacer
-
-- Empezar la landing page.
-- Elegir lenguaje sin ADR.
-- Copiar internals de Codebase Memory.
-- Leer su SQLite privado como contrato.
-- Introducir un SaaS.
-- Agregar embeddings remotos obligatorios.
-- Crear veinte servicios.
-- Crear un daemon antes de medir necesidad.
-- Bloquear cambios con inferencias.
-- Aprobar automáticamente Records.
-- Ocultar cobertura parcial.
-- Declarar éxito usando únicamente opinión del mismo agente.
-- Saltarse documentación.
-- Cambiar arquitectura sin ADR.
-- Empaquetar antes de validar el núcleo.
-- Optimizar antes de instrumentar.
+- Conceptual document 0.5 is versioned.
+- The Codebase Memory repository has been cloned and pinned.
+- The upstream build works on the MacBook Air M4.
+- Its relevant tests have been run.
+- Codebase Memory has indexed its own repo.
+- Codebase Memory has indexed Rationale.
+- MCP vs CLI has been documented.
+- Revision and coverage have been documented.
+- Monorepo limits have been documented.
+- The language spikes are complete.
+- ADR-0001 has been approved.
+- A planned vertical slice exists.
+- An instrumentation schema exists.
+- A security baseline exists.
+- An agent process exists.
+- There is no mandatory paid dependency.
 
 ---
 
-# 28. Preguntas abiertas
+# 27. What no agent may do
 
-- ¿MCP client interno o CLI subprocess?
-- ¿Un proceso por sesión o daemon compartido?
-- ¿Qué revisión exacta ofrece Codebase Memory?
-- ¿Cómo representa working tree?
-- ¿Qué capability falta?
-- ¿Rust, Go, C u otra?
-- ¿YAML, JSON o combinación?
-- ¿SQLite puro o abstracción?
-- ¿Cómo se calcula project ID?
-- ¿Cómo se coordinan varios agentes?
-- ¿Qué hooks soporta cada cliente?
-- ¿Qué métricas de tokens son accesibles?
-- ¿Cómo se firman releases?
-- ¿Qué parte del cache puede compartirse?
-- ¿Cómo se prueba Windows antes de empaquetar?
-- ¿Qué Records son sensibles?
-- ¿Qué paquete mínimo convence en el piloto?
-
-Estas preguntas son parte de la arquitectura.
-
-No son una señal de que falte trabajo.
-
-Son la lista de trabajo que evita fingir certeza.
+- Start the landing page.
+- Choose the language without an ADR.
+- Copy Codebase Memory internals.
+- Read its private SQLite as a contract.
+- Introduce a SaaS.
+- Add mandatory remote embeddings.
+- Create twenty services.
+- Create a daemon before measuring the need.
+- Block changes based on inferences.
+- Automatically approve Records.
+- Hide partial coverage.
+- Declare success using only the opinion of the same agent.
+- Skip documentation.
+- Change the architecture without an ADR.
+- Package before validating the core.
+- Optimize before instrumenting.
 
 ---
 
-# 29. Definición de la arquitectura 0.1
+# 28. Open questions
 
-> Rationale será inicialmente un sistema local, modular y auditable que expone MCP y CLI, mantiene una memoria canónica versionada en Git, deriva un índice local regenerable, coordina revisiones entre Git y proveedores estructurales, y compila decisiones, restricciones y riesgos en paquetes pequeños de contexto. Codebase Memory será su primer proveedor estructural, integrado únicamente mediante contratos públicos verificados. El lenguaje, el transporte interno, el daemon y el empaquetado serán decididos después de investigación reproducible. La herramienta se instrumentará desde su primera vertical y se validará primero sobre sí misma y después sobre un monorepo real antes de distribuirse para macOS, Linux y Windows.
+- Internal MCP client or CLI subprocess?
+- One process per session or a shared daemon?
+- What exact revision does Codebase Memory offer?
+- How does it represent the working tree?
+- Which capability is missing?
+- Rust, Go, C, or something else?
+- YAML, JSON, or a combination?
+- Plain SQLite or an abstraction?
+- How is the project ID computed?
+- How are several agents coordinated?
+- Which hooks does each client support?
+- Which token metrics are accessible?
+- How are releases signed?
+- Which part of the cache can be shared?
+- How is Windows tested before packaging?
+- Which Records are sensitive?
+- What minimal packet is convincing in the pilot?
+
+These questions are part of the architecture.
+
+They are not a sign that work is missing.
+
+They are the work list that avoids pretending certainty.
 
 ---
 
-# 30. Conclusión
+# 29. Definition of architecture 0.1
 
-La arquitectura 0.1 no intenta impresionar con complejidad.
+> Rationale will initially be a local, modular, auditable system that exposes
+> MCP and a CLI, keeps a canonical memory versioned in Git, derives a
+> regenerable local index, coordinates revisions between Git and structural
+> providers, and compiles decisions, constraints, and risks into small context
+> packets. Codebase Memory will be its first structural provider, integrated
+> only through verified public contracts. The language, the internal transport,
+> the daemon, and the packaging will be decided after reproducible research.
+> The tool will be instrumented from its first vertical slice and validated
+> first on itself and then on a real monorepo before being distributed for
+> macOS, Linux, and Windows.
 
-Intenta proteger el proyecto de decisiones tempranas mal fundamentadas.
+---
 
-La primera responsabilidad técnica es comprender el sistema del que Rationale dependerá.
+# 30. Conclusion
 
-La segunda es construir el camino mínimo entre:
+Architecture 0.1 does not try to impress with complexity.
+
+It tries to protect the project from poorly grounded early decisions.
+
+The first technical responsibility is to understand the system Rationale will
+depend on.
+
+The second is to build the minimal path between:
 
 ```text
 target
-→ estructura
-→ decisión
-→ restricción
-→ contexto útil
+→ structure
+→ decision
+→ constraint
+→ useful context
 ```
 
-La tercera es medir si ese camino realmente ayuda.
+The third is to measure whether that path actually helps.
 
-Solo después corresponde convertirlo en un producto distribuible.
+Only then is it time to turn it into a distributable product.

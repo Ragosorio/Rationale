@@ -1,23 +1,24 @@
-## Qué cambia
+## What changes
 
-Describe el resultado y el motivo. En cambios de documentación indica a qué
-audiencia sirve.
+Describe the result and the reason. For documentation changes, say which
+audience it serves.
 
-## Evidencia
+## Evidence
 
-- Work item, issue o ADR:
-- Comandos ejecutados:
-- Cobertura/warnings de Codebase Memory, si aplica:
+- Work item, issue, or ADR:
+- Commands run:
+- Codebase Memory coverage/warnings, if applicable:
 
-## Riesgos y rollback
+## Risks and rollback
 
-- Riesgos conocidos:
-- Cómo revertir o desactivar el cambio:
+- Known risks:
+- How to revert or disable the change:
 
 ## Checklist
 
-- [ ] Tests, formatter y lint ejecutados cuando aplica.
-- [ ] Documentación enlazada y sin duplicación innecesaria.
-- [ ] No incluí secretos ni datos reales.
-- [ ] Revisión independiente realizada para cambios críticos.
-- [ ] No autoaprobé Records ni cambié autoridad por inferencia.
+- [ ] Tests, formatter, and lint run when applicable.
+- [ ] Documentation linked, in English, and without unnecessary duplication.
+- [ ] Agent-facing text (skills, prompts, MCP descriptions) in English and asks agents to reply in the user's language.
+- [ ] No secrets or real data included.
+- [ ] Independent review done for critical changes.
+- [ ] I did not self-approve Records or change authority by inference.
