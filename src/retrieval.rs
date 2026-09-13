@@ -146,27 +146,57 @@ fn authority_label(record: &Record) -> &'static str {
     crate::storage::authority_label(record)
 }
 
-/// Recuperación determinista (v0.5 §19.1): antes filtraba por
-/// `severity == "critical"`, así que cualquier otro valor válido (`high`,
-/// `medium`, `low`) quedaba invisible sin ningún error — la causa
-/// inmediata del defecto real de este dogfood. Ahora TODA constraint entra
-/// a la selección; severidad y gobernancia son señales de orden, nunca de
-/// visibilidad. Orden: gobierna el target primero (y entre las que
-/// gobiernan, la más específica — `MatchKind`), luego severidad
-/// descendente (una inválida ordena al final, nunca desaparece), luego
-/// autoridad aprobada, luego `id` para desempate estable.
+/// Un Record revocado o reemplazado sigue en el canon como historia, pero ya
+/// no es una regla vigente: nunca debe presentarse como constraint del
+/// packet, ni siquiera con `authority: revoked` al lado.
+fn is_active(record: &Record) -> bool {
+    !crate::storage::is_revoked(record)
+        && crate::storage::superseded_by(record).is_none()
+        && crate::storage::lifecycle_status(record) != Some("superseded")
+}
+
+struct ConstraintSelection<'a> {
+    constraints: Vec<&'a Record>,
+    /// Relevantes (señal léxica con la intención) que no cupieron bajo el
+    /// techo de `max_critical_constraints`.
+    related_dropped_by_budget: usize,
+    /// Records inactivos con binding hacia el target: historia expandible,
+    /// no reglas vigentes.
+    inactive_governing: usize,
+}
+
+/// Recuperación determinista (v0.5 §19.1). Severidad y gobernancia son
+/// señales de orden, nunca de visibilidad (antes solo `critical` entraba y
+/// un Record `medium` que gobernaba el target quedaba invisible).
 ///
-/// v0.5 §30.1.7: omitir una constraint que gobierna el target invalida el
-/// paquete — así que el presupuesto (`max_critical_constraints`) nunca
-/// trunca por debajo del número de constraints gobernantes, solo limita
-/// cuántas no-gobernantes se agregan además.
+/// El presupuesto es un **techo, nunca una cuota**. La versión anterior
+/// conservaba `max(max_critical_constraints, gobernantes)` sobre TODAS las
+/// constraints del canon, así que un target sin ninguna regla recibía igual
+/// las cinco constraints más severas del proyecto — reglas sin ninguna
+/// relación con el cambio, con su `primary_reason` encabezando el packet
+/// (confirmado en el preflight real de `src/retrieval.rs::select_constraints`).
+/// Ahora solo entran:
+///
+/// 1. Las constraints activas que gobiernan el target por binding. Nunca se
+///    truncan (v0.5 §30.1.7: omitir una invalida el paquete).
+/// 2. Si hay intención declarada, las activas no gobernantes con
+///    solapamiento léxico real (≥2 términos significativos) — señal barata y
+///    auditable, nunca un veredicto — hasta completar el techo.
+///
+/// Sin señal de relevancia no hay constraint: un packet vacío es la
+/// respuesta honesta.
 fn select_constraints<'a>(
     records: &'a [Record],
     governing: &HashMap<String, MatchKind>,
+    intent: Option<&str>,
     budget: &Budget,
-) -> Vec<&'a Record> {
-    let mut all: Vec<&Record> = records.iter().filter(|r| r.kind == "constraint").collect();
-    all.sort_by(|a, b| {
+) -> ConstraintSelection<'a> {
+    let constraints = || records.iter().filter(|r| r.kind == "constraint");
+
+    let mut governing_active: Vec<&Record> = constraints()
+        .filter(|r| governing.contains_key(&r.id) && is_active(r))
+        .collect();
+    governing_active.sort_by(|a, b| {
         governing
             .get(&b.id)
             .cmp(&governing.get(&a.id))
@@ -179,10 +209,45 @@ fn select_constraints<'a>(
             .then_with(|| a.id.cmp(&b.id))
     });
 
-    let governing_count = all.iter().filter(|r| governing.contains_key(&r.id)).count();
-    let keep = budget.max_critical_constraints.max(governing_count);
-    all.truncate(keep);
-    all
+    let inactive_governing = constraints()
+        .filter(|r| governing.contains_key(&r.id) && !is_active(r))
+        .count();
+
+    let mut related: Vec<(&Record, usize)> = match intent {
+        Some(text) => constraints()
+            .filter(|r| !governing.contains_key(&r.id) && is_active(r))
+            .filter_map(|r| {
+                let overlap = shared_terms(text, &r.statement).len();
+                (overlap >= 2).then_some((r, overlap))
+            })
+            .collect(),
+        None => Vec::new(),
+    };
+    related.sort_by(|(a, a_overlap), (b, b_overlap)| {
+        b_overlap
+            .cmp(a_overlap)
+            .then_with(|| crate::storage::severity_of(b).cmp(&crate::storage::severity_of(a)))
+            .then_with(|| {
+                let a_approved = crate::storage::has_approved_authority(a);
+                let b_approved = crate::storage::has_approved_authority(b);
+                b_approved.cmp(&a_approved)
+            })
+            .then_with(|| a.id.cmp(&b.id))
+    });
+
+    let capacity = budget
+        .max_critical_constraints
+        .saturating_sub(governing_active.len());
+    let related_dropped_by_budget = related.len().saturating_sub(capacity);
+    related.truncate(capacity);
+
+    let mut constraints = governing_active;
+    constraints.extend(related.into_iter().map(|(record, _)| record));
+    ConstraintSelection {
+        constraints,
+        related_dropped_by_budget,
+        inactive_governing,
+    }
 }
 
 // Stopwords estructurales — ES/EN, minúsculas. Sin esto, "para"/"that"
@@ -290,7 +355,8 @@ pub fn compile_packet(
         Coverage::Unknown => "unknown",
     };
 
-    let selected = select_constraints(records, governing, budget);
+    let selection = select_constraints(records, governing, intent, budget);
+    let selected = selection.constraints;
 
     let critical_constraints: Vec<CriticalConstraint> = selected
         .iter()
@@ -377,11 +443,12 @@ pub fn compile_packet(
     }
     let affected_targets_before_budget = affected_targets.len();
 
-    // Universo total ahora es "toda constraint", no solo severidad
-    // `critical` (esa era precisamente la limitación que hacía invisibles
-    // a los Records `medium`/`high`/`low`).
-    let total_constraints_matching = records.iter().filter(|r| r.kind == "constraint").count();
-    let critical_constraints_dropped = total_constraints_matching.saturating_sub(selected.len());
+    // Historia expandible = lo relevante que no se sirvió: relacionadas que
+    // no cupieron bajo el techo y Records inactivos atados al target. Antes
+    // contaba "todas las constraints del canon menos las servidas", como si
+    // cada regla ajena al target fuera historia de este cambio.
+    let critical_constraints_dropped =
+        selection.related_dropped_by_budget + selection.inactive_governing;
 
     // Nivel 0-3 (salud, constraints críticas, conflictos, razón principal)
     // nunca se recortan por presupuesto — v0.5 §30.1.7: omitir una
@@ -506,6 +573,13 @@ mod tests {
         }
     }
 
+    /// Mapa de gobernanza para tests: cada id gobierna el target con el
+    /// `MatchKind` dado. Sin él, una constraint no tiene señal de relevancia
+    /// y — correctamente — no entra al packet.
+    fn governing_all(ids: &[&str], kind: MatchKind) -> HashMap<String, MatchKind> {
+        ids.iter().map(|id| (id.to_string(), kind)).collect()
+    }
+
     /// D5/E6 — "golden packet": mismos inputs fijos deben producir SIEMPRE
     /// el mismo JSON, byte a byte (Arquitectura §19.4).
     #[test]
@@ -521,18 +595,80 @@ mod tests {
             Some("golden.qualifiedName".to_string()),
             vec![],
             &Budget::default(),
-            &std::collections::HashMap::new(),
+            &governing_all(&["constraint.golden-test"], MatchKind::Structural),
         );
 
         let json = serde_json::to_string(&packet).unwrap();
-        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","authority":"approved","severity":"critical","governs_target":false,"match_kind":null}],"intent_conflicts":[],"governance_verdict_required":false,"primary_reason":"Because golden reasons.","known_risks":["Golden risk statement."],"affected_targets":["golden.qualifiedName","src/golden.ts"],"additional_history_available":0,"resolved_target":"golden.qualifiedName","warnings":[],"token_estimate":25}"#;
+        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","authority":"approved","severity":"critical","governs_target":true,"match_kind":"structural"}],"intent_conflicts":[],"governance_verdict_required":false,"primary_reason":"Because golden reasons.","known_risks":["Golden risk statement."],"affected_targets":["golden.qualifiedName","src/golden.ts"],"additional_history_available":0,"resolved_target":"golden.qualifiedName","warnings":[],"token_estimate":25}"#;
         assert_eq!(json, expected);
     }
 
+    /// El defecto real: sin ninguna señal de relevancia, el packet se
+    /// rellenaba hasta `max_critical_constraints` con reglas ajenas al target.
     #[test]
-    fn budget_caps_critical_constraints() {
+    fn unrelated_constraints_never_pad_the_packet() {
         let records: Vec<Record> = (0..10)
-            .map(|i| fixed_record(&format!("constraint.many-{i}"), true))
+            .map(|i| fixed_record(&format!("constraint.unrelated-{i}"), true))
+            .collect();
+        let packet = compile_packet(
+            None,
+            Consistency::Unresolved,
+            ProviderStatus::Unavailable,
+            Coverage::Unknown,
+            &records,
+            Some("rename a local variable in the formatter"),
+            None,
+            vec![],
+            &Budget::default(),
+            &HashMap::new(),
+        );
+        assert!(packet.critical_constraints.is_empty(), "{packet:?}");
+        assert!(packet.primary_reason.is_none());
+        assert!(packet.known_risks.is_empty());
+        assert_eq!(
+            packet.additional_history_available, 0,
+            "reglas ajenas al target no son historia expandible de este cambio"
+        );
+    }
+
+    /// Techo, no cuota: dos constraints relevantes con capacidad para cinco
+    /// producen exactamente dos.
+    #[test]
+    fn budget_is_a_ceiling_not_a_quota() {
+        let mut records: Vec<Record> = (0..6)
+            .map(|i| fixed_record(&format!("constraint.unrelated-{i}"), true))
+            .collect();
+        records.push(fixed_record("constraint.governs-a", true));
+        records.push(fixed_record("constraint.governs-b", false));
+        let packet = compile_packet(
+            None,
+            Consistency::Unresolved,
+            ProviderStatus::Unavailable,
+            Coverage::Unknown,
+            &records,
+            None,
+            None,
+            vec![],
+            &Budget::default(),
+            &governing_all(
+                &["constraint.governs-a", "constraint.governs-b"],
+                MatchKind::FileExact,
+            ),
+        );
+        let ids: Vec<&str> = packet
+            .critical_constraints
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["constraint.governs-a", "constraint.governs-b"]);
+    }
+
+    /// Las no gobernantes con señal léxica real sí entran, pero solo hasta
+    /// el techo; las que no caben se cuentan como historia expandible.
+    #[test]
+    fn lexically_related_constraints_respect_the_ceiling() {
+        let records: Vec<Record> = (0..10)
+            .map(|i| fixed_record(&format!("constraint.related-{i}"), true))
             .collect();
         let budget = Budget {
             max_critical_constraints: 3,
@@ -544,14 +680,71 @@ mod tests {
             ProviderStatus::Unavailable,
             Coverage::Unknown,
             &records,
-            None,
+            Some("change the golden packet statement format"),
             None,
             vec![],
             &budget,
-            &std::collections::HashMap::new(),
+            &HashMap::new(),
         );
         assert_eq!(packet.critical_constraints.len(), 3);
+        assert!(packet
+            .intent_conflicts
+            .iter()
+            .all(|c| c.detection == ConflictDetection::LexicalOverlap));
         assert_eq!(packet.additional_history_available, 7);
+    }
+
+    /// Un Record revocado o reemplazado con binding al target es historia:
+    /// no se sirve como regla vigente, pero se cuenta como expandible.
+    #[test]
+    fn inactive_governing_records_are_history_not_rules() {
+        let mut revoked = fixed_record("constraint.revoked", true);
+        let mut lifecycle = yaml_serde::Mapping::new();
+        lifecycle.insert(
+            yaml_serde::Value::String("status".to_string()),
+            yaml_serde::Value::String("revoked".to_string()),
+        );
+        revoked.extra.insert(
+            yaml_serde::Value::String("lifecycle".to_string()),
+            yaml_serde::Value::Mapping(lifecycle),
+        );
+        let mut superseded = fixed_record("constraint.superseded", true);
+        let mut policy = yaml_serde::Mapping::new();
+        policy.insert(
+            yaml_serde::Value::String("superseded_by".to_string()),
+            yaml_serde::Value::String("constraint.current".to_string()),
+        );
+        superseded.extra.insert(
+            yaml_serde::Value::String("applicability_policy".to_string()),
+            yaml_serde::Value::Mapping(policy),
+        );
+        let records = vec![
+            revoked,
+            superseded,
+            fixed_record("constraint.current", true),
+        ];
+        let packet = compile_packet(
+            None,
+            Consistency::Unresolved,
+            ProviderStatus::Unavailable,
+            Coverage::Unknown,
+            &records,
+            None,
+            None,
+            vec![],
+            &Budget::default(),
+            &governing_all(
+                &[
+                    "constraint.revoked",
+                    "constraint.superseded",
+                    "constraint.current",
+                ],
+                MatchKind::FileExact,
+            ),
+        );
+        assert_eq!(packet.critical_constraints.len(), 1);
+        assert_eq!(packet.critical_constraints[0].id, "constraint.current");
+        assert_eq!(packet.additional_history_available, 2);
     }
 
     #[test]
@@ -567,7 +760,7 @@ mod tests {
             None,
             vec![],
             &Budget::default(),
-            &std::collections::HashMap::new(),
+            &governing_all(&["constraint.unreviewed"], MatchKind::FileExact),
         );
         assert_eq!(packet.critical_constraints[0].authority, "unreviewed");
     }
@@ -588,7 +781,10 @@ mod tests {
             None,
             vec![],
             &Budget::default(),
-            &std::collections::HashMap::new(),
+            &governing_all(
+                &["constraint.b-unreviewed", "constraint.a-approved"],
+                MatchKind::FileExact,
+            ),
         );
         assert_eq!(packet.critical_constraints[0].id, "constraint.a-approved");
         assert_eq!(packet.critical_constraints[1].id, "constraint.b-unreviewed");
@@ -650,7 +846,7 @@ mod tests {
             None,
             vec![],
             &tiny_budget,
-            &std::collections::HashMap::new(),
+            &governing_all(&["constraint.golden-test"], MatchKind::FileExact),
         );
         assert_eq!(packet.critical_constraints.len(), 1);
         assert!(packet.known_risks.is_empty());
@@ -709,6 +905,10 @@ mod tests {
                 "src/a.ts",
             ),
         ];
+        let governing = governing_all(
+            &["constraint.b-unreviewed", "constraint.a-approved"],
+            MatchKind::FileExact,
+        );
         let packet = compile_packet(
             Some("rev1".to_string()),
             Consistency::Exact,
@@ -719,7 +919,7 @@ mod tests {
             None,
             vec![],
             &Budget::default(),
-            &std::collections::HashMap::new(),
+            &governing,
         );
         let json = serde_json::to_string(&packet).unwrap();
         // Recalcular el mismo packet una segunda vez debe producir el mismo
@@ -735,7 +935,7 @@ mod tests {
             None,
             vec![],
             &Budget::default(),
-            &std::collections::HashMap::new(),
+            &governing,
         );
         assert_eq!(json, serde_json::to_string(&packet2).unwrap());
         assert_eq!(packet.critical_constraints.len(), 2);
@@ -761,7 +961,7 @@ mod tests {
             None,
             vec![],
             &Budget::default(),
-            &std::collections::HashMap::new(),
+            &governing_all(&["constraint.one", "constraint.two"], MatchKind::FileExact),
         );
         let occurrences = packet
             .affected_targets
@@ -800,7 +1000,7 @@ mod tests {
             None,
             vec![],
             &Budget::default(),
-            &std::collections::HashMap::new(),
+            &governing_all(&["constraint.injection-attempt"], MatchKind::FileExact),
         );
         assert_eq!(packet.critical_constraints[0].statement, malicious);
         // Nunca se autoaprueba autoridad por el contenido del statement —
@@ -842,7 +1042,7 @@ mod tests {
             None,
             vec![],
             &Budget::default(),
-            &HashMap::new(),
+            &governing_all(&["constraint.medium"], MatchKind::FileExact),
         );
         assert_eq!(packet.critical_constraints.len(), 1);
         assert_eq!(packet.critical_constraints[0].severity, "medium");
@@ -866,7 +1066,10 @@ mod tests {
             None,
             vec![],
             &Budget::default(),
-            &HashMap::new(),
+            &governing_all(
+                &["constraint.legacy", "constraint.real"],
+                MatchKind::FileExact,
+            ),
         );
         assert_eq!(packet.critical_constraints.len(), 2);
         assert_eq!(packet.critical_constraints[0].id, "constraint.real");
