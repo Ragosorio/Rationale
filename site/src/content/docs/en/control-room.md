@@ -4,7 +4,7 @@ slug: control-room
 title: Control Room
 description: rationale ui — the working subgraph, causal memory, and live agent activity, served read-only from your machine.
 section: Operate
-order: 5
+order: 6
 ---
 
 ## Open it

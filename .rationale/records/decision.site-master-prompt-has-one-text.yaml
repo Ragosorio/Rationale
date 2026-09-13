@@ -1,0 +1,47 @@
+id: decision.site-master-prompt-has-one-text
+kind: decision
+severity: medium
+statement: Both locales of the website render the master prompt from docs/prompt-master.md, the English text that install-agent writes, and no translated copy of it is kept.
+rationale: A site-only Spanish translation already fell a step behind once, so Spanish readers were shown instructions different from the ones their agent had installed. The protocol tells the agent to reply in the user's language, so a single installed text serves every team and cannot drift from what the site shows.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09bbcb3cb2d2756b6
+  session_id: session_1a09bad98aa00726ad0
+  asserted_at: 2026-09-13T17:22:11Z
+approvals: []
+binding_declarations:
+- id: binding.decision.site-master-prompt-has-one-text.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: scripts/check-docs.sh
+  provisional: true
+- id: binding.decision.site-master-prompt-has-one-text.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/content/docs/es/prompt-master.md
+  provisional: true
+- id: binding.decision.site-master-prompt-has-one-text.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/prompt-master.md
+  provisional: true
+evidence: []
+risks: []
+bound_revision: 4cfddcad34ee3108d0834a750e354bff11ad9f30
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T17:22:11Z
+    operation_id: op_1a09bbcb3cb2d2756b6

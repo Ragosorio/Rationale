@@ -73,23 +73,16 @@ if [[ -n "$stale_versions" ]]; then
   exit 1
 fi
 
-# --- Las dos versiones del prompt maestro no pueden divergir ---------------
+# --- Un solo texto del prompt maestro ---------------------------------------
 #
-# `docs/prompt-master.md` (inglés) se compila DENTRO del binario con
-# `include_str!`: es el protocolo que `install-agent` escribe de verdad. Las
-# páginas del sitio no lo copian, lo inyectan con `?raw` en build time, así que
-# ahí no puede haber drift.
-#
-# El que sí puede divergir es `docs/prompt-master.es.md`: existe solo para el
-# sitio, nadie lo compila, y ya se quedó un paso atrás una vez. Un usuario que
-# lea el protocolo en español recibiría instrucciones distintas de las que su
-# propio agente tiene instaladas.
-en_steps="$(rg -c '^[0-9]+\. ' docs/prompt-master.md || echo 0)"
-es_steps="$(rg -c '^[0-9]+\. ' docs/prompt-master.es.md || echo 0)"
-if [[ "$en_steps" != "$es_steps" ]]; then
-  echo "las dos versiones del prompt maestro divergieron:" >&2
-  echo "  docs/prompt-master.md (compilado al binario): ${en_steps} pasos" >&2
-  echo "  docs/prompt-master.es.md (solo sitio):        ${es_steps} pasos" >&2
+# `docs/prompt-master.md` se compila DENTRO del binario con `include_str!`: es el
+# protocolo que `install-agent` escribe de verdad, en inglés, y le pide al agente
+# responder en el idioma de la persona. Las páginas del sitio lo inyectan con
+# `?raw`, también la española. Hubo una traducción solo para el sitio y ya se
+# quedó atrás una vez: quien la leía recibía instrucciones distintas de las que
+# su agente tenía instaladas. Esto impide que vuelva una copia traducida.
+if rg -n 'prompt-master\.[a-z]{2}\.md' site/src scripts src; then
+  echo "el sitio no debe usar una traducción del prompt maestro: inyecta docs/prompt-master.md" >&2
   exit 1
 fi
 

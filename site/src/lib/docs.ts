@@ -3,7 +3,7 @@ export const DOC_GROUPS = [
     key: "start",
     en: "Start",
     es: "Empezar",
-    slugs: ["quickstart", "concepts", "prompt-master"],
+    slugs: ["quickstart", "concepts", "prompt-master", "skill"],
   },
   {
     key: "operate",

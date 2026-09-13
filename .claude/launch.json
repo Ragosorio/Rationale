@@ -4,8 +4,9 @@
     {
       "name": "rationale-site",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "site"],
-      "port": 4321
+      "runtimeArgs": ["run", "dev", "--prefix", "site", "--", "--port", "4329"],
+      "port": 4329,
+      "autoPort": false
     }
   ]
 }

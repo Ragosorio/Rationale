@@ -1,7 +1,7 @@
 ---
 lang: es
 slug: quickstart
-title: Quickstart de cinco minutos
+title: Guía rápida de cinco minutos
 description: Instala Rationale, conecta tu agente, haz el primer cambio gobernado y míralo en vivo en el Control Room.
 section: Empezar
 order: 1
@@ -65,6 +65,19 @@ Registra el servidor MCP una vez por usuario (`rationale serve --client <agente>
 y escribe el protocolo de invocación en `CLAUDE.md`, `AGENTS.md` o la regla de
 Cursor. Reinicia el agente después.
 
+## Agrega el skill rationale
+
+El protocolo le dice a tu agente *que* debe preparar y capturar. El
+[skill `rationale`](/es/docs/skill) le enseña *cómo*, con un playbook por
+operación que se carga solo cuando una tarea lo necesita:
+
+```bash
+npx skills add Ragosorio/Rationale
+```
+
+A partir de la release posterior a v1.0.0, `install-agent` lo instala por ti en
+`.claude/skills/rationale/` y `.agents/skills/rationale/`.
+
 ## Haz el primer cambio gobernado
 
 Pídele a tu agente un cambio real. Con el protocolo instalado:
@@ -76,9 +89,15 @@ Pídele a tu agente un cambio real. Con el protocolo instalado:
 4. llama a `finalize_change` solo con el conocimiento que sigue siendo cierto —
    Rationale lo escribe en `.rationale/records/` en esa misma llamada.
 
-En Claude Code puedes guiarlo con `/rationale-preflight <target> <intent>` y
-`/rationale-capture`. En Codex, pídelo por escrito: “Prepara este cambio con
-Rationale para `<target>` con intención `<intent>`.”
+No necesitas mencionar Rationale. Para guiarlo de forma explícita en Claude
+Code, usa `/rationale` (el skill) o los atajos
+`/rationale-preflight <target> <intent>` y `/rationale-capture`. En Codex, usa
+`$rationale` o pídelo por escrito: “Prepara este cambio con Rationale para
+`<target>` con intención `<intent>`.”
+
+El agente responde en el idioma en que escribes. Las instrucciones que lee están
+en inglés, y los nombres de herramientas, los ids de Records y los comandos se
+mantienen tal cual.
 
 ## Míralo en vivo
 

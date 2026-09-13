@@ -4,7 +4,7 @@ slug: cli-reference
 title: Referencia de la CLI
 description: Todos los comandos de rationale — configuración, contexto, el Control Room, autoridad humana, migración y mantenimiento.
 section: Operar
-order: 7
+order: 8
 ---
 
 ## Configuración

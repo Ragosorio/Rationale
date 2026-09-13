@@ -13,13 +13,20 @@ npm run dev
 npm run build
 ```
 
-The canonical agent prompts live at `../docs/prompt-master.md` and
-`../docs/prompt-master.es.md`. The landing imports both at build time, and the
-documentation prompt pages render the matching source for their locale.
+The master prompt lives at `../docs/prompt-master.md`, the same file the binary
+compiles in. Both documentation locales inject it at build time: the Spanish
+page shows the installed English text and explains why it is in English, so
+there is no translation to drift.
 
-The site currently uses relative canonical URLs because the production Vercel
-hostname has not been recorded in this repository yet. Set Astro's `site`
-option in `astro.config.mjs` when that hostname is confirmed.
+The site is deployed on Vercel at
+[rationale-pearl.vercel.app](https://rationale-pearl.vercel.app). Links stay
+relative; set Astro's `site` option in `astro.config.mjs` if absolute canonical
+URLs are ever needed.
+
+The landing copy for both languages lives in `src/lib/landing.ts`, and the
+documentation pages in `src/content/docs/{en,es}/`. When a release ships the
+`rationale` skill through `install-agent`, update the availability notes that
+say "starting with the release after v1.0.0".
 
 To keep Astro and official integrations current, use the official upgrader:
 

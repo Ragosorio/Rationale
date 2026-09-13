@@ -4,7 +4,7 @@ slug: mcp-reference
 title: Referencia MCP
 description: Las cinco herramientas y los seis prompts en la frontera con el agente — entradas, salidas y lo que MCP nunca decide.
 section: Operar
-order: 8
+order: 9
 ---
 
 ## `health`
@@ -44,8 +44,11 @@ Subject y qué es conocido frente a desconocido. Usa el mismo matcher que
 ## `finalize_change`
 
 Entrada: `operation_id`, `summary` y `candidates`. Cada candidato exige `kind`,
-`statement`, `rationale`, `durability` y `bindings`; puede añadir `supersedes`,
-`severity`, `id`, `risks`, `evidence` y `subject`. La base del diff es el
+`statement`, `rationale`, `durability` y `bindings`; puede añadir
+`relationships`, `supersedes`, `severity`, `id`, `risks`, `evidence` y
+`subject`. Una relación es `{source, kind, target}` con extremos
+`path::symbol` y un tipo como `calls`, `uses`, `writes`, `imports` o `tests`;
+una vez resuelta, también ancla el Record. La base del diff es el
 `base_revision` declarado, si no el HEAD que vio `prepare_change`, y si no HEAD.
 
 Salida: los Records `committed`, los candidatos `discarded` con su motivo, los
@@ -67,7 +70,7 @@ actor de Git esté declarado en `.rationale/config.yaml`.
 
 ## Prompts
 
-`prompts/list` devuelve seis acciones desde la misma fuente que las skills de
+`prompts/list` devuelve seis acciones desde la misma fuente que los atajos de
 Claude Code:
 
 | Prompt | Propósito | Argumentos |
@@ -81,6 +84,10 @@ Claude Code:
 
 Un prompt retirado, como `review`, responde con la acción que lo reemplazó. Un
 prompt desconocido es un error JSON-RPC y nunca termina la sesión.
+
+A partir de la release posterior a v1.0.0, las descripciones de prompts y
+herramientas están escritas en inglés y le piden al agente responder en el
+idioma de la persona, manteniendo literales los identificadores.
 
 ## Transporte
 

@@ -20,7 +20,7 @@
 /* Un item de grid o flex no se encoge por debajo de su contenido por defecto:
    sin esto, un comando largo en <pre> ensancha la columna y la página se
    recorta en móvil. */
-.l-page :where(.l-hero, .l-split, .l-memory, .l-agents, .l-release, .l-install, .l-docs, .l-defs, .l-steps, .l-steps li) > * {
+.l-page :where(.l-hero, .l-split, .l-memory, .l-agents, .l-release, .l-install, .l-docs, .l-defs, .l-steps, .l-steps li, .l-skill-install) > * {
   min-width: 0;
 }
 
@@ -876,6 +876,23 @@
 
 .l-install-note {
   color: var(--muted-strong);
+}
+
+.l-step-quote {
+  color: var(--ink);
+  font-size: 1.08rem;
+}
+
+/* ---------- skill ---------- */
+
+.l-ops tbody th {
+  white-space: nowrap;
+}
+
+.l-skill-install {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 2rem;
 }
 
 /* ---------- docs index ---------- */

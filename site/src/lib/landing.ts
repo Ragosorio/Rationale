@@ -2,9 +2,9 @@ export const landingCopy = {
   en: {
     skip: "Skip to main content",
     navLoop: "The loop",
+    navStart: "Get started",
+    navSkill: "Skill",
     navControlRoom: "Control Room",
-    navMemory: "Memory",
-    navAgents: "Agents",
     navDocs: "Docs",
     githubLabel: "Rationale on GitHub",
     languageLabel: "Leer en español",
@@ -15,8 +15,8 @@ export const landingCopy = {
     heroTitleB: "Rationale remembers.",
     heroBody:
       "Before an agent changes your code, Rationale hands it the rules, decisions and relationships that govern that code. After the change, what stays true is written back to your repository automatically, and the rules you pin stay out of any agent's reach.",
-    installCta: "Install v1.0",
-    quickstartCta: "Quick start",
+    startCta: "Get started",
+    quickstartCta: "Quickstart guide",
     heroMeta: "v1.0.0 stable · Git and Codebase Memory · no account · no telemetry · 127.0.0.1",
 
     problemTitle: "You explained the rule. The next chat never heard it.",
@@ -53,6 +53,60 @@ export const landingCopy = {
         body: "Fix the rules no agent may replace. Any attempt becomes a conflict only you resolve.",
       },
     ],
+
+    startTitle: "Up and running in five minutes.",
+    startBody:
+      "Install once per machine, initialize once per repository, then keep working the way you already do. Updating or uninstalling never touches `.rationale/`.",
+    startCompanionA: "Install",
+    startCompanionB: " (recommended)",
+    startInstall: "Install Rationale on macOS or Linux",
+    startInstallNote: "The installer verifies checksums, uses the stable channel and registers the MCP server for the agents it finds.",
+    startInit: "Initialize your repository",
+    startInitNote: "Creates the canon in `.rationale/` and writes the protocol into `CLAUDE.md`, `AGENTS.md` or the Cursor rule.",
+    startRestart: "Restart your agent and check the connection",
+    startRestartNote: "In Claude Code run `/rationale-health`. In Codex ask “Check Rationale health.”",
+    startAsk: "Ask for a real change",
+    startAskQuote: "“Make payment retries stop after three attempts.”",
+    startAskNote: "You don’t have to mention Rationale. The agent prepares the change, makes it, and captures what stays true.",
+    startWatch: "Watch it live, and pin what must not move",
+    startWindows: "On Windows, the PowerShell installer is in the quickstart.",
+    copyLabel: "Copy",
+
+    skillTitle: "One skill teaches your agent the whole job.",
+    skillBody:
+      "The protocol in `CLAUDE.md` and `AGENTS.md` tells an agent to prepare and capture. The `rationale` skill shows it how. A short router loads only the playbook for the operation at hand, so the depth costs nothing until a task needs it.",
+    skillFeatures: [
+      {
+        title: "Picked up when it applies",
+        body: "Claude Code and Codex can load it on their own when a task matches. `/rationale capture` or `$rationale explain <target>` call it by name.",
+      },
+      {
+        title: "Checked before it writes",
+        body: "A validator mirrors the capture gate, so a candidate that would be discarded gets fixed before `finalize_change`.",
+      },
+      {
+        title: "English inside, your language outside",
+        body: "The agent answers in the language you write in and keeps tool names, Record ids and commands verbatim. New Records follow the language your canon already uses.",
+      },
+      {
+        title: "One folder for every agent",
+        body: "It follows the open Agent Skills format, so the same directory works in Claude Code, Codex and any agent that reads skills.",
+      },
+    ],
+    skillOpHead: "Operation",
+    skillWhenHead: "When the agent uses it",
+    skillOps: [
+      { op: "preflight", when: "Before it changes, moves or deletes non-trivial code" },
+      { op: "explain", when: "When code looks redundant or odd, or you ask why it exists" },
+      { op: "capture", when: "When a change is done and tested" },
+      { op: "conflicts", when: "When a candidate collides with a pinned rule" },
+      { op: "health", when: "When tools are missing or results look degraded" },
+      { op: "adopt", when: "When setting Rationale up and seeding the first Records" },
+      { op: "maintain", when: "When bindings go stale or `rationale doctor` reports findings" },
+    ],
+    skillInstallLabel: "Install it from GitHub today",
+    skillInstallNote: "`rationale install-agent` installs it for Claude Code and Codex starting with the next release.",
+    skillDocs: "Skill guide",
 
     packetTitle: "What the agent must know, and nothing more.",
     packetBody:
@@ -124,14 +178,14 @@ export const landingCopy = {
     agentsBody:
       "The installer registers one MCP server per agent with its absolute path; `install-agent` writes the protocol into your project. Remove it all with `uninstall-agent`.",
     agentsDocs: "Agents and MCP docs",
-    claudeTitle: "Installed slash commands",
-    claudeNote: "`/rationale-conflicts` is human-only: the agent cannot decide for you.",
+    claudeTitle: "The skill and five shortcuts",
+    claudeNote: "The agent picks the skill on its own; the shortcuts are for you. `/rationale-conflicts` hands the decision to you.",
     codexTitle: "Ask in plain language",
     codexPrepare: "Prepare this change with Rationale for `<target>` with intent `<intent>`.",
     codexExplain: "Explain `<target>` before changing it.",
     codexCapture: "Capture this change with Rationale.",
     codexHealth: "Check Rationale health.",
-    codexNote: "Codex reads the protocol from `AGENTS.md` and calls the MCP tools. It gets no invented slash commands.",
+    codexNote: "Codex reads the protocol from `AGENTS.md` and calls the MCP tools. With the skill installed, `$rationale` calls it by name.",
     cursorTitle: "An always-on rule",
     cursorBody: "Cursor gets `.cursor/rules/rationale.mdc` in the project and a user-scoped MCP server that works from the Dock.",
 
@@ -142,7 +196,7 @@ export const landingCopy = {
       { title: "Read-only mission control", body: "127.0.0.1, GET-only, Host-validated, embedded assets." },
       { title: "Provider boundary", body: "Codebase Memory only through its public tools. Unavailable means unknown, never complete." },
     ],
-    trustSpec: "5 MCP tools · 6 agent actions · 3 supported agents · one binary for 5 platforms · no accounts, no telemetry",
+    trustSpec: "5 MCP tools · 6 MCP prompts · 1 skill with 7 operations · 3 supported agents · 5 platforms · no accounts, no telemetry",
 
     releaseTitle: "1.0 is stable. Here is what that means.",
     releaseBody: "The full loop is implemented, tested and used on Rationale’s own repository.",
@@ -153,6 +207,7 @@ export const landingCopy = {
       "Dogfood: a real change captured and retrieved end to end",
     ],
     releaseOpen: [
+      "The `rationale` skill is on `main`; `install-agent` ships it in the next release",
       "Lexical intent-conflict polarity is a noisy hint",
       "Some ADRs are implemented but still proposed",
     ],
@@ -161,24 +216,13 @@ export const landingCopy = {
     releaseEvidence: "Read the evidence",
     releaseLimits: "Known limits",
 
-    installTitle: "Give your agents a memory for why.",
-    installBody: "The installer verifies checksums and uses the stable channel. Updating or uninstalling never touches `.rationale/`.",
-    installCompanionA: "Install",
-    installCompanionB: " (recommended)",
-    installStep1: "Install Rationale on macOS or Linux",
-    installStep2: "Initialize it inside your repository",
-    installStep3: "Open the Control Room",
-    installWindows: "On Windows, the PowerShell installer is in the quickstart.",
-    installRestart: "Restart your agent. In Claude Code run `/rationale-health`; in Codex ask “Check Rationale health.”",
-    installCopy: "Copy",
-
     docsTitle: "Everything you need to check the claims.",
     docsCards: [
       { slug: "quickstart", title: "Five-minute quickstart", body: "Install, connect an agent, first governed change." },
+      { slug: "skill", title: "The rationale skill", body: "Operations, playbooks, the validator and your language." },
       { slug: "workflow", title: "The loop", body: "Prepare, change, capture, and where a person decides." },
       { slug: "control-room", title: "Control Room", body: "The graph, the memory and live activity." },
       { slug: "concepts", title: "Core concepts", body: "Records, provenance, authority, relationships." },
-      { slug: "mcp-reference", title: "MCP reference", body: "Five tools, six prompts, one boundary." },
       { slug: "evidence", title: "Evidence", body: "What 1.0 was verified against, and what’s open." },
     ],
 
@@ -191,9 +235,9 @@ export const landingCopy = {
   es: {
     skip: "Saltar al contenido principal",
     navLoop: "El ciclo",
+    navStart: "Empezar",
+    navSkill: "Skill",
     navControlRoom: "Control Room",
-    navMemory: "Memoria",
-    navAgents: "Agentes",
     navDocs: "Docs",
     githubLabel: "Rationale en GitHub",
     languageLabel: "Read in English",
@@ -204,8 +248,8 @@ export const landingCopy = {
     heroTitleB: "Rationale lo recuerda.",
     heroBody:
       "Antes de que un agente cambie tu código, Rationale le entrega las reglas, decisiones y relaciones que gobiernan ese código. Después del cambio, lo que sigue siendo cierto vuelve a tu repositorio de forma automática, y las reglas que fijas quedan fuera del alcance de cualquier agente.",
-    installCta: "Instalar v1.0",
-    quickstartCta: "Empieza rápido",
+    startCta: "Empezar",
+    quickstartCta: "Guía rápida",
     heroMeta: "v1.0.0 estable · Git y Codebase Memory · sin cuenta · sin telemetría · 127.0.0.1",
 
     problemTitle: "Explicaste la regla. El siguiente chat nunca la escuchó.",
@@ -242,6 +286,60 @@ export const landingCopy = {
         body: "Fija las reglas que ningún agente puede reemplazar. Cualquier intento se vuelve un conflicto que solo tú resuelves.",
       },
     ],
+
+    startTitle: "Funcionando en cinco minutos.",
+    startBody:
+      "Se instala una vez por máquina y se inicializa una vez por repositorio; después sigues trabajando como ya lo haces. Actualizar o desinstalar nunca toca `.rationale/`.",
+    startCompanionA: "Instala",
+    startCompanionB: " (recomendado)",
+    startInstall: "Instala Rationale en macOS o Linux",
+    startInstallNote: "El instalador verifica checksums, usa el canal estable y registra el servidor MCP en los agentes que encuentra.",
+    startInit: "Inicializa tu repositorio",
+    startInitNote: "Crea el canon en `.rationale/` y escribe el protocolo en `CLAUDE.md`, `AGENTS.md` o la regla de Cursor.",
+    startRestart: "Reinicia tu agente y comprueba la conexión",
+    startRestartNote: "En Claude Code ejecuta `/rationale-health`. En Codex pide «Comprueba la salud de Rationale».",
+    startAsk: "Pide un cambio real",
+    startAskQuote: "“Haz que los reintentos de pago se detengan después de tres intentos.”",
+    startAskNote: "No necesitas mencionar Rationale. El agente prepara el cambio, lo hace y captura lo que sigue siendo cierto.",
+    startWatch: "Míralo en vivo y fija lo que no debe moverse",
+    startWindows: "En Windows, el instalador de PowerShell está en la guía rápida.",
+    copyLabel: "Copiar",
+
+    skillTitle: "Un skill le enseña a tu agente todo el trabajo.",
+    skillBody:
+      "El protocolo en `CLAUDE.md` y `AGENTS.md` le dice al agente que prepare y capture. El skill `rationale` le muestra cómo. Un router corto carga solo el playbook de la operación en curso, así que esa profundidad no cuesta nada hasta que una tarea la necesita.",
+    skillFeatures: [
+      {
+        title: "Entra cuando corresponde",
+        body: "Claude Code y Codex pueden cargarlo por su cuenta cuando la tarea coincide. `/rationale capture` o `$rationale explain <target>` lo llaman por nombre.",
+      },
+      {
+        title: "Revisa antes de escribir",
+        body: "Un validador replica el gate de captura, así que un candidato que se descartaría se corrige antes de `finalize_change`.",
+      },
+      {
+        title: "Instrucciones en inglés, respuestas en tu idioma",
+        body: "El agente responde en el idioma en que escribes y mantiene literales los nombres de herramientas, los ids de Records y los comandos. Los Records nuevos siguen el idioma que ya usa tu canon.",
+      },
+      {
+        title: "Una carpeta para cada agente",
+        body: "Sigue el formato abierto Agent Skills: el mismo directorio funciona en Claude Code, Codex y cualquier agente que lea skills.",
+      },
+    ],
+    skillOpHead: "Operación",
+    skillWhenHead: "Cuándo la usa el agente",
+    skillOps: [
+      { op: "preflight", when: "Antes de cambiar, mover o borrar código no trivial" },
+      { op: "explain", when: "Cuando el código parece redundante o raro, o preguntas por qué existe" },
+      { op: "capture", when: "Cuando un cambio está hecho y probado" },
+      { op: "conflicts", when: "Cuando un candidato choca con una regla fijada" },
+      { op: "health", when: "Cuando faltan herramientas o los resultados se ven degradados" },
+      { op: "adopt", when: "Al configurar Rationale y sembrar los primeros Records" },
+      { op: "maintain", when: "Cuando los bindings quedan obsoletos o `rationale doctor` reporta hallazgos" },
+    ],
+    skillInstallLabel: "Instálalo hoy desde GitHub",
+    skillInstallNote: "`rationale install-agent` lo instala para Claude Code y Codex a partir de la próxima release.",
+    skillDocs: "Guía del skill",
 
     packetTitle: "Lo que el agente debe saber, y nada más.",
     packetBody:
@@ -313,14 +411,14 @@ export const landingCopy = {
     agentsBody:
       "El instalador registra un servidor MCP por agente con su ruta absoluta; `install-agent` escribe el protocolo en tu proyecto. Retíralo todo con `uninstall-agent`.",
     agentsDocs: "Agentes y MCP en los docs",
-    claudeTitle: "Slash commands instalados",
-    claudeNote: "`/rationale-conflicts` es solo humano: el agente no puede decidir por ti.",
+    claudeTitle: "El skill y cinco atajos",
+    claudeNote: "El agente elige el skill por su cuenta; los atajos son para ti. `/rationale-conflicts` te deja la decisión a ti.",
     codexTitle: "Pídelo por escrito",
     codexPrepare: "Prepara este cambio con Rationale para `<target>` con intención `<intent>`.",
     codexExplain: "Explícame `<target>` antes de modificarlo.",
     codexCapture: "Captura este cambio con Rationale.",
     codexHealth: "Comprueba la salud de Rationale.",
-    codexNote: "Codex lee el protocolo en `AGENTS.md` y llama las herramientas MCP. No recibe slash commands inventados.",
+    codexNote: "Codex lee el protocolo en `AGENTS.md` y llama las herramientas MCP. Con el skill instalado, `$rationale` lo llama por nombre.",
     cursorTitle: "Una regla siempre activa",
     cursorBody: "Cursor recibe `.cursor/rules/rationale.mdc` en el proyecto y un servidor MCP por usuario que funciona desde el Dock.",
 
@@ -331,7 +429,7 @@ export const landingCopy = {
       { title: "Centro de control de solo lectura", body: "127.0.0.1, solo GET, Host validado, assets embebidos." },
       { title: "Frontera con el proveedor", body: "Codebase Memory solo por sus herramientas públicas. No disponible significa desconocido, nunca completo." },
     ],
-    trustSpec: "5 herramientas MCP · 6 acciones de agente · 3 agentes soportados · un binario para 5 plataformas · sin cuentas ni telemetría",
+    trustSpec: "5 herramientas MCP · 6 prompts MCP · 1 skill con 7 operaciones · 3 agentes soportados · 5 plataformas · sin cuentas ni telemetría",
 
     releaseTitle: "1.0 es estable. Esto es lo que significa.",
     releaseBody: "El ciclo completo está implementado, probado y en uso sobre el propio repositorio de Rationale.",
@@ -342,6 +440,7 @@ export const landingCopy = {
       "Dogfood: un cambio real capturado y recuperado de extremo a extremo",
     ],
     releaseOpen: [
+      "El skill `rationale` está en `main`; `install-agent` lo incluye en la próxima release",
       "La polaridad léxica de los conflictos es una pista ruidosa",
       "Algunos ADRs están implementados pero siguen propuestos",
     ],
@@ -350,24 +449,13 @@ export const landingCopy = {
     releaseEvidence: "Leer la evidencia",
     releaseLimits: "Límites conocidos",
 
-    installTitle: "Dale a tus agentes memoria para el porqué.",
-    installBody: "El instalador verifica checksums y usa el canal estable. Actualizar o desinstalar nunca toca `.rationale/`.",
-    installCompanionA: "Instala",
-    installCompanionB: " (recomendado)",
-    installStep1: "Instala Rationale en macOS o Linux",
-    installStep2: "Inicialízalo dentro de tu repositorio",
-    installStep3: "Abre el Control Room",
-    installWindows: "En Windows, el instalador de PowerShell está en el quickstart.",
-    installRestart: "Reinicia tu agente. En Claude Code ejecuta `/rationale-health`; en Codex pide «Comprueba la salud de Rationale».",
-    installCopy: "Copiar",
-
     docsTitle: "Todo lo necesario para verificar lo que prometemos.",
     docsCards: [
-      { slug: "quickstart", title: "Quickstart de cinco minutos", body: "Instala, conecta un agente, primer cambio gobernado." },
+      { slug: "quickstart", title: "Guía rápida de cinco minutos", body: "Instala, conecta un agente, primer cambio gobernado." },
+      { slug: "skill", title: "El skill rationale", body: "Operaciones, playbooks, el validador y tu idioma." },
       { slug: "workflow", title: "El ciclo", body: "Preparar, cambiar, capturar, y dónde decide una persona." },
       { slug: "control-room", title: "Control Room", body: "El grafo, la memoria y la actividad en vivo." },
       { slug: "concepts", title: "Conceptos clave", body: "Records, procedencia, autoridad, relaciones." },
-      { slug: "mcp-reference", title: "Referencia MCP", body: "Cinco herramientas, seis prompts, una frontera." },
       { slug: "evidence", title: "Evidencia", body: "Contra qué se verificó 1.0 y qué sigue abierto." },
     ],
 

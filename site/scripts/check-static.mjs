@@ -43,6 +43,15 @@ requireText(english, "/rationale-preflight", "English Claude Code actions");
 requireText(spanish, "/rationale-preflight", "Spanish Claude Code actions");
 requireText(english, "Prepare this change with Rationale", "English Codex request");
 requireText(spanish, "Prepara este cambio con Rationale", "Spanish Codex request");
+requireText(english, 'id="skill"', "English skill section");
+requireText(spanish, 'id="skill"', "Spanish skill section");
+requireText(english, "npx skills add Ragosorio/Rationale", "English skill install");
+requireText(spanish, "npx skills add Ragosorio/Rationale", "Spanish skill install");
+for (const [landing, context] of [[english, "English landing"], [spanish, "Spanish landing"]]) {
+  if (landing.includes("/rationale-protocol")) fail(`${context} advertises the retired /rationale-protocol skill`);
+}
+// La página española del prompt maestro muestra el texto inglés que se instala.
+requireText(read("es/docs/prompt-master/index.html"), "Reply in the language the user writes in", "Spanish master prompt page");
 
 const builtFiles = filesUnder("");
 const browserText = builtFiles

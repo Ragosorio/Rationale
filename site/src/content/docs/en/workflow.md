@@ -4,7 +4,7 @@ slug: workflow
 title: The prepare → change → capture loop
 description: A complete change with Rationale — context before the edit, durable memory after it, and a person only where authority is at stake.
 section: Operate
-order: 4
+order: 5
 ---
 
 ## 1. Locate

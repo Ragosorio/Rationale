@@ -4,7 +4,7 @@ slug: architecture
 title: Factual architecture
 description: How Git, Codebase Memory, the canon, the context compiler, MCP, local activity, and the Control Room fit together.
 section: Project
-order: 12
+order: 13
 ---
 
 ## Components
@@ -19,7 +19,7 @@ order: 12
 | `operations` + `activity` | Operation snapshots and the per-session activity stream (ADR-0017). |
 | `mcp::server` | Newline-delimited JSON-RPC over stdio: five tools, six prompts. |
 | `ui` | A std-only localhost HTTP server with REST views and Server-Sent Events. |
-| `agents` | Convergent, reversible agent registration and project instructions. |
+| `agents` + `prompts` + `skill_bundle` | Convergent, reversible agent registration; the protocol and shortcuts from one source; the embedded `rationale` skill written file by file with a hash. |
 | `doctor` | Canon integrity checks and guided repair. |
 
 ## Canonical versus derived

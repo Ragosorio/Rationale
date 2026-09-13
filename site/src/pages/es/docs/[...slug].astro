@@ -5,7 +5,6 @@ import LoopDiagram from "../../../components/LoopDiagram.astro";
 import SubgraphDiagram from "../../../components/SubgraphDiagram.astro";
 import DocsLayout from "../../../layouts/DocsLayout.astro";
 import masterPrompt from "../../../../../docs/prompt-master.md?raw";
-import masterPromptEs from "../../../../../docs/prompt-master.es.md?raw";
 
 export async function getStaticPaths() {
   const allEntries = await getCollection("docs");
@@ -45,7 +44,7 @@ const LeadFigure = leadFigures[entry.data.slug];
   {LeadFigure && <div slot="lead" class="docs-lead-figure"><LeadFigure lang="es" /></div>}
   <Content />
   {entry.data.slug === "prompt-master" && <div class="docs-prompt-block">
-    <div class="docs-prompt-toolbar"><span>Pegar al inicio de cada conversación</span><button type="button" data-docs-copy data-copy-value={masterPromptEs.trim()}>Copiar prompt</button></div>
-    <pre><code>{masterPromptEs.trim()}</code></pre>
+    <div class="docs-prompt-toolbar"><span>Se instala en inglés · pégalo al inicio de cada conversación</span><button type="button" data-docs-copy data-copy-value={masterPrompt.trim()}>Copiar prompt</button></div>
+    <pre lang="en"><code>{masterPrompt.trim()}</code></pre>
   </div>}
 </DocsLayout>

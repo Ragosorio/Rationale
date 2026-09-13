@@ -4,7 +4,7 @@ slug: cli-reference
 title: CLI reference
 description: Every rationale command — setup, context, the Control Room, human authority, migration, and maintenance.
 section: Operate
-order: 7
+order: 8
 ---
 
 ## Setup

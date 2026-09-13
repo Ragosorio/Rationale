@@ -5,7 +5,6 @@ import LoopDiagram from "../../components/LoopDiagram.astro";
 import SubgraphDiagram from "../../components/SubgraphDiagram.astro";
 import DocsLayout from "../../layouts/DocsLayout.astro";
 import masterPrompt from "../../../../docs/prompt-master.md?raw";
-import masterPromptEs from "../../../../docs/prompt-master.es.md?raw";
 
 export async function getStaticPaths() {
   const allEntries = await getCollection("docs");

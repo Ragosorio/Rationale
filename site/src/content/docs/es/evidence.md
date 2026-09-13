@@ -4,7 +4,7 @@ slug: evidence
 title: Evidencia y estado de la release
 description: Contra qué se verificó 1.0, cómo, y qué sigue abierto — con la cobertura y la incertidumbre adjuntas.
 section: Proyecto
-order: 13
+order: 14
 ---
 
 ## Estado de la release
@@ -39,6 +39,15 @@ repositorio de Rationale.
   Room.
 
 Los registros detallados viven en el repositorio, en `docs/work-items/`.
+
+## En `main`, sin publicar todavía
+
+El Agent Skill `rationale`, el texto para agentes en inglés con respuestas en el
+idioma de la persona y una entrada `relationships` documentada para
+`finalize_change` están en `main` y figuran como *Unreleased* en el changelog.
+Los tests mantienen el skill embebido idéntico a su directorio, hacen cumplir
+los límites de Agent Skills y fallan si el validador de candidatos se aparta del
+gate de captura. Llegan con la próxima release.
 
 ## Qué sigue abierto
 

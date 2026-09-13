@@ -4,7 +4,7 @@ slug: limits
 title: Known limits
 description: What Rationale 1.0 deliberately does not claim — stated plainly so you can calibrate trust.
 section: Verify
-order: 11
+order: 12
 ---
 
 ## Meaning is still the agent's judgment
@@ -29,6 +29,14 @@ Agents write Records without an approval queue. The gate removes noise and
 duplicates, and provenance always says an agent asserted it, but the quality of
 memory still depends on the agent following the protocol. Pin the rules that
 must not move, and review `.rationale/records/` in pull requests like code.
+
+## Skill selection is probabilistic
+
+An agent decides whether to load the `rationale` skill from its description,
+and it can miss. The protocol in `CLAUDE.md` or `AGENTS.md` is the floor every
+conversation keeps; `/rationale` and `$rationale` make the skill explicit. The
+skill's evals measure selection and behavior, but they are run by maintainers,
+not on your machine.
 
 ## One repository at a time
 

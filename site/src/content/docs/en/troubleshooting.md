@@ -4,7 +4,7 @@ slug: troubleshooting
 title: Troubleshooting
 description: Diagnose provider coverage, MCP registration, missing memory, conflicts, and the Control Room without guessing.
 section: Verify
-order: 10
+order: 11
 ---
 
 ## `health` says the provider is unavailable
@@ -26,6 +26,22 @@ without your shell `PATH`. If you moved the binary, the next `install-agent`
 migrates the registration to the new path. In Claude Code, `/rationale-health`
 combines the MCP `health` tool with `rationale doctor` to show what works and
 what is degraded.
+
+## The agent does not use the skill
+
+Check that `rationale/SKILL.md` exists under `.claude/skills/` (Claude Code) or
+`.agents/skills/` (Codex), then restart the agent so it rescans skills. Invoke
+it by name to confirm it loads: `/rationale` in Claude Code, `$rationale` in
+Codex. Automatic selection is probabilistic; the protocol in `CLAUDE.md` or
+`AGENTS.md` still applies when the skill is not selected. If `install-agent`
+reports that the skill directory is a symbolic link, another tool manages it
+and Rationale leaves it alone.
+
+## The agent answers in the wrong language
+
+The protocol and the skill tell the agent to reply in the language you write
+in. Write your request in the language you want back. Identifiers, commands,
+and Record statements quoted from the canon stay as they are on purpose.
 
 ## `serve` looks silent
 

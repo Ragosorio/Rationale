@@ -18,8 +18,6 @@ It is kept in the repository at `docs/prompt-master.md`, compiled into the
 binary, and injected into this page at build time — the installed instructions
 and the site cannot drift apart.
 
-The Spanish version is available at [prompt maestro en español](/es/docs/prompt-master).
-
 ## What it asks of the agent
 
 Locate with Codebase Memory, call `prepare_change` before a non-trivial change,
@@ -27,6 +25,16 @@ state any governing Record or conflict explicitly, make the smallest change,
 and close with `finalize_change` carrying only durable knowledge — one decision
 per Record. If a candidate collides with a pinned rule, the agent stops and
 asks the human, then calls `resolve_conflict` with their literal answer.
+
+The protocol is the floor every conversation gets. For depth on each step, it
+points the agent to the [`rationale` skill](/docs/skill).
+
+## One text for every language
+
+The protocol is written in English and tells the agent to reply in the language
+the user writes in. Tool names, arguments, Record ids, field values, paths, and
+commands stay exactly as they are, so a single installed text serves every
+team.
 
 ## Copy
 

@@ -4,7 +4,7 @@ slug: evidence
 title: Evidence and release status
 description: What 1.0 was verified against, how, and what remains open — coverage and uncertainty attached.
 section: Project
-order: 13
+order: 14
 ---
 
 ## Release status
@@ -36,6 +36,15 @@ Control Room — is implemented, tested, and used on Rationale's own repository.
   governing, and the whole operation visible live in the Control Room.
 
 The detailed records live in the repository under `docs/work-items/`.
+
+## On `main`, not released yet
+
+The `rationale` Agent Skill, agent-facing text in English with replies in the
+user's language, and a documented `relationships` input for `finalize_change`
+are on `main` and listed under *Unreleased* in the changelog. Tests keep the
+embedded skill identical to its directory, enforce the Agent Skills limits, and
+fail when the candidate validator drifts from the capture gate. They ship with
+the next release.
 
 ## What remains open
 

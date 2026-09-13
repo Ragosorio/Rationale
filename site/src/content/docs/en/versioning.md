@@ -4,7 +4,7 @@ slug: versioning
 title: What is versioned
 description: Canonical knowledge in Git, local traces on your machine, and how releases and channels work from 1.0.
 section: Verify
-order: 9
+order: 10
 ---
 
 ## Commit these
@@ -15,8 +15,8 @@ of migrated proposals. These files are the shareable explanation of why the code
 behaves as it does, and they are reviewed in the same pull request as the code.
 
 The agent instructions (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/`) and the
-Claude Code skills are ordinary project files too. They never contain a personal
-path.
+agent skills (`.claude/skills/`, `.agents/skills/`) are ordinary project files
+too. They never contain a personal path.
 
 ## Keep these local
 

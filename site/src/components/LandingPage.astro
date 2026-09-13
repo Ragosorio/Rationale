@@ -26,6 +26,7 @@ const docsBase = isSpanish ? "/es/docs/" : "/docs/";
 const docs = {
   root: docsBase,
   quickstart: `${docsBase}quickstart`,
+  skill: `${docsBase}skill`,
   agents: `${docsBase}agents-and-mcp`,
   evidence: `${docsBase}evidence`,
   limits: `${docsBase}limits`,
@@ -44,6 +45,7 @@ const pageDescription = isSpanish
 const installCommand = `curl --proto '=https' --tlsv1.2 -LsSf ${repo}/releases/latest/download/rationale-installer.sh | sh`;
 const codebaseMemoryUrl = "https://github.com/DeusData/codebase-memory-mcp";
 const codebaseMemoryCommand = "curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash";
+const skillCommand = "npx skills add Ragosorio/Rationale";
 
 /** Texto con `código` en línea → segmentos para renderizar. */
 const inline = (text: string) =>
@@ -90,9 +92,9 @@ const inline = (text: string) =>
 
           <nav class="l-nav" aria-label={isSpanish ? "Secciones de la página" : "Page sections"}>
             <a href="#loop">{t.navLoop}</a>
+            <a href="#quick-start">{t.navStart}</a>
+            <a href="#skill">{t.navSkill}</a>
             <a href="#control-room">{t.navControlRoom}</a>
-            <a href="#memory">{t.navMemory}</a>
-            <a href="#quick-start">{t.navAgents}</a>
             <a href={docs.root}>{t.navDocs}</a>
           </nav>
 
@@ -117,12 +119,12 @@ const inline = (text: string) =>
             <h1 id="hero-title" class="l-h1"><span>{t.heroTitleA}</span><span class="l-h1-accent">{t.heroTitleB}</span></h1>
             <p class="l-hero-body">{t.heroBody}</p>
             <div class="l-hero-cta">
-              <a class="l-btn l-btn-primary" href="#install">{t.installCta}</a>
-              <a class="l-btn" href="#quick-start">{t.quickstartCta}</a>
+              <a class="l-btn l-btn-primary" href="#quick-start">{t.startCta}</a>
+              <a class="l-btn" href={docs.quickstart}>{t.quickstartCta}</a>
             </div>
             <div class="l-command l-hero-command">
               <pre>{installCommand}</pre>
-              <button type="button" data-copy-value={installCommand}><span data-copy-status>{t.installCopy}</span></button>
+              <button type="button" data-copy-value={installCommand}><span data-copy-status>{t.copyLabel}</span></button>
             </div>
             <p class="l-hero-meta">{t.heroMeta}</p>
           </div>
@@ -174,6 +176,93 @@ const inline = (text: string) =>
                 </li>
               ))}
             </ol>
+          </div>
+        </section>
+
+        <section id="quick-start" class="l-section" aria-labelledby="quick-start-title">
+          <div class="l-container l-install">
+            <div>
+              <h2 id="quick-start-title" class="l-h2">{t.startTitle}</h2>
+              <p class="l-lede">{inline(t.startBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+            </div>
+            <ol class="l-steps">
+              <li>
+                <p class="l-step-label"><span class="l-step-num">1</span><span>{t.startCompanionA} <a class="l-link" href={codebaseMemoryUrl} target="_blank" rel="noreferrer">Codebase Memory</a>{t.startCompanionB}</span></p>
+                <div class="l-command"><pre>{codebaseMemoryCommand}</pre><button type="button" data-copy-value={codebaseMemoryCommand}><span data-copy-status>{t.copyLabel}</span></button></div>
+              </li>
+              <li>
+                <p class="l-step-label"><span class="l-step-num">2</span><span>{t.startInstall}</span></p>
+                <div class="l-command"><pre>{installCommand}</pre><button type="button" data-copy-value={installCommand}><span data-copy-status>{t.copyLabel}</span></button></div>
+                <p class="l-install-note">{t.startInstallNote}</p>
+              </li>
+              <li>
+                <p class="l-step-label"><span class="l-step-num">3</span><span>{t.startInit}</span></p>
+                <div class="l-command"><pre>rationale init</pre><button type="button" data-copy-value="rationale init"><span data-copy-status>{t.copyLabel}</span></button></div>
+                <p class="l-install-note">{inline(t.startInitNote).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+              </li>
+              <li>
+                <p class="l-step-label"><span class="l-step-num">4</span><span>{t.startRestart}</span></p>
+                <p class="l-install-note">{inline(t.startRestartNote).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+              </li>
+              <li>
+                <p class="l-step-label"><span class="l-step-num">5</span><span>{t.startAsk}</span></p>
+                <p class="l-step-quote">{t.startAskQuote}</p>
+                <p class="l-install-note">{t.startAskNote}</p>
+              </li>
+              <li>
+                <p class="l-step-label"><span class="l-step-num">6</span><span>{t.startWatch}</span></p>
+                <div class="l-command"><pre>rationale ui</pre><button type="button" data-copy-value="rationale ui"><span data-copy-status>{t.copyLabel}</span></button></div>
+                <div class="l-command"><pre>rationale pin &lt;record-id&gt;</pre><button type="button" data-copy-value="rationale pin <record-id>"><span data-copy-status>{t.copyLabel}</span></button></div>
+              </li>
+              <li>
+                <p class="l-install-note"><a class="l-link" href={docs.quickstart}>{t.startWindows}</a></p>
+              </li>
+            </ol>
+          </div>
+        </section>
+
+        <section id="skill" class="l-section" aria-labelledby="skill-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="skill-title" class="l-h2">{t.skillTitle}</h2>
+              <p class="l-lede">{inline(t.skillBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+            </div>
+            <div class="l-split">
+              <dl class="l-defs">
+                {t.skillFeatures.map((feature) => (
+                  <div>
+                    <dt>{feature.title}</dt>
+                    <dd>{inline(feature.body).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div>
+                <div class="l-table-wrap">
+                  <table class="l-states l-ops">
+                    <thead>
+                      <tr>
+                        <th scope="col">{t.skillOpHead}</th>
+                        <th scope="col">{t.skillWhenHead}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {t.skillOps.map((item) => (
+                        <tr>
+                          <th scope="row"><code>{item.op}</code></th>
+                          <td>{inline(item.when).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div class="l-skill-install">
+                  <p class="l-step-label">{t.skillInstallLabel}</p>
+                  <div class="l-command"><pre>{skillCommand}</pre><button type="button" data-copy-value={skillCommand}><span data-copy-status>{t.copyLabel}</span></button></div>
+                  <p class="l-install-note">{inline(t.skillInstallNote).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+                </div>
+              </div>
+            </div>
+            <p class="l-after"><span></span><a class="l-link" href={docs.skill}>{t.skillDocs}</a></p>
           </div>
         </section>
 
@@ -295,10 +384,10 @@ const inline = (text: string) =>
           </div>
         </section>
 
-        <section id="quick-start" class="l-section" aria-labelledby="quick-start-title">
+        <section id="agents" class="l-section" aria-labelledby="agents-title">
           <div class="l-container">
             <div class="l-section-head">
-              <h2 id="quick-start-title" class="l-h2">{t.agentsTitle}</h2>
+              <h2 id="agents-title" class="l-h2">{t.agentsTitle}</h2>
               <p class="l-lede">{inline(t.agentsBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
             </div>
             <div class="l-agents">
@@ -306,12 +395,12 @@ const inline = (text: string) =>
                 <p class="l-agent-name">Claude Code</p>
                 <h3>{t.claudeTitle}</h3>
                 <ul class="l-skill-list">
+                  <li><code>/rationale [operation]</code></li>
                   <li><code>/rationale-preflight &lt;target&gt; &lt;intent&gt;</code></li>
                   <li><code>/rationale-explain &lt;target&gt;</code></li>
                   <li><code>/rationale-capture [statement]</code></li>
                   <li><code class="is-human">/rationale-conflicts</code></li>
                   <li><code>/rationale-health</code></li>
-                  <li><code>/rationale-protocol</code></li>
                 </ul>
                 <p class="l-agent-note">{inline(t.claudeNote).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
               </article>
@@ -367,41 +456,10 @@ const inline = (text: string) =>
               </div>
               <div>
                 <h3>{t.releaseOpenLabel}</h3>
-                <ul class="l-checks l-checks-open">{t.releaseOpen.map((item) => <li>{item}</li>)}</ul>
+                <ul class="l-checks l-checks-open">{t.releaseOpen.map((item) => <li>{inline(item).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</li>)}</ul>
                 <a class="l-link" href={docs.limits}>{t.releaseLimits}</a>
               </div>
             </div>
-          </div>
-        </section>
-
-        <section id="install" class="l-section" aria-labelledby="install-title">
-          <div class="l-container l-install">
-            <div>
-              <h2 id="install-title" class="l-h2">{t.installTitle}</h2>
-              <p class="l-lede">{inline(t.installBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
-            </div>
-            <ol class="l-steps">
-              <li>
-                <p class="l-step-label"><span class="l-step-num">1</span><span>{t.installCompanionA} <a class="l-link" href={codebaseMemoryUrl} target="_blank" rel="noreferrer">Codebase Memory</a>{t.installCompanionB}</span></p>
-                <div class="l-command"><pre>{codebaseMemoryCommand}</pre><button type="button" data-copy-value={codebaseMemoryCommand}><span data-copy-status>{t.installCopy}</span></button></div>
-              </li>
-              <li>
-                <p class="l-step-label"><span class="l-step-num">2</span><span>{t.installStep1}</span></p>
-                <div class="l-command"><pre>{installCommand}</pre><button type="button" data-copy-value={installCommand}><span data-copy-status>{t.installCopy}</span></button></div>
-              </li>
-              <li>
-                <p class="l-step-label"><span class="l-step-num">3</span><span>{t.installStep2}</span></p>
-                <div class="l-command"><pre>rationale init</pre><button type="button" data-copy-value="rationale init"><span data-copy-status>{t.installCopy}</span></button></div>
-              </li>
-              <li>
-                <p class="l-step-label"><span class="l-step-num">4</span><span>{t.installStep3}</span></p>
-                <div class="l-command"><pre>rationale ui</pre><button type="button" data-copy-value="rationale ui"><span data-copy-status>{t.installCopy}</span></button></div>
-              </li>
-              <li>
-                <p class="l-install-note">{inline(t.installRestart).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
-                <p class="l-install-note"><a class="l-link" href={docs.quickstart}>{t.installWindows}</a></p>
-              </li>
-            </ol>
           </div>
         </section>
 

@@ -4,7 +4,7 @@ slug: workflow
 title: El ciclo preparar → cambiar → capturar
 description: Un cambio completo con Rationale — contexto antes de editar, memoria durable después y una persona solo donde está en juego la autoridad.
 section: Operar
-order: 4
+order: 5
 ---
 
 ## 1. Localizar

@@ -4,7 +4,7 @@ slug: limits
 title: Límites conocidos
 description: Lo que Rationale 1.0 deliberadamente no afirma — dicho con claridad para que puedas calibrar tu confianza.
 section: Verificar
-order: 11
+order: 12
 ---
 
 ## El significado sigue siendo juicio del agente
@@ -32,6 +32,14 @@ duplicados, y la procedencia siempre dice que lo afirmó un agente, pero la
 calidad de la memoria sigue dependiendo de que el agente siga el protocolo.
 Fija las reglas que no deben moverse y revisa `.rationale/records/` en los pull
 requests como si fuera código.
+
+## La selección del skill es probabilística
+
+Un agente decide si carga el skill `rationale` a partir de su descripción, y
+puede equivocarse. El protocolo en `CLAUDE.md` o `AGENTS.md` es el piso que
+conserva cada conversación; `/rationale` y `$rationale` hacen explícito el
+skill. Las evals del skill miden la selección y el comportamiento, pero las
+ejecutan los mantenedores, no tu máquina.
 
 ## Un repositorio a la vez
 

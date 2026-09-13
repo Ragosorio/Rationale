@@ -4,7 +4,7 @@ slug: architecture
 title: Arquitectura factual
 description: Cómo encajan Git, Codebase Memory, el canon, el compilador de contexto, MCP, la actividad local y el Control Room.
 section: Proyecto
-order: 12
+order: 13
 ---
 
 ## Componentes
@@ -19,7 +19,7 @@ order: 12
 | `operations` + `activity` | Snapshots de operación y el stream de actividad por sesión (ADR-0017). |
 | `mcp::server` | JSON-RPC delimitado por líneas sobre stdio: cinco herramientas, seis prompts. |
 | `ui` | Un servidor HTTP localhost sin dependencias externas, con vistas REST y Server-Sent Events. |
-| `agents` | Registro de agentes convergente y reversible, e instrucciones del proyecto. |
+| `agents` + `prompts` + `skill_bundle` | Registro de agentes convergente y reversible; el protocolo y los atajos desde una sola fuente; el skill `rationale` embebido, escrito archivo por archivo con un hash. |
 | `doctor` | Chequeos de integridad del canon y reparación guiada. |
 
 ## Canónico frente a derivado

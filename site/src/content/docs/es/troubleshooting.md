@@ -4,7 +4,7 @@ slug: troubleshooting
 title: Solución de problemas
 description: Diagnostica cobertura del proveedor, registro MCP, memoria ausente, conflictos y el Control Room sin adivinar.
 section: Verificar
-order: 10
+order: 11
 ---
 
 ## `health` dice que el proveedor no está disponible
@@ -26,6 +26,23 @@ aplicaciones gráficas funcionan sin el `PATH` de tu shell. Si moviste el
 binario, el siguiente `install-agent` migra el registro a la nueva ruta. En
 Claude Code, `/rationale-health` combina la herramienta MCP `health` con
 `rationale doctor` para mostrar qué funciona y qué está degradado.
+
+## El agente no usa el skill
+
+Comprueba que exista `rationale/SKILL.md` en `.claude/skills/` (Claude Code) o en
+`.agents/skills/` (Codex) y reinicia el agente para que vuelva a leer los
+skills. Invócalo por nombre para confirmar que carga: `/rationale` en Claude
+Code, `$rationale` en Codex. La selección automática es probabilística; el
+protocolo en `CLAUDE.md` o `AGENTS.md` sigue aplicando cuando el skill no se
+elige. Si `install-agent` informa que el directorio del skill es un enlace
+simbólico, lo gestiona otra herramienta y Rationale no lo toca.
+
+## El agente responde en otro idioma
+
+El protocolo y el skill le piden al agente responder en el idioma en que
+escribes. Escribe tu petición en el idioma en que quieres la respuesta. Los
+identificadores, los comandos y las afirmaciones citadas del canon se mantienen
+tal cual a propósito.
 
 ## `serve` parece mudo
 

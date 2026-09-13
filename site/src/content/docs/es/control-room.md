@@ -4,7 +4,7 @@ slug: control-room
 title: Control Room
 description: rationale ui — el subgrafo de trabajo, la memoria causal y la actividad de los agentes en vivo, servido en solo lectura desde tu máquina.
 section: Operar
-order: 5
+order: 6
 ---
 
 ## Abrirlo

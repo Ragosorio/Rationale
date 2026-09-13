@@ -14,11 +14,20 @@ la regla de Cursor, dentro de un bloque delimitado que `uninstall-agent` retira
 con exactitud. Solo necesitas pegarlo a mano en un cliente que Rationale no
 configura.
 
-La versión que se instala es la inglesa, `docs/prompt-master.md`, compilada en
-el binario. Esta traducción vive en `docs/prompt-master.es.md` y un chequeo de
-CI exige que ambas tengan los mismos pasos.
+Vive en el repositorio en `docs/prompt-master.md`, se compila dentro del binario
+y se inyecta en esta página al construir el sitio: las instrucciones instaladas
+y el sitio no pueden separarse.
 
-La versión en inglés está disponible en [master prompt](/docs/prompt-master).
+## Por qué está en inglés
+
+El protocolo se instala en inglés y le pide al agente responder en el idioma en
+que escribe la persona. Los nombres de herramientas, los argumentos, los ids de
+Records, los valores de campos, las rutas y los comandos se mantienen tal cual.
+Así un único texto sirve a cualquier equipo, y lo que lees aquí es exactamente
+lo que tu agente tiene instalado: no hay una traducción que pueda quedarse
+atrás.
+
+Si le escribes en español, tu agente te responde en español.
 
 ## Qué le pide al agente
 
@@ -29,6 +38,9 @@ durable — una decisión por Record. Si un candidato choca con una regla fijada
 el agente se detiene, le pregunta a la persona y llama a `resolve_conflict` con
 su respuesta literal.
 
+El protocolo es el piso que recibe cada conversación. Para profundizar en cada
+paso, remite al agente al [skill `rationale`](/es/docs/skill).
+
 ## Copiar
 
-El bloque de abajo es la fuente canónica en español.
+El bloque de abajo es la fuente canónica, la misma que se instala.

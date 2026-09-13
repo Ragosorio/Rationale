@@ -4,7 +4,7 @@ slug: mcp-reference
 title: MCP reference
 description: The five tools and six prompts at the agent boundary — inputs, outputs, and what MCP will never decide.
 section: Operate
-order: 8
+order: 9
 ---
 
 ## `health`
@@ -44,7 +44,10 @@ so the two tools never disagree.
 
 Input: `operation_id`, `summary`, and `candidates`. Each candidate requires
 `kind`, `statement`, `rationale`, `durability`, and `bindings`; it may add
-`supersedes`, `severity`, `id`, `risks`, `evidence`, and `subject`. The diff
+`relationships`, `supersedes`, `severity`, `id`, `risks`, `evidence`, and
+`subject`. A relationship is `{source, kind, target}` with `path::symbol`
+endpoints and a kind such as `calls`, `uses`, `writes`, `imports`, or `tests`;
+once resolved, it also anchors the Record. The diff
 base is the declared `base_revision`, else the HEAD that `prepare_change` saw,
 else HEAD.
 
@@ -66,7 +69,7 @@ declared in `.rationale/config.yaml`.
 ## Prompts
 
 `prompts/list` returns six actions from the same source as the Claude Code
-skills:
+shortcuts:
 
 | Prompt | Purpose | Arguments |
 | --- | --- | --- |
@@ -79,6 +82,10 @@ skills:
 
 A retired prompt such as `review` answers with the action that replaced it. An
 unknown prompt is a JSON-RPC error and never ends the session.
+
+Starting with the release after v1.0.0, prompt and tool descriptions are
+written in English and ask the agent to reply in the user's language, keeping
+identifiers verbatim.
 
 ## Transport
 

@@ -4,7 +4,7 @@ slug: versioning
 title: Qué se versiona
 description: El conocimiento canónico en Git, las trazas locales en tu máquina y cómo funcionan las releases y los canales desde 1.0.
 section: Verificar
-order: 9
+order: 10
 ---
 
 ## Commitea esto
@@ -16,8 +16,8 @@ el código se comporta como lo hace, y se revisan en el mismo pull request que
 el código.
 
 Las instrucciones de los agentes (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/`) y
-las skills de Claude Code también son archivos normales del proyecto. Nunca
-contienen una ruta personal.
+los skills de los agentes (`.claude/skills/`, `.agents/skills/`) también son
+archivos normales del proyecto. Nunca contienen una ruta personal.
 
 ## Mantén esto local
 

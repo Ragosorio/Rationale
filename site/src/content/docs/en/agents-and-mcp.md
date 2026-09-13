@@ -4,7 +4,7 @@ slug: agents-and-mcp
 title: Agents and MCP
 description: Connect Claude Code, Codex, or Cursor — one user-scoped registration, a protocol in the project, and a human boundary that stays human.
 section: Operate
-order: 6
+order: 7
 ---
 
 ## Automatic setup
@@ -21,8 +21,8 @@ What it writes:
 
 | Agent | MCP registration (per user) | In the project |
 |---|---|---|
-| Claude Code | `~/.claude.json` | `CLAUDE.md` block + six skills in `.claude/skills/` |
-| Codex | `codex mcp add` | `AGENTS.md` block |
+| Claude Code | `~/.claude.json` | `CLAUDE.md` block + the `rationale` skill and five shortcuts in `.claude/skills/` |
+| Codex | `codex mcp add` | `AGENTS.md` block + the `rationale` skill in `.agents/skills/` |
 | Cursor | `~/.cursor/mcp.json` | `.cursor/rules/rationale.mdc` |
 
 Each registration runs `rationale serve --client <agent>` with the absolute path
@@ -32,28 +32,48 @@ Project files never contain a personal path.
 
 Installation is convergent: running it again is a no-op, an older registration
 of the same binary is migrated, and `rationale uninstall-agent` reverts exactly
-what was written — skills you edited are kept.
+what was written — skill files you edited are kept.
 
-## Claude Code skills
+The table describes `install-agent` starting with the release after v1.0.0.
+v1.0.0 writes the same instruction blocks, and for Claude Code six skills: the
+five shortcuts below plus `/rationale-protocol`, which the next release retires
+in favor of `/rationale`. Until then, add the skill with
+`npx skills add Ragosorio/Rationale`.
+
+## Claude Code
+
+`/rationale` loads the [`rationale` skill](/docs/skill), optionally with an
+operation: `/rationale capture`. The agent can also select it on its own when a
+task matches.
+
+Five shortcuts stay available for you. Agents do not invoke them on their own:
 
 - `/rationale-preflight <target> <intent>` — locate, prepare, and state
   governing Records before editing.
 - `/rationale-explain <target>` — explain a possible Chesterton fence.
 - `/rationale-capture [statement]` — close the change with durable candidates.
 - `/rationale-conflicts` — present pending conflicts with pinned Records and
-  hand the decision to you. Agents cannot invoke it on their own.
+  hand the decision to you.
 - `/rationale-health` — MCP health plus `rationale doctor`.
-- `/rationale-protocol` — load the full [master prompt](/docs/prompt-master).
 
-The same actions are exposed as MCP prompts: `preflight`, `explain`, `capture`,
-`conflicts`, `health`, `protocol`.
+The same actions are exposed as MCP prompts: `preflight`, `explain`,
+`capture`, `conflicts`, `health`, and `protocol`, which loads the
+[master prompt](/docs/prompt-master).
 
 ## Codex
 
-Codex reads the protocol from `AGENTS.md`. Ask in plain language instead of
-assuming a slash command:
+Codex reads the protocol from `AGENTS.md`. With the skill in
+`.agents/skills/rationale/`, `$rationale` invokes it by name. You can always
+ask in plain language:
 
 > Prepare this change with Rationale for `<target>` with intent `<intent>`.
+
+## Language
+
+The protocol, the skill, and the shortcuts are written in English and tell the
+agent to reply in the language you write in, keeping tool names, Record ids,
+field values, paths, and commands verbatim. New Records follow the language the
+project's canon already uses.
 
 ## Manual registration
 
