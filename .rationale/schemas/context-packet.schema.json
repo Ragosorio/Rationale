@@ -38,8 +38,8 @@
           "statement": { "type": "string" },
           "authority": {
             "type": "string",
-            "enum": ["unreviewed", "approved", "policy", "revoked"],
-            "description": "Nunca se disfraza una constraint sin aprobación como 'approved' (v0.5 §10.7)."
+            "enum": ["normal", "pinned", "revoked"],
+            "description": "Autoridad vNext. 'pinned' solo aparece si una persona fijó el Record; nunca se infiere de su contenido ni de aprobaciones heredadas."
           },
           "severity": {
             "type": "string",

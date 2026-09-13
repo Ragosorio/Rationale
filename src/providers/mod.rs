@@ -77,9 +77,31 @@ pub enum ProviderHandle {
 }
 
 impl ProviderHandle {
+    /// El proveedor vivo como trait object, o `None` si la sesión no
+    /// existe. Los callers dejan de hacer `match` sobre la implementación
+    /// concreta: el mismo pipeline sirve para Codebase Memory, un proveedor
+    /// de fixtures o uno nativo futuro.
+    pub fn as_provider(&mut self) -> Option<&mut dyn CodeIntelligenceProvider> {
+        match self {
+            ProviderHandle::Live(client) => Some(client),
+            ProviderHandle::Unavailable(_) => None,
+        }
+    }
+
     /// Spawnea la sesión una sola vez. La CLI la llama por invocación (igual
     /// costo que antes); el servidor MCP la llama una sola vez al arrancar.
+    ///
+    /// `RATIONALE_PROVIDER=none` desactiva el proveedor estructural de forma
+    /// explícita: Rationale sigue funcionando con cobertura `unknown` (el
+    /// mismo camino que un Codebase Memory ausente) sin intentar arrancarlo
+    /// — útil en CI y en tests que no deben indexar directorios temporales en
+    /// el Codebase Memory real del usuario.
     pub fn spawn() -> Self {
+        if std::env::var("RATIONALE_PROVIDER").as_deref() == Ok("none") {
+            return ProviderHandle::Unavailable(
+                "proveedor estructural desactivado por RATIONALE_PROVIDER=none".to_string(),
+            );
+        }
         match codebase_memory::CodebaseMemoryClient::spawn() {
             Ok(client) => ProviderHandle::Live(client),
             Err(e) => ProviderHandle::Unavailable(e.to_string()),

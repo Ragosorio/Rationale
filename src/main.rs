@@ -11,6 +11,7 @@ mod agents;
 mod assessment;
 mod binding_match;
 mod cache;
+mod canon;
 mod capture;
 mod configuration;
 mod doctor;
@@ -58,6 +59,11 @@ fn main() {
                 | "uninstall-agent"
                 | "update"
                 | "doctor"
+                | "pin"
+                | "unpin"
+                | "migrate"
+                | "conflicts"
+                | "resolve"
         )
     {
         print_command_help(command);
@@ -73,13 +79,18 @@ fn main() {
         "init" => cmd_init(command_args),
         "health" => cmd_health(command_args),
         "prepare" => cmd_prepare(command_args),
-        "serve" => mcp::server::run(),
+        "serve" => mcp::server::run(parse_string_flag(command_args, "--client")),
         "review" => cmd_review(command_args),
         "review-record" => cmd_review_record(command_args),
         "install-agent" => cmd_install_agent(command_args),
         "uninstall-agent" => cmd_uninstall_agent(command_args),
         "update" => cmd_update(command_args),
         "doctor" => cmd_doctor(command_args),
+        "pin" => cmd_pin(command_args, true),
+        "unpin" => cmd_pin(command_args, false),
+        "migrate" => cmd_migrate(command_args),
+        "conflicts" => cmd_conflicts(command_args),
+        "resolve" => cmd_resolve(command_args),
         _ => {
             eprintln!("comando desconocido: {command}");
             print_usage();
@@ -90,7 +101,7 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "Uso: rationale <init|health|prepare|serve|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
+        "Uso: rationale <init|health|prepare|serve|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
     );
     println!("  rationale --help");
     println!("  rationale --version");
@@ -100,10 +111,25 @@ fn print_usage() {
         "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--no-mascot]"
     );
     println!(
-        "  rationale serve   # servidor MCP (prepare_change, explain_target, health, finalize_change)"
+        "  rationale serve [--client <claude-code|codex|cursor>]   # servidor MCP (prepare_change, explain_target, health, finalize_change, resolve_conflict)"
     );
     println!(
-        "  rationale review [--project-root <path>] [--no-mascot]   # confirma propuestas pendientes, una a la vez"
+        "  rationale pin <record-id> [--reason \"texto\"] [--project-root <path>]   # fija un Record: ningún agente lo reemplaza sin preguntarte"
+    );
+    println!(
+        "  rationale unpin <record-id> [--reason \"texto\"] [--project-root <path>]   # devuelve un Record fijado a autoridad normal"
+    );
+    println!(
+        "  rationale conflicts [--project-root <path>] [--json]   # conflictos con reglas fijadas pendientes de decisión"
+    );
+    println!(
+        "  rationale resolve <conflict-id> <keep-pinned|adopt-new> [--project-root <path>]   # decide un conflicto desde la terminal"
+    );
+    println!(
+        "  rationale migrate [--dry-run] [--json] [--project-root <path>]   # pasa propuestas pre-vNext por el gate de captura"
+    );
+    println!(
+        "  rationale review [--project-root <path>] [--no-mascot]   # legado: confirma propuestas pre-vNext una a una"
     );
     println!(
         "  rationale review-record <record-id> [--project-root <path>] [--no-mascot]   # lifecycle humano de un Record aprobado"
@@ -132,10 +158,25 @@ fn print_command_help(command: &str) {
             "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--no-mascot]\n\nCompila un ContextPacket antes de un cambio."
         ),
         "serve" => println!(
-            "Uso: rationale serve\n\nInicia el servidor MCP persistente por stdin/stdout. El proceso permanece abierto esperando mensajes del agente."
+            "Uso: rationale serve [--client <claude-code|codex|cursor>]\n\nInicia el servidor MCP persistente por stdin/stdout. El proceso permanece abierto esperando mensajes del agente. --client identifica al agente en la actividad local; sin él se usa el nombre que el cliente declara al conectarse, o 'unknown'."
+        ),
+        "pin" => println!(
+            "Uso: rationale pin <record-id> [--reason \"texto\"] [--project-root <path>]\n\nFija un Record. Un agente puede usarlo, pero no reemplazarlo sin que decidas en un conflicto. Requiere terminal interactiva y un actor declarado en .rationale/config.yaml."
+        ),
+        "unpin" => println!(
+            "Uso: rationale unpin <record-id> [--reason \"texto\"] [--project-root <path>]\n\nDevuelve un Record fijado a autoridad normal. Requiere terminal interactiva y un actor declarado."
+        ),
+        "conflicts" => println!(
+            "Uso: rationale conflicts [--project-root <path>] [--json]\n\nLista conflictos pendientes: afirmaciones de agentes que intentaron reemplazar una regla fijada."
+        ),
+        "resolve" => println!(
+            "Uso: rationale resolve <conflict-id> <keep-pinned|adopt-new> [--project-root <path>]\n\nDecide un conflicto. keep-pinned conserva la regla fijada; adopt-new la reemplaza y requiere autoridad declarada."
+        ),
+        "migrate" => println!(
+            "Uso: rationale migrate [--dry-run] [--json] [--project-root <path>]\n\nPasa las propuestas pendientes de la era de aprobaciones por el gate de captura: las válidas se vuelven Records canónicos (procedencia 'migrated') y las ruidosas se archivan en .rationale/archive/proposals/ con su motivo. Nunca borra nada."
         ),
         "review" => println!(
-            "Uso: rationale review [--project-root <path>] [--no-mascot]\n\nRevisa propuestas pendientes con confirmación humana."
+            "Uso: rationale review [--project-root <path>] [--no-mascot]\n\nLegado: revisa propuestas pre-vNext con confirmación humana. En vNext el trabajo normal no crea propuestas; 'rationale migrate' las procesa sin revisión manual."
         ),
         "review-record" => println!(
             "Uso: rationale review-record <record-id> [--project-root <path>] [--no-mascot]\n\nEjecuta lifecycle sobre un Record aprobado."
@@ -150,7 +191,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale update\n\nDescarga e instala la última Release mediante el helper instalado junto al binario."
         ),
         "doctor" => println!(
-            "Uso: rationale doctor [--project-root <path>] [--check] [--repair] [--json]\n\nDetecta severidades inválidas, Records sin bindings, path_hint rotos, Subjects colgantes y Records sin aprobación. Solo lectura por defecto; --check sale con código 1 si hay hallazgos; --repair pide confirmación por hallazgo."
+            "Uso: rationale doctor [--project-root <path>] [--check] [--repair] [--json]\n\nDetecta severidades y autoridades inválidas, Records sin bindings, path_hint rotos, Subjects colgantes y propuestas pre-vNext sin migrar. Solo lectura por defecto; --check sale con código 1 si hay hallazgos; --repair pide confirmación por hallazgo."
         ),
         _ => unreachable!("solo se solicita ayuda para comandos conocidos"),
     }
@@ -170,7 +211,7 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
             &["--no-mascot"],
             &["--project-root", "--repo-path", "--intent"],
         ),
-        "serve" => validate_flags(command, args, &[], &[]),
+        "serve" => validate_flags(command, args, &[], &["--client"]),
         "review" => validate_flags(command, args, &["--no-mascot"], &["--project-root"]),
         "review-record" => validate_flags(command, args, &["--no-mascot"], &["--project-root"]),
         "install-agent" => validate_flags(
@@ -197,6 +238,10 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
             &["--check", "--repair", "--json"],
             &["--project-root"],
         ),
+        "pin" | "unpin" => validate_flags(command, args, &[], &["--project-root", "--reason"]),
+        "migrate" => validate_flags(command, args, &["--dry-run", "--json"], &["--project-root"]),
+        "conflicts" => validate_flags(command, args, &["--json"], &["--project-root"]),
+        "resolve" => validate_flags(command, args, &[], &["--project-root"]),
         _ => Ok(()),
     }
 }
@@ -470,18 +515,7 @@ fn cmd_prepare(args: &[String]) {
 }
 
 fn find_rationale_local(project_root: &Path) -> PathBuf {
-    // Para el fixture, .rationale-local/ vive junto al repo real de
-    // Rationale, no dentro del fixture — evita ensuciar fixtures/ con
-    // estado local. Se busca .rationale-local/ subiendo igual que .rationale/.
-    let mut current = project_root.to_path_buf();
-    loop {
-        if current.join(".git").exists() {
-            return current.join(".rationale-local");
-        }
-        if !current.pop() {
-            return project_root.join(".rationale-local");
-        }
-    }
+    configuration::find_rationale_local(project_root)
 }
 
 /// `rationale review` (Fase F6) — confirmación humana de propuestas, una a
@@ -1178,6 +1212,233 @@ fn cmd_doctor(args: &[String]) {
     }
 }
 
+/// Los actos de autoridad humana (fijar, decidir un conflicto desde la CLI)
+/// exigen una terminal interactiva: un agente ejecutando comandos no tiene
+/// una, así que no puede fijar Records por su cuenta. Es defensa en
+/// profundidad junto a la autoridad declarada, no un control criptográfico.
+fn require_interactive_terminal(command: &str) {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        eprintln!(
+            "{command}: requiere una terminal interactiva — es una decisión humana. Si eres un \
+             agente, pídele a la persona que lo ejecute."
+        );
+        std::process::exit(2);
+    }
+}
+
+/// `rationale pin|unpin` — la autoridad humana vNext. Mismas garantías que
+/// `review-record`: actor declarado, confirmación explícita, evento de
+/// lifecycle y escritura con verificación TOCTOU.
+fn cmd_pin(args: &[String], pin: bool) {
+    let command = if pin { "pin" } else { "unpin" };
+    let Some(record_id) = first_positional_arg(args, &["--project-root", "--reason"]).cloned()
+    else {
+        fail::<()>(format!(
+            "uso: rationale {command} <record-id> [--reason \"texto\"]"
+        ));
+        return;
+    };
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let config = configuration::load(&project_root).unwrap_or_else(fail);
+    require_interactive_terminal(command);
+
+    let actor = git_reviewer_actor(&project_root);
+    let authority = config.authority_for_actor(&actor);
+    if !authority.declared {
+        fail::<()>(format!(
+            "{actor} no está declarado en .rationale/config.yaml — fijar es un acto de autoridad \
+             del proyecto (constraint.f8-project-authority)"
+        ));
+    }
+    let record_path = config
+        .rationale_dir
+        .join("records")
+        .join(format!("{record_id}.yaml"));
+    let record = storage::read_record(&record_path)
+        .unwrap_or_else(|e| fail(format!("no se pudo leer '{record_id}': {e}")));
+    println!("Record: {}\nAfirmación: {}", record.id, record.statement);
+    if let Some(rationale) = &record.rationale {
+        println!("Porqué: {rationale}");
+    }
+    println!(
+        "Autoridad actual: {}\nActor: {actor} ({})",
+        storage::authority_label(&record),
+        authority.role
+    );
+    println!("Escribe el id del Record para confirmar '{command}':");
+    if read_interactive_line().as_deref() != Some(record_id.as_str()) {
+        println!("Cancelado — el Record no cambió.");
+        return;
+    }
+    let reason = parse_string_flag(args, "--reason").unwrap_or_else(|| {
+        if pin {
+            "fijado por decisión humana".to_string()
+        } else {
+            "devuelto a autoridad normal por decisión humana".to_string()
+        }
+    });
+    let mutation = if pin {
+        review::RecordMutation::Pin { reason }
+    } else {
+        review::RecordMutation::Unpin { reason }
+    };
+    match review::mutate_record(
+        &config.rationale_dir,
+        &record_id,
+        mutation,
+        &actor,
+        authority.role,
+        authority.declared,
+    ) {
+        Ok(path) => println!(
+            "{} -> {}",
+            if pin { "Fijado" } else { "Autoridad normal" },
+            path.display()
+        ),
+        Err(error) => fail(format!("{command} abortado: {error}")),
+    }
+}
+
+fn canon_context_for_cli<'a>(
+    config: &'a configuration::ResolvedConfig,
+    local_dir: &'a Path,
+) -> canon::CanonContext<'a> {
+    canon::CanonContext {
+        rationale_dir: &config.rationale_dir,
+        project_id: &config.project_id,
+        repo_path: &config.project_root,
+        local_dir,
+        head_revision: revision::snapshot(&config.project_root).head,
+        uncommitted_paths: Default::default(),
+        actor: canon::ActorContext {
+            client: "cli".to_string(),
+            client_source: "cli".to_string(),
+            session_id: None,
+            operation_id: None,
+        },
+    }
+}
+
+/// `rationale migrate` — una sola vez por proyecto: las propuestas de la era
+/// de aprobaciones pasan por el mismo gate que un candidato vNext.
+fn cmd_migrate(args: &[String]) {
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let config = configuration::load(&project_root).unwrap_or_else(fail);
+    let local_dir = find_rationale_local(&project_root);
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    let report =
+        canon::migrate_pending_proposals(&canon_context_for_cli(&config, &local_dir), dry_run);
+
+    if args.iter().any(|a| a == "--json") {
+        println!(
+            "{}",
+            serde_json::to_string(&report).unwrap_or_else(|e| fail(e.to_string()))
+        );
+    } else {
+        if dry_run {
+            println!("(dry-run — no se escribió nada)");
+        }
+        if report.canonicalized.is_empty() && report.archived.is_empty() {
+            println!("No hay propuestas pendientes que migrar.");
+        }
+        for migrated in &report.canonicalized {
+            println!(
+                "- canonizada: {} -> records/{}.yaml",
+                migrated.proposal_id, migrated.record_id
+            );
+        }
+        for archived in &report.archived {
+            println!(
+                "- archivada: {} ({:?}: {})",
+                archived.proposal_id, archived.reason, archived.detail
+            );
+        }
+        for unreadable in &report.unreadable {
+            println!("- ilegible, sin tocar: {unreadable}");
+        }
+        for failed in &report.failed {
+            eprintln!("- falló: {failed}");
+        }
+    }
+    if !report.failed.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+fn cmd_conflicts(args: &[String]) {
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let conflicts = canon::list_pending_conflicts(&find_rationale_local(&project_root));
+    if args.iter().any(|a| a == "--json") {
+        println!(
+            "{}",
+            serde_json::to_string(&conflicts).unwrap_or_else(|e| fail(e.to_string()))
+        );
+        return;
+    }
+    if conflicts.is_empty() {
+        println!("No hay conflictos pendientes.");
+        return;
+    }
+    for conflict in &conflicts {
+        println!(
+            "{}\n  fijada ({}): {}\n  nueva: {}\n",
+            conflict.conflict_id,
+            conflict.pinned_record_id,
+            conflict.pinned_statement,
+            conflict.candidate_statement
+        );
+    }
+    println!("Decide con: rationale resolve <conflict-id> <keep-pinned|adopt-new>");
+}
+
+fn cmd_resolve(args: &[String]) {
+    let positionals: Vec<&String> = {
+        let mut found = Vec::new();
+        let mut index = 0;
+        while index < args.len() {
+            if args[index] == "--project-root" {
+                index += 2;
+                continue;
+            }
+            if !args[index].starts_with('-') {
+                found.push(&args[index]);
+            }
+            index += 1;
+        }
+        found
+    };
+    let (Some(conflict_id), Some(decision)) = (positionals.first(), positionals.get(1)) else {
+        fail::<()>("uso: rationale resolve <conflict-id> <keep-pinned|adopt-new>");
+        return;
+    };
+    let decision = canon::ConflictDecision::parse(decision)
+        .unwrap_or_else(|| fail("la decisión debe ser keep-pinned o adopt-new"));
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let config = configuration::load(&project_root).unwrap_or_else(fail);
+    require_interactive_terminal("resolve");
+    let local_dir = find_rationale_local(&project_root);
+    let actor = git_reviewer_actor(&project_root);
+    let declared = config.authority_for_actor(&actor).declared;
+    match canon::resolve_conflict(
+        &canon_context_for_cli(&config, &local_dir),
+        conflict_id,
+        decision,
+        canon::HumanDecision {
+            actor,
+            declared,
+            relayed_by: None,
+            human_answer: None,
+        },
+    ) {
+        Ok(resolution) => println!(
+            "{}",
+            serde_json::to_string_pretty(&resolution).unwrap_or_default()
+        ),
+        Err(error) => fail(error),
+    }
+}
+
 fn read_interactive_line() -> Option<String> {
     let mut input = String::new();
     if std::io::stdin().read_line(&mut input).ok()? == 0 {
@@ -1186,35 +1447,10 @@ fn read_interactive_line() -> Option<String> {
     Some(input.trim().to_string())
 }
 
-/// Identidad del revisor humano — reusa `git config user.name`/`user.email`
-/// del propio repo, nunca inventa una identidad ni asume "el agente" como
-/// aprobador (`Proceso §21`: la aprobación es de un humano).
+/// Identidad del revisor humano — nunca inventa una identidad ni asume "el
+/// agente" como humano (`Proceso §21`).
 fn git_reviewer_actor(repo_path: &Path) -> String {
-    let name = run_git_config(repo_path, "user.name");
-    let email = run_git_config(repo_path, "user.email");
-    match (name, email) {
-        (Some(n), Some(e)) => format!("user:{n} <{e}>"),
-        (Some(n), None) => format!("user:{n}"),
-        _ => "user:local-reviewer".to_string(),
-    }
-}
-
-fn run_git_config(repo_path: &Path, key: &str) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo_path)
-        .args(["config", "--get", key])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let value = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    configuration::git_actor(repo_path)
 }
 
 #[cfg(test)]

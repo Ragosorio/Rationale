@@ -24,14 +24,29 @@ struct TestClient {
 
 impl TestClient {
     fn spawn() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_rationale"))
+        Self::spawn_with(&[], &[])
+    }
+
+    /// Sin proveedor estructural: los tests del canon autónomo no necesitan
+    /// Codebase Memory y no deben indexar directorios temporales en la
+    /// instalación real del usuario.
+    fn spawn_without_provider(extra_args: &[&str]) -> Self {
+        Self::spawn_with(extra_args, &[("RATIONALE_PROVIDER", "none")])
+    }
+
+    fn spawn_with(extra_args: &[&str], env: &[(&str, &str)]) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_rationale"));
+        command
             .arg("serve")
+            .args(extra_args)
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("el binario rationale debe arrancar");
+            .stderr(Stdio::piped());
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        let mut child = command.spawn().expect("el binario rationale debe arrancar");
         let stdin = child.stdin.take().expect("stdin piped");
         let stdout = child.stdout.take().expect("stdout piped");
         TestClient {
@@ -69,9 +84,13 @@ impl TestClient {
     }
 
     fn initialize(&mut self) {
+        self.initialize_as("test");
+    }
+
+    fn initialize_as(&mut self, client_name: &str) {
         self.send(&json!({
             "jsonrpc": "2.0", "id": 0, "method": "initialize",
-            "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "0"}}
+            "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": client_name, "version": "0"}}
         }));
         let resp = self.recv();
         assert_eq!(
@@ -88,6 +107,14 @@ impl TestClient {
             "params": {"name": name, "arguments": arguments}
         }));
         self.recv()
+    }
+
+    /// Llama una herramienta y devuelve su JSON ya parseado, fallando el
+    /// test si la herramienta respondió `isError`.
+    fn call_ok(&mut self, id: i64, name: &str, arguments: Value) -> Value {
+        let resp = self.call(id, name, arguments);
+        assert_eq!(resp["result"]["isError"], false, "{name} falló: {resp}");
+        serde_json::from_str(resp["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
     }
 
     fn get_prompt(&mut self, id: i64, name: &str, arguments: Value) -> Value {
@@ -204,26 +231,33 @@ fn stdout_stays_clean_across_a_sequence_of_calls_including_errors() {
     let list = client.recv();
     let tools = list["result"]["tools"].as_array().unwrap();
     assert_eq!(
-        tools.len(),
-        4,
-        "prepare_change, explain_target, health, finalize_change"
+        tools
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            "prepare_change",
+            "explain_target",
+            "health",
+            "finalize_change",
+            "resolve_conflict"
+        ]
     );
     let finalize = tools
         .iter()
         .find(|tool| tool["name"] == "finalize_change")
         .unwrap();
     assert_eq!(
-        finalize["inputSchema"]["properties"]["novelty_reason"]["type"],
-        "object"
+        finalize["inputSchema"]["properties"]["candidates"]["items"]["required"],
+        json!(["kind", "statement", "rationale", "durability", "bindings"])
     );
+    let resolve = tools
+        .iter()
+        .find(|tool| tool["name"] == "resolve_conflict")
+        .unwrap();
     assert_eq!(
-        finalize["inputSchema"]["properties"]["novelty_reason"]["required"],
-        json!([
-            "contrasted_subject",
-            "difference_kind",
-            "difference",
-            "evidence"
-        ])
+        resolve["inputSchema"]["required"],
+        json!(["conflict_id", "decision", "human_answer"])
     );
 }
 
@@ -262,8 +296,8 @@ fn prepare_change_intent_aware_detects_conflict_without_blocking() {
         .expect("constraint.no-provider-internal-access debe estar en critical_constraints");
     let authority = target_constraint["authority"].as_str().unwrap();
     assert_eq!(
-        authority, "unreviewed",
-        "una constraint sin aprobación nunca se sirve como aprobada"
+        authority, "normal",
+        "una constraint que nadie fijó nunca se sirve como pinned"
     );
 }
 
@@ -620,21 +654,71 @@ fn make_test_project() -> std::path::PathBuf {
     dir
 }
 
-#[test]
-fn finalize_change_writes_pending_proposal_for_high_value_change() {
-    let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
+fn head(dir: &std::path::Path) -> String {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
 
-    // Cambio real que toca autorización — debe activar señales y superar
-    // Nivel 0.
+fn read_records(dir: &std::path::Path) -> Vec<(String, String)> {
+    let mut records: Vec<(String, String)> = std::fs::read_dir(dir.join(".rationale/records"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("yaml"))
+                .map(|e| {
+                    (
+                        e.file_name()
+                            .to_string_lossy()
+                            .trim_end_matches(".yaml")
+                            .to_string(),
+                        std::fs::read_to_string(e.path()).unwrap(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    records.sort();
+    records
+}
+
+fn pending_proposal_files(dir: &std::path::Path) -> usize {
+    std::fs::read_dir(dir.join(".rationale/proposals"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("yaml"))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn durable_candidate(statement: &str, rationale: &str, bindings: &[&str]) -> Value {
+    json!({
+        "kind": "constraint",
+        "statement": statement,
+        "rationale": rationale,
+        "durability": "durable",
+        "severity": "high",
+        "bindings": bindings,
+    })
+}
+
+const STAFF: &str = "Staff users must never receive global super_admin.";
+const STAFF_WHY: &str =
+    "Access to several entities is scoped per entity; a global role would leak every tenant.";
+
+/// vNext: el trabajo normal no deja trabajo humano. Un candidato durable se
+/// vuelve Record canónico en la misma llamada — sin propuesta pendiente,
+/// sin aprobación, con procedencia y autoridad explícitas.
+#[test]
+fn finalize_change_commits_durable_candidates_without_approval() {
+    let dir = make_test_project();
+    let base_revision = head(&dir);
     std::fs::create_dir_all(dir.join("src/auth")).unwrap();
     std::fs::write(
         dir.join("src/auth/authorization.ts"),
@@ -644,293 +728,239 @@ fn finalize_change_writes_pending_proposal_for_high_value_change() {
     run_git(&dir, &["add", "-A"]);
     run_git(&dir, &["commit", "-q", "-m", "add authorization resolver"]);
 
-    let mut client = TestClient::spawn();
+    let mut client = TestClient::spawn_without_provider(&["--client", "claude-code"]);
     client.initialize();
-
-    let resp = client.call(
+    let outcome = client.call_ok(
         1,
         "finalize_change",
         json!({
             "target": "src/auth/authorization.ts",
             "base_revision": base_revision,
-            "intent": "Staff users must never receive global super_admin access.",
-            "statement": "Staff users must never receive global super_admin.",
-            "record_id": "constraint.no-global-admin-for-staff-test",
-            "subject_id": "authorization.entity-scoped-staff-access-test",
-            "subject_title": "Entity-scoped staff authorization",
-            "severity": "high",
+            "summary": "Added the entity role resolver.",
+            "candidates": [durable_candidate(STAFF, STAFF_WHY, &["src/auth/authorization.ts::resolveEntityRole"])],
             "project_root": dir.to_string_lossy(),
             "repo_path": dir.to_string_lossy(),
         }),
     );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
 
-    assert_ne!(outcome["level"], "git-only");
-    assert_eq!(outcome["proposal_written"], true);
+    assert_eq!(
+        outcome["summary"],
+        json!({"committed": 1, "discarded": 0, "conflicts": 0})
+    );
     assert!(outcome["signals"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|s| s == "authorization" || s == "normative-language"));
-
-    let proposal_path = outcome["proposal_path"].as_str().unwrap();
-    let content = std::fs::read_to_string(proposal_path)
-        .expect("la propuesta debe existir en disco como archivo real");
-    assert!(content.contains("status: pending"));
-    assert!(content.contains("approvals: []"));
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// `kind: "exception"` está en el enum de `record.schema.json` desde el
-/// principio (Fase D2 del plan beta), pero `pipeline::finalize` hardcodeaba
-/// `kind: "constraint"` siempre y `finalize_change` no tenía parámetro
-/// `kind` — un valor declarado en el schema que ningún caller podía
-/// alcanzar nunca. Ahora un caller puede declararlo explícitamente, y
-/// omitirlo sigue produciendo "constraint" (el comportamiento de antes).
-#[test]
-fn finalize_change_honors_an_explicit_kind() {
-    let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
-
-    let mut client = TestClient::spawn();
-    client.initialize();
-
-    let resp = client.call(
-        1,
-        "finalize_change",
-        json!({
-            "target": "f.txt",
-            "base_revision": base_revision,
-            "intent": "esta regla normalmente no aplica en este caso puntual",
-            "statement": "excepcion temporal a la regla de doble verificacion",
-            "record_id": "exception.temporary-double-check-waiver",
-            "subject_id": "double-check-waiver-test",
-            "subject_title": "Excepcion temporal",
-            "severity": "medium",
-            "kind": "exception",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
+        .any(|s| s == "authorization"));
+    assert_eq!(
+        pending_proposal_files(&dir),
+        0,
+        "nunca una propuesta pendiente"
     );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-    assert_eq!(outcome["proposal_written"], true);
-
-    let proposal_path = outcome["proposal_path"].as_str().unwrap();
-    let content = std::fs::read_to_string(proposal_path).unwrap();
-    assert!(content.contains("kind: exception"));
-
-    // Invalido debe rechazarse, no escribirse en silencio como constraint.
-    let base_revision2 = base_revision.clone();
-    std::fs::write(dir.join("g.txt"), "changed2\n").unwrap();
-    let bad = client.call(
-        2,
-        "finalize_change",
-        json!({
-            "target": "g.txt",
-            "base_revision": base_revision2,
-            "intent": "x",
-            "statement": "y",
-            "record_id": "constraint.bad-kind-test",
-            "subject_id": "bad-kind-test",
-            "subject_title": "test",
-            "severity": "medium",
-            "kind": "not-a-real-kind",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
-    );
-    assert_eq!(bad["result"]["isError"], true);
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// Regresión del defecto real que rompió CI (`e2320f0`): sin `kind`
-/// explícito, `finalize_change` defaulteaba SIEMPRE a `"constraint"` — así
-/// que un `record_id: decision.*` se escribía con `kind: constraint` en
-/// silencio, y esa decisión aprobada terminaba sirviéndose como la
-/// constraint crítica más relevante de un packet. Ahora, sin `kind`
-/// declarado, se deriva del prefijo del `record_id`. Cubre también el caso
-/// inverso: un `kind` declarado que contradice el prefijo se rechaza en vez
-/// de escribir un Record internamente inconsistente.
-#[test]
-fn finalize_change_infers_kind_from_record_id_prefix_when_kind_is_omitted() {
-    let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
-
-    let mut client = TestClient::spawn();
-    client.initialize();
-
-    let resp = client.call(
-        1,
-        "finalize_change",
-        json!({
-            "target": "f.txt",
-            "base_revision": base_revision,
-            "intent": "migrar el registro de agentes a un esquema convergente",
-            "statement": "el registro de agentes usa un esquema convergente por usuario",
-            "record_id": "decision.kind-inference-test",
-            "subject_id": "kind-inference-test",
-            "subject_title": "Kind inference test",
-            "severity": "medium",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
-    );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-    assert_eq!(outcome["proposal_written"], true);
-    let proposal_path = outcome["proposal_path"].as_str().unwrap();
-    let content = std::fs::read_to_string(proposal_path).unwrap();
+    let records = read_records(&dir);
+    assert_eq!(records.len(), 1);
+    let (id, content) = &records[0];
+    assert_eq!(id, "constraint.staff-users-must-never-receive-global-super");
+    assert!(content.contains("authority: normal"), "{content}");
+    assert!(content.contains("kind: agent_asserted"), "{content}");
+    assert!(content.contains("client: claude-code"), "{content}");
+    assert!(content.contains("client_source: flag"), "{content}");
+    assert!(content.contains("approvals: []"), "{content}");
     assert!(
-        content.contains("kind: decision"),
-        "sin `kind` explícito, un record_id `decision.*` nunca debe escribirse como \
-         `kind: constraint` — contenido real: {content}"
+        content.contains("path_hint: src/auth/authorization.ts"),
+        "{content}"
     );
-
-    // `kind` declarado que contradice el prefijo del id -> rechazado, nunca
-    // un Record internamente inconsistente.
-    std::fs::write(dir.join("g.txt"), "changed2\n").unwrap();
-    let base_revision2 = base_revision.clone();
-    let contradictory = client.call(
-        2,
-        "finalize_change",
-        json!({
-            "target": "g.txt",
-            "base_revision": base_revision2,
-            "intent": "x",
-            "statement": "y",
-            "record_id": "decision.kind-contradiction-test",
-            "subject_id": "kind-contradiction-test",
-            "subject_title": "test",
-            "severity": "medium",
-            "kind": "constraint",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
+    assert!(
+        content.contains("provisional: false"),
+        "el archivo estaba commiteado: su binding es verificable: {content}"
     );
-    assert_eq!(contradictory["result"]["isError"], true);
+    assert!(
+        outcome["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("no confirmó el símbolo")),
+        "sin proveedor, el símbolo nunca se sintetiza: {outcome}"
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// Defecto real (Fase B1 del plan beta): los bindings salían solo de
-/// `mechanical.changed_files`, nunca del target declarado. Si el archivo
-/// que el cambio de verdad afecta ya estaba commiteado ANTES de
-/// `base_revision` — el escenario exacto aquí: se commitea el target, y
-/// `base_revision` es ESE mismo commit, así que el diff nunca lo incluye,
-/// aunque el cambio real (otro archivo) sí dispare la captura — el Record
-/// resultante nunca podría gobernar su propio target declarado. El mismo
-/// síntoma que el bug original del dogfood (`governs_target: false` para
-/// siempre), con una causa distinta y fácil de confundir con ella.
+/// Un diff por sí solo nunca produce memoria: sin candidatos, finalize es un
+/// no-op honesto que reporta los hechos mecánicos (incluido un cambio de
+/// solo lockfile, antes "Nivel 0").
 #[test]
-fn finalize_change_binds_the_declared_target_even_when_the_diff_does_not_cover_it() {
+fn finalize_change_without_candidates_writes_no_memory() {
     let dir = make_test_project();
-
-    std::fs::create_dir_all(dir.join("app")).unwrap();
-    std::fs::write(
-        dir.join("app/upload.ts"),
-        "export function submit() { /* ... */ }\n",
-    )
-    .unwrap();
+    let base_revision = head(&dir);
+    std::fs::write(dir.join("Cargo.lock"), "# lockfile\n").unwrap();
     run_git(&dir, &["add", "-A"]);
-    run_git(&dir, &["commit", "-q", "-m", "add upload guard"]);
+    run_git(&dir, &["commit", "-q", "-m", "update lockfile"]);
 
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-
-    // Cambio real sin commitear en un archivo DISTINTO al target — dispara
-    // la captura, pero no toca app/upload.ts en absoluto.
-    std::fs::write(dir.join("README.md"), "proyecto de prueba actualizado\n").unwrap();
-
-    let mut client = TestClient::spawn();
+    let mut client = TestClient::spawn_without_provider(&[]);
     client.initialize();
-
-    let resp = client.call(
+    let outcome = client.call_ok(
         1,
         "finalize_change",
         json!({
-            "target": "app/upload.ts",
             "base_revision": base_revision,
-            "intent": "Documentar por que el envio se bloquea durante la carga.",
-            "statement": "El envio debe bloquearse mientras el archivo se esta subiendo.",
-            "record_id": "constraint.declared-target-binding-test",
-            "subject_id": "upload-guard-test",
-            "subject_title": "Bloqueo de envio durante carga",
-            "severity": "high",
+            "summary": "Bumped a dependency.",
             "project_root": dir.to_string_lossy(),
             "repo_path": dir.to_string_lossy(),
         }),
     );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-    assert_eq!(outcome["proposal_written"], true);
+    assert_eq!(
+        outcome["summary"],
+        json!({"committed": 0, "discarded": 0, "conflicts": 0})
+    );
+    assert_eq!(outcome["capture"]["changed_files"][0]["path"], "Cargo.lock");
+    assert!(read_records(&dir).is_empty());
 
-    let proposal_path = outcome["proposal_path"].as_str().unwrap();
-    let content = std::fs::read_to_string(proposal_path).unwrap();
+    // Nada cambió en absoluto: mismo no-op, sin inventar un binding.
+    let clean = client.call_ok(
+        2,
+        "finalize_change",
+        json!({
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert!(clean["capture"]["changed_files"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(read_records(&dir).is_empty());
+    assert_eq!(pending_proposal_files(&dir), 0);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// El gate descarta ruido con motivo explícito — nunca en silencio, nunca
+/// escribiendo nada. Cubre las garantías del contrato anterior: kind
+/// inválido, id/kind inconsistentes (el defecto que rompió CI), path
+/// traversal en el id y en un binding.
+#[test]
+fn finalize_change_discards_noise_and_unsafe_candidates_with_reasons() {
+    let dir = make_test_project();
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+    let escape_target = dir.join("../pwned-by-rationale-test.yaml");
+    let _ = std::fs::remove_file(&escape_target);
+
+    let mut mismatch = durable_candidate(STAFF, STAFF_WHY, &["f.txt"]);
+    mismatch["id"] = json!("decision.kind-contradiction-test");
+    let mut traversal = durable_candidate(STAFF, STAFF_WHY, &["f.txt"]);
+    traversal["id"] = json!("../pwned-by-rationale-test");
+    let mut bad_kind = durable_candidate(STAFF, STAFF_WHY, &["f.txt"]);
+    bad_kind["kind"] = json!("not-a-real-kind");
+    let mut transient = durable_candidate(STAFF, STAFF_WHY, &["f.txt"]);
+    transient["durability"] = json!("transient");
+
+    let mut client = TestClient::spawn_without_provider(&[]);
+    client.initialize();
+    let outcome = client.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "candidates": [
+                mismatch,
+                traversal,
+                bad_kind,
+                transient,
+                durable_candidate("Updated f.txt formatting", "It looked inconsistent", &["f.txt"]),
+                durable_candidate(STAFF, STAFF_WHY, &["../outside-the-project.txt"]),
+                {"statement": 42},
+            ],
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    let reasons: Vec<&str> = outcome["discarded"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["reason"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        reasons,
+        vec![
+            "id_kind_mismatch",
+            "invalid_id",
+            "invalid_kind",
+            "transient",
+            "mechanical_noise",
+            "no_meaningful_binding",
+            "malformed_candidate"
+        ]
+    );
+    assert!(read_records(&dir).is_empty());
     assert!(
-        content.contains("path_hint: app/upload.ts"),
-        "el target declarado debe quedar atado con un binding aunque el diff no lo cubra: {content}"
+        !escape_target.exists(),
+        "un id malicioso nunca escribe fuera del canon"
     );
 
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// Defecto real encontrado en dogfood contra el binario publicado (Fase B5
-/// del plan beta): `rationale init` / `install-agent` dejan `AGENTS.md`,
-/// `CLAUDE.md` y `.mcp.json` como untracked; `finalize_change` los capturaba
-/// igual que cualquier otro archivo sin commitear y les ataba un binding —
-/// un Record sobre `app/upload.ts` terminaba "gobernando" también
-/// `AGENTS.md`, visible como tal en `rationale review`. Estos archivos son
-/// bookkeeping de Rationale, nunca parte del cambio que el usuario describe.
+/// Kinds explícitos y ids generados: `exception` es alcanzable y un id sin
+/// declarar nace con el prefijo de su kind.
 #[test]
-fn finalize_change_excludes_agent_bookkeeping_files_from_bindings() {
+fn finalize_change_honors_kind_and_generates_prefix_consistent_ids() {
     let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
 
+    let mut exception = durable_candidate(
+        "The double verification rule does not apply to internal test tenants.",
+        "Test tenants have no real funds, and double verification blocks automated QA runs.",
+        &["f.txt"],
+    );
+    exception["kind"] = json!("exception");
+    let mut decision = durable_candidate(
+        "Agent registration uses a converging per-user schema.",
+        "Per-project registration pointed to binaries that only existed on the installer's machine.",
+        &["f.txt"],
+    );
+    decision["kind"] = json!("decision");
+
+    let mut client = TestClient::spawn_without_provider(&[]);
+    client.initialize();
+    let outcome = client.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "candidates": [exception, decision],
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    let ids: Vec<&str> = outcome["committed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2, "{outcome}");
+    assert!(ids[0].starts_with("exception."), "{ids:?}");
+    assert!(ids[1].starts_with("decision."), "{ids:?}");
+    let records = read_records(&dir);
+    assert!(records.iter().any(|(_, c)| c.contains("kind: exception")));
+    assert!(records.iter().any(|(_, c)| c.contains("kind: decision")));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Bindings explícitos: pueden anclar código que el diff no tocó (explicar
+/// por qué existe algo es justo el caso de uso), y los archivos que
+/// `install-agent` administra nunca aparecen en la captura mecánica.
+#[test]
+fn finalize_change_binds_declared_code_and_ignores_agent_bookkeeping() {
+    let dir = make_test_project();
     std::fs::create_dir_all(dir.join("app")).unwrap();
     std::fs::write(dir.join("app/upload.ts"), "export function submit() {}\n").unwrap();
-    // Simula lo que `rationale init` / `install-agent` acaban de dejar
-    // untracked, sin pasar por el instalador real.
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "add upload guard"]);
+    let base_revision = head(&dir);
+
+    std::fs::write(dir.join("README.md"), "proyecto de prueba actualizado\n").unwrap();
     std::fs::write(dir.join("AGENTS.md"), "instrucciones de agente\n").unwrap();
     std::fs::write(dir.join("CLAUDE.md"), "instrucciones de agente\n").unwrap();
     std::fs::write(dir.join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
@@ -941,679 +971,546 @@ fn finalize_change_excludes_agent_bookkeeping_files_from_bindings() {
     )
     .unwrap();
 
-    let mut client = TestClient::spawn();
+    let mut client = TestClient::spawn_without_provider(&[]);
     client.initialize();
-
-    let resp = client.call(
+    let outcome = client.call_ok(
         1,
         "finalize_change",
         json!({
-            "target": "app/upload.ts",
             "base_revision": base_revision,
-            "intent": "Bloquear el envio mientras el archivo se esta subiendo.",
-            "statement": "El envio debe bloquearse mientras el archivo se esta subiendo.",
-            "record_id": "constraint.bookkeeping-exclusion-test",
-            "subject_id": "upload-guard-bookkeeping-test",
-            "subject_title": "Bloqueo de envio durante carga",
-            "severity": "high",
+            "candidates": [durable_candidate(
+                "Sending must stay blocked while the file is still uploading.",
+                "Messages sent before the upload finishes arrive with a broken attachment link.",
+                &["app/upload.ts::submit"],
+            )],
             "project_root": dir.to_string_lossy(),
             "repo_path": dir.to_string_lossy(),
         }),
     );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-    assert_eq!(outcome["proposal_written"], true);
-
-    let proposal_path = outcome["proposal_path"].as_str().unwrap();
-    let content = std::fs::read_to_string(proposal_path).unwrap();
-    assert!(content.contains("path_hint: app/upload.ts"));
-    assert!(
-        !content.contains("AGENTS.md")
-            && !content.contains("CLAUDE.md")
-            && !content.contains(".mcp.json")
-            && !content.contains(".claude/skills/"),
-        "archivos de bookkeeping de agentes no deben aparecer como binding: {content}"
+    assert_eq!(outcome["summary"]["committed"], 1, "{outcome}");
+    let changed: Vec<&str> = outcome["capture"]["changed_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        changed,
+        vec!["README.md"],
+        "el bookkeeping de agentes no es parte del cambio"
     );
+    let (_, content) = &read_records(&dir)[0];
+    assert!(content.contains("path_hint: app/upload.ts"), "{content}");
+    for managed in [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".mcp.json",
+        ".claude/skills/",
+        "README.md",
+    ] {
+        assert!(
+            !content.contains(managed),
+            "{managed} no fue declarado: {content}"
+        );
+    }
 
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// `project_root` (dónde vive `.rationale/`) y `repo_path` (dónde vive el
-/// código que cambió) están cableados como parámetros independientes desde
-/// el principio (`mcp/server.rs::resolve_roots`), pero nunca se ejercitaban
-/// con dos repos Git REALES distintos — todos los demás tests usan el mismo
-/// directorio para ambos. Este es el caso real: un repo de canon separado
-/// del repo de código.
+/// `project_root` (canon) y `repo_path` (código) en repos Git distintos: el
+/// Record se escribe en el canon y sus bindings son relativos al código.
 #[test]
 fn finalize_change_supports_project_root_and_repo_path_in_different_repos() {
     let canon_dir = make_test_project();
     let code_dir = make_test_project();
-
     std::fs::create_dir_all(code_dir.join("app")).unwrap();
     std::fs::write(
         code_dir.join("app/upload.ts"),
         "export function submit() {}\n",
     )
     .unwrap();
-    run_git(&code_dir, &["add", "-A"]);
-    run_git(&code_dir, &["commit", "-q", "-m", "add upload guard"]);
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&code_dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-    std::fs::write(
-        code_dir.join("app/upload.ts"),
-        "export function submit() { /* guard removed */ }\n",
-    )
-    .unwrap();
 
-    let mut client = TestClient::spawn();
+    let mut client = TestClient::spawn_without_provider(&[]);
     client.initialize();
-
-    let resp = client.call(
+    let outcome = client.call_ok(
         1,
         "finalize_change",
         json!({
-            "target": "app/upload.ts",
-            "base_revision": base_revision,
-            "intent": "Documentar el guard de envio en el repo de canon separado",
-            "statement": "El envio debe bloquearse mientras el archivo se esta subiendo.",
-            "record_id": "constraint.multi-repo-test",
-            "subject_id": "upload-guard-multi-repo-test",
-            "subject_title": "Bloqueo de envio durante carga",
-            "severity": "high",
+            "candidates": [durable_candidate(
+                "Sending must stay blocked while the file is still uploading.",
+                "Messages sent before the upload finishes arrive with a broken attachment link.",
+                &["app/upload.ts"],
+            )],
             "project_root": canon_dir.to_string_lossy(),
             "repo_path": code_dir.to_string_lossy(),
         }),
     );
-    assert_eq!(resp["result"]["isError"], false, "{resp:?}");
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-    assert_eq!(outcome["proposal_written"], true);
-
-    let proposal_path = outcome["proposal_path"].as_str().unwrap();
+    let path = outcome["committed"][0]["path"].as_str().unwrap();
     assert!(
-        proposal_path.starts_with(canon_dir.to_string_lossy().as_ref()),
-        "la propuesta debe escribirse en el canon (project_root), no en repo_path: {proposal_path}"
+        path.starts_with(canon_dir.to_string_lossy().as_ref()),
+        "el Record vive en el canon (project_root): {path}"
     );
-    let content = std::fs::read_to_string(proposal_path).unwrap();
+    let content = std::fs::read_to_string(path).unwrap();
     assert!(content.contains("path_hint: app/upload.ts"));
     assert!(
-        !canon_dir.join("app").exists(),
-        "el archivo cambiado vive en repo_path, nunca debe copiarse a project_root"
+        content.contains("provisional: true"),
+        "untracked en el repo de código: {content}"
     );
+    assert!(!canon_dir.join("app").exists());
 
     std::fs::remove_dir_all(&canon_dir).ok();
     std::fs::remove_dir_all(&code_dir).ok();
 }
 
+/// Subjects autónomos: un candidato fuerte se reutiliza en vez de bloquear
+/// la captura, un `novelty_reason` válido crea uno nuevo, y un Subject
+/// corrupto al lado nunca ciega al resolver (revisión adversarial de Fase
+/// F, hallazgo 1).
 #[test]
-fn novelty_reason_is_structured_validated_and_persisted() {
+fn finalize_change_resolves_subjects_autonomously_even_with_a_corrupt_file() {
     let dir = make_test_project();
-    std::fs::write(
-        dir.join(".rationale/subjects/authorization.existing.yaml"),
-        "id: authorization.existing\ntype: system-behavior\ntitle: Entity-scoped staff authorization\nscope: project\n",
-    )
-    .unwrap();
-    run_git(&dir, &["add", "-A"]);
-    run_git(&dir, &["commit", "-q", "-m", "add existing subject"]);
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-
-    std::fs::create_dir_all(dir.join("src/auth")).unwrap();
-    std::fs::write(dir.join("src/auth/authorization.ts"), "changed\n").unwrap();
-    run_git(&dir, &["add", "-A"]);
-    run_git(&dir, &["commit", "-q", "-m", "authorization change"]);
-
-    let mut client = TestClient::spawn();
-    client.initialize();
-
-    let invalid = client.call(
-        1,
-        "finalize_change",
-        json!({
-            "target": "src/auth/authorization.ts",
-            "base_revision": base_revision,
-            "intent": "new authorization behavior",
-            "statement": "The new authorization behavior is distinct.",
-            "record_id": "constraint.invalid-novelty-test",
-            "subject_id": "authorization.new",
-            "subject_title": "Entity-scoped staff authorization",
-            "novelty_reason": {
-                "contrasted_subject": "authorization.missing",
-                "difference_kind": "behavior",
-                "difference": "different behavior",
-                "evidence": "changed source"
-            },
-            "severity": "high",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
-    );
-    let invalid_text = invalid["result"]["content"][0]["text"].as_str().unwrap();
-    let invalid_outcome: Value = serde_json::from_str(invalid_text).unwrap();
-    assert_eq!(invalid_outcome["proposal_written"], false);
-    assert!(invalid_outcome["blocked_reason"]
-        .as_str()
-        .unwrap()
-        .contains("novelty_reason"));
-
-    let valid = client.call(
-        2,
-        "finalize_change",
-        json!({
-            "target": "src/auth/authorization.ts",
-            "base_revision": base_revision,
-            "intent": "new authorization behavior",
-            "statement": "The new authorization behavior is distinct.",
-            "record_id": "constraint.valid-novelty-test",
-            "subject_id": "authorization.new",
-            "subject_title": "Entity-scoped staff authorization",
-            "novelty_reason": {
-                "contrasted_subject": "authorization.existing",
-                "difference_kind": "behavior",
-                "difference": "The new rule governs audit decisions, not access scope.",
-                "evidence": "The changed binding is the authorization audit path."
-            },
-            "severity": "high",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
-    );
-    let valid_text = valid["result"]["content"][0]["text"].as_str().unwrap();
-    let valid_outcome: Value = serde_json::from_str(valid_text).unwrap();
-    assert_eq!(valid_outcome["proposal_written"], true);
-    assert_eq!(
-        valid_outcome["subject_resolution"]["novelty_reason"]["contrasted_subject"],
-        "authorization.existing"
-    );
-    let proposal =
-        std::fs::read_to_string(valid_outcome["proposal_path"].as_str().unwrap()).unwrap();
-    assert!(proposal.contains("novelty_reason:"));
-    assert!(proposal.contains("contrasted_subject: authorization.existing"));
-    assert!(proposal.contains("difference_kind: behavior"));
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[test]
-fn finalize_change_skips_proposal_for_mechanical_only_change() {
-    let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-
-    // Solo un lockfile — Nivel 0, v0.5 §16: no se crea ningún registro.
-    std::fs::write(dir.join("Cargo.lock"), "# lockfile\n").unwrap();
-    run_git(&dir, &["add", "-A"]);
-    run_git(&dir, &["commit", "-q", "-m", "update lockfile"]);
-
-    let mut client = TestClient::spawn();
-    client.initialize();
-
-    let resp = client.call(
-        1,
-        "finalize_change",
-        json!({
-            "target": "Cargo.lock",
-            "base_revision": base_revision,
-            "intent": "Bump a dependency version.",
-            "statement": "N/A",
-            "record_id": "constraint.should-not-exist-test",
-            "subject_id": "should.not-exist-test",
-            "subject_title": "Should not exist",
-            "severity": "high",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
-    );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-
-    assert_eq!(outcome["level"], "git-only");
-    assert_eq!(outcome["proposal_written"], false);
-    assert!(outcome["proposal_path"].is_null());
-    assert!(!dir
-        .join(".rationale/proposals/constraint.should-not-exist-test.yaml")
-        .exists());
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// Fase 1.3 — guarda de "nada que capturar": `base_revision == HEAD` y un
-/// working tree limpio (nada commiteado, staged, unstaged ni untracked)
-/// debe rechazarse con un `blocked_reason` explícito, nunca escribir una
-/// propuesta con `binding_declarations: []`. Distinto de Nivel 0
-/// (`Cargo.lock`-only, arriba): ahí SÍ hay cambios, solo que no ameritan un
-/// Record. Aquí no hay ningún cambio en absoluto.
-#[test]
-fn finalize_change_rejects_when_nothing_changed_at_all() {
-    let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-
-    let mut client = TestClient::spawn();
-    client.initialize();
-
-    let resp = client.call(
-        1,
-        "finalize_change",
-        json!({
-            "target": "README.md",
-            "base_revision": base_revision,
-            "intent": "no-op",
-            "statement": "N/A",
-            "record_id": "constraint.nothing-changed-test",
-            "subject_id": "should.not-exist-either",
-            "subject_title": "Should not exist",
-            "severity": "high",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
-    );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-
-    assert_eq!(outcome["proposal_written"], false);
-    assert!(outcome["blocked_reason"]
-        .as_str()
-        .unwrap()
-        .contains("no hay ningún cambio"));
-    assert!(!dir
-        .join(".rationale/proposals/constraint.nothing-changed-test.yaml")
-        .exists());
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// Vulnerabilidad real encontrada y corregida durante la verificación de
-/// fin de Fase F: un `record_id` con `../` escribía fuera de
-/// `.rationale/proposals/` — confirmado empíricamente escribiendo un
-/// archivo real fuera del directorio del proyecto antes del fix. Este test
-/// reproduce el ataque exacto contra el binario real compilado.
-#[test]
-fn finalize_change_rejects_path_traversal_in_record_id() {
-    let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-
-    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
-    run_git(&dir, &["add", "-A"]);
-    run_git(&dir, &["commit", "-q", "-m", "malicious change"]);
-
-    let escape_target = dir.join("../pwned-by-rationale-test.yaml");
-    let _ = std::fs::remove_file(&escape_target);
-
-    let mut client = TestClient::spawn();
-    client.initialize();
-
-    let resp = client.call(
-        1,
-        "finalize_change",
-        json!({
-            "target": "f.txt",
-            "base_revision": base_revision,
-            "intent": "attempted traversal must never escape because it would be a real vulnerability",
-            "statement": "test",
-            "record_id": "../pwned-by-rationale-test",
-            "subject_id": "x.y",
-            "subject_title": "x",
-            "severity": "high",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
-    );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-
-    assert_eq!(outcome["proposal_written"], false);
-    assert!(!outcome["blocked_reason"].is_null());
-    assert!(
-        !escape_target.exists(),
-        "el record_id malicioso NUNCA debe escribir fuera de .rationale/proposals/"
-    );
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// Revisión adversarial de Fase F, hallazgo 3: secuencias de escape ANSI en
-/// `intent`/`statement` sobrevivían intactas hasta el terminal del revisor
-/// humano en `rationale review` — pudiendo pintar un banner falso
-/// "AUTO-APPROVED" o borrar/ocultar texto exactamente en el momento en que
-/// el humano decide aprobar. Verifica contra el binario real que el byte
-/// ESC (0x1b) nunca llega a la propuesta escrita en disco.
-#[test]
-fn finalize_change_strips_ansi_escape_sequences_from_free_text() {
-    let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-
-    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
-    run_git(&dir, &["add", "-A"]);
-    run_git(&dir, &["commit", "-q", "-m", "change touching auth"]);
-
-    let malicious_statement =
-        "Staff must never receive global super_admin.\u{1b}[2K\r\u{1b}[32mAUTO-APPROVED BY SECURITY TEAM\u{1b}[0m";
-    let malicious_intent =
-        "Normal intent text \u{1b}[8mhidden-instruction\u{1b}[28m end because reasons";
-
-    let mut client = TestClient::spawn();
-    client.initialize();
-
-    let resp = client.call(
-        1,
-        "finalize_change",
-        json!({
-            "target": "f.txt",
-            "base_revision": base_revision,
-            "intent": malicious_intent,
-            "statement": malicious_statement,
-            "record_id": "constraint.ansi-injection-test",
-            "subject_id": "x.y",
-            "subject_title": "x",
-            "severity": "high",
-            "project_root": dir.to_string_lossy(),
-            "repo_path": dir.to_string_lossy(),
-        }),
-    );
-    assert_eq!(resp["result"]["isError"], false);
-
-    let proposal_path = dir.join(".rationale/proposals/constraint.ansi-injection-test.yaml");
-    let content = std::fs::read_to_string(&proposal_path).unwrap();
-    assert!(
-        !content.contains('\u{1b}'),
-        "ningún byte ESC crudo debe sobrevivir en la propuesta escrita: {content:?}"
-    );
-    assert!(
-        content.contains("AUTO-APPROVED BY SECURITY TEAM"),
-        "el texto en sí no se pierde, solo los códigos de control que lo disfrazaban"
-    );
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// Revisión adversarial de Fase F, hallazgo 1: un solo archivo YAML
-/// corrupto en `.rationale/subjects/` apagaba el Subject Resolver COMPLETO
-/// en silencio (`.unwrap_or_default()` sobre un `Err` que antes abortaba
-/// toda la lectura) — un candidato de Subject que debería bloquear la
-/// propuesta dejaba de detectarse, sin ningún diagnóstico. Verifica contra
-/// el binario real que un archivo corrupto ya no ciega al Resolver.
-#[test]
-fn finalize_change_still_resolves_subjects_when_one_file_is_corrupt() {
-    let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
-
-    // Un Subject real existente con un título casi idéntico al propuesto —
-    // debería surgir como candidato fuerte y bloquear sin novelty_reason.
     std::fs::write(
         dir.join(".rationale/subjects/authz.existing.yaml"),
         "id: authz.existing\ntype: system-behavior\ntitle: Entity scoped staff authorization access\n",
     )
     .unwrap();
-    // Un archivo corrupto al lado — nunca debe apagar la lectura de los demás.
     std::fs::write(
         dir.join(".rationale/subjects/broken.yaml"),
         "id: \ntitle: \n",
     )
     .unwrap();
+    std::fs::create_dir_all(dir.join("src/auth")).unwrap();
+    std::fs::write(dir.join("src/auth/authorization.ts"), "changed\n").unwrap();
 
-    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
-    run_git(&dir, &["add", "-A"]);
-    run_git(&dir, &["commit", "-q", "-m", "change"]);
+    let mut similar = durable_candidate(STAFF, STAFF_WHY, &["src/auth/authorization.ts"]);
+    similar["subject"] = json!({"id": "authz.new-duplicate-attempt", "title": "Entity scoped staff authorization access"});
+    let mut novel = durable_candidate(
+        "Authorization audit decisions are logged per entity.",
+        "Auditors review access per tenant, so a global audit trail cannot answer their questions.",
+        &["src/auth/authorization.ts"],
+    );
+    novel["subject"] = json!({
+        "id": "authz.audit-trail",
+        "title": "Entity scoped staff authorization access",
+        "novelty_reason": {
+            "contrasted_subject": "authz.existing",
+            "difference_kind": "behavior",
+            "difference": "The new rule governs audit decisions, not access scope.",
+            "evidence": "The binding is the authorization audit path."
+        }
+    });
 
-    let mut client = TestClient::spawn();
+    let mut client = TestClient::spawn_without_provider(&[]);
     client.initialize();
-
-    let resp = client.call(
+    let outcome = client.call_ok(
         1,
         "finalize_change",
         json!({
-            "target": "f.txt",
-            "base_revision": base_revision,
-            "intent": "test",
-            "statement": "test",
-            "record_id": "constraint.resolver-blindness-test",
-            "subject_id": "authz.new-duplicate-attempt",
-            "subject_title": "Entity scoped staff authorization access",
-            "severity": "high",
+            "candidates": [similar, novel],
             "project_root": dir.to_string_lossy(),
             "repo_path": dir.to_string_lossy(),
         }),
     );
-    assert_eq!(resp["result"]["isError"], false);
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-    let outcome: Value = serde_json::from_str(text).unwrap();
-
-    let candidates = outcome["subject_resolution"]["candidates"]
-        .as_array()
-        .unwrap();
-    assert!(
-        !candidates.is_empty(),
-        "el Subject casi-duplicado debe seguir detectándose pese al archivo corrupto: {outcome}"
+    let committed = outcome["committed"].as_array().unwrap();
+    assert_eq!(committed.len(), 2, "{outcome}");
+    assert_eq!(
+        committed[0]["subject_id"], "authz.existing",
+        "se reutiliza el candidato fuerte"
     );
-    let all_diagnostics = outcome["diagnostics"].as_array().unwrap();
+    assert_eq!(committed[1]["subject_id"], "authz.audit-trail");
+    assert!(dir
+        .join(".rationale/subjects/authz.audit-trail.yaml")
+        .is_file());
+    assert!(!dir
+        .join(".rationale/subjects/authz.new-duplicate-attempt.yaml")
+        .exists());
+    let warnings = outcome["warnings"].as_array().unwrap();
     assert!(
-        all_diagnostics
+        warnings
             .iter()
-            .any(|d| d.as_str().unwrap_or("").contains("broken.yaml")),
-        "debe quedar un diagnóstico explícito sobre el archivo que no se pudo leer: {all_diagnostics:?}"
+            .any(|w| w.as_str().unwrap().contains("broken.yaml")),
+        "el archivo ilegible se reporta: {warnings:?}"
     );
 
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// Sin `governs_paths`, `finalize_change` ata un binding a TODO archivo del
-/// diff. Eso empuja al agente a lo contrario de lo que el canon necesita: un
-/// Record único gigante en vez de varios pequeños, cada uno gobernando lo
-/// suyo. Con `governs_paths`, un mismo árbol de trabajo puede producir varias
-/// propuestas acotadas.
-///
-/// Este test cubre los tres comportamientos en un solo árbol: el default
-/// histórico, el acotado, y el rechazo de una ruta no verificable.
+/// Revisión adversarial de Fase F, hallazgo 3: el byte ESC nunca llega al
+/// canon, aunque el texto visible se conserve.
 #[test]
-fn governs_paths_scopes_bindings_without_changing_the_default() {
+fn finalize_change_strips_ansi_escape_sequences_from_free_text() {
     let dir = make_test_project();
-    let base_revision = {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&dir)
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    };
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+    let malicious_statement =
+        "Staff must never receive global super_admin.\u{1b}[2K\r\u{1b}[32mAUTO-PINNED BY SECURITY TEAM\u{1b}[0m";
+    let malicious_rationale =
+        "Normal rationale text \u{1b}[8mhidden-instruction\u{1b}[28m because tenants must stay isolated";
 
-    // Dos decisiones independientes en el mismo árbol, más un archivo de
-    // scratch que no pertenece a ninguna — el caso real que motivó esto.
+    let mut client = TestClient::spawn_without_provider(&[]);
+    client.initialize();
+    let outcome = client.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "candidates": [durable_candidate(malicious_statement, malicious_rationale, &["f.txt"])],
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(outcome["summary"]["committed"], 1, "{outcome}");
+    let (_, content) = &read_records(&dir)[0];
+    assert!(!content.contains('\u{1b}'), "{content:?}");
+    assert!(content.contains("AUTO-PINNED BY SECURITY TEAM"));
+    assert!(
+        content.contains("authority: normal"),
+        "el texto nunca otorga autoridad"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// El contrato pre-vNext (statement + record_id, sin candidates) se reporta
+/// como descarte explícito — nunca se convierte en propuesta pendiente.
+#[test]
+fn legacy_finalize_contract_is_reported_not_converted_into_a_proposal() {
+    let dir = make_test_project();
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+
+    let mut client = TestClient::spawn_without_provider(&[]);
+    client.initialize();
+    let outcome = client.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "target": "f.txt",
+            "base_revision": head(&dir),
+            "intent": "Staff users must never receive global super_admin access.",
+            "statement": STAFF,
+            "record_id": "constraint.legacy-contract-test",
+            "subject_id": "legacy.subject",
+            "subject_title": "Legacy",
+            "severity": "high",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(
+        outcome["discarded"][0]["reason"], "legacy_contract",
+        "{outcome}"
+    );
+    assert_eq!(pending_proposal_files(&dir), 0);
+    assert!(read_records(&dir).is_empty());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Una decisión por Record: dos candidatos en el mismo árbol atan cada uno
+/// solo su propio código (reemplaza a `governs_paths`: en vNext los bindings
+/// son siempre explícitos por candidato).
+#[test]
+fn independent_candidates_bind_only_their_own_code() {
+    let dir = make_test_project();
     std::fs::create_dir_all(dir.join("src/auth")).unwrap();
     std::fs::write(
         dir.join("src/auth/authorization.ts"),
-        "export function resolveEntityRole() { /* ... */ }\n",
+        "export function a() {}\n",
     )
     .unwrap();
     std::fs::write(
         dir.join("src/billing.ts"),
-        "export function chargeOnce() { /* ... */ }\n",
+        "export function chargeOnce() {}\n",
     )
     .unwrap();
     std::fs::write(dir.join("scratch-notes.txt"), "notas sueltas\n").unwrap();
-    run_git(&dir, &["add", "-A"]);
-    run_git(&dir, &["commit", "-q", "-m", "two decisions plus scratch"]);
 
-    let mut client = TestClient::spawn();
+    let mut client = TestClient::spawn_without_provider(&[]);
     client.initialize();
-
-    // Cada caso necesita un Subject LÉXICAMENTE distinto, no solo un id
-    // distinto: con títulos parecidos el Subject Resolver los marca
-    // `MergeCandidate` y exige `novelty_reason`, bloqueando la propuesta
-    // (comportamiento correcto de v0.5 §294). Este test es sobre bindings,
-    // así que los Subjects se eligen para no activar esa ruta.
-    let finalize = |client: &mut TestClient,
-                    id: i64,
-                    record: &str,
-                    subject_id: &str,
-                    subject_title: &str,
-                    extra: Value|
-     -> Value {
-        let mut args = json!({
-            "target": "src/auth/authorization.ts",
-            "base_revision": base_revision,
-            "intent": "Staff users must never receive global super_admin access.",
-            "statement": "Staff users must never receive global super_admin.",
-            "record_id": record,
-            "subject_id": subject_id,
-            "subject_title": subject_title,
-            "severity": "high",
+    let outcome = client.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "candidates": [
+                durable_candidate(STAFF, STAFF_WHY, &["src/auth/authorization.ts"]),
+                durable_candidate(
+                    "A payment charge must be idempotent per invoice.",
+                    "Card networks retry on timeouts, and without idempotency customers were charged twice.",
+                    &["src/billing.ts::chargeOnce"],
+                ),
+            ],
             "project_root": dir.to_string_lossy(),
             "repo_path": dir.to_string_lossy(),
-        });
-        for (k, v) in extra.as_object().unwrap() {
-            args[k] = v.clone();
-        }
-        let resp = client.call(id, "finalize_change", args);
-        resp["result"].clone()
-    };
-
-    // 1. Sin el parámetro: el comportamiento histórico, todos los archivos.
-    let result = finalize(
-        &mut client,
-        1,
-        "constraint.govpaths-default",
-        "authorization.staff-global-admin",
-        "Staff global admin prohibition",
-        json!({}),
+        }),
     );
-    assert_eq!(result["isError"], false);
-    let outcome: Value =
-        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
-    let default_proposal =
-        std::fs::read_to_string(outcome["proposal_path"].as_str().unwrap()).unwrap();
-    for path in [
-        "src/auth/authorization.ts",
-        "src/billing.ts",
-        "scratch-notes.txt",
-    ] {
-        assert!(
-            default_proposal.contains(path),
-            "sin governs_paths debe atarse todo el diff; falta {path}:\n{default_proposal}"
-        );
+    let committed = outcome["committed"].as_array().unwrap();
+    assert_eq!(committed.len(), 2, "{outcome}");
+    assert_eq!(
+        committed[0]["bindings"],
+        json!(["src/auth/authorization.ts"])
+    );
+    assert_eq!(committed[1]["bindings"], json!(["src/billing.ts"]));
+    for (_, content) in read_records(&dir) {
+        assert!(!content.contains("scratch-notes.txt"), "{content}");
     }
 
-    // 2. Con el parámetro: solo lo declarado. El scratch y la otra decisión
-    //    quedan fuera, aunque sigan estando en el diff.
-    let result = finalize(
-        &mut client,
-        2,
-        "constraint.govpaths-scoped",
-        "billing.charge-idempotency",
-        "Payment charge idempotency",
-        json!({"governs_paths": ["src/auth/authorization.ts"]}),
-    );
-    assert_eq!(result["isError"], false);
-    let outcome: Value =
-        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
-    let scoped_proposal = std::fs::read_to_string(
-        outcome["proposal_path"]
-            .as_str()
-            .unwrap_or_else(|| panic!("no se escribió propuesta acotada: {outcome}")),
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+fn write_pinned_record(dir: &std::path::Path, id: &str, statement: &str, path_hint: &str) {
+    std::fs::write(
+        dir.join(format!(".rationale/records/{id}.yaml")),
+        format!(
+            "schema_version: rationale/0.1\nid: {id}\nkind: constraint\nseverity: high\nstatement: \"{statement}\"\nrationale: \"Finance reconciles by fixed windows.\"\nauthority: pinned\napprovals: []\nbinding_declarations:\n  - id: binding.{id}.0\n    type: file\n    path_hint: {path_hint}\n"
+        ),
     )
     .unwrap();
-    assert!(
-        scoped_proposal.contains("src/auth/authorization.ts"),
-        "la ruta declarada debe estar atada:\n{scoped_proposal}"
-    );
-    for path in ["src/billing.ts", "scratch-notes.txt"] {
-        assert!(
-            !scoped_proposal.contains(path),
-            "{path} no fue declarado y no debe aparecer atado:\n{scoped_proposal}"
-        );
-    }
+}
 
-    // 3. Una ruta que no está en el diff no es verificable: se rechaza en vez
-    //    de fabricarle un binding.
-    let result = finalize(
-        &mut client,
+fn declare_authority(dir: &std::path::Path) {
+    std::fs::write(
+        dir.join(".rationale/config.yaml"),
+        "project:\n  id: conflict-test\nauthority:\n  \"user:Rationale Test <test@rationale.local>\":\n    role: architecture-owner\n",
+    )
+    .unwrap();
+}
+
+/// El único punto que interrumpe al humano: reemplazar una regla fijada. El
+/// agente recibe un conflicto estructurado, pregunta, y continúa con
+/// `resolve_conflict` — sin abrir otra terminal.
+#[test]
+fn pinned_conflict_is_returned_and_resolve_conflict_continues_the_work() {
+    let dir = make_test_project();
+    declare_authority(&dir);
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("src/payments.ts"),
+        "export function createLink() {}\n",
+    )
+    .unwrap();
+    write_pinned_record(
+        &dir,
+        "constraint.payment-links-expire-ten-minutes",
+        "Payment links must expire after ten minutes.",
+        "src/payments.ts",
+    );
+
+    let mut replacement = durable_candidate(
+        "Payment links must expire after the tenant-configured window.",
+        "Each tenant defines its own payment policy, so a global ten-minute rule was wrong.",
+        &["src/payments.ts"],
+    );
+    replacement["supersedes"] = json!(["constraint.payment-links-expire-ten-minutes"]);
+
+    let mut client = TestClient::spawn_without_provider(&["--client", "codex"]);
+    client.initialize();
+    let outcome = client.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "candidates": [replacement],
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(
+        outcome["summary"],
+        json!({"committed": 0, "discarded": 0, "conflicts": 1})
+    );
+    let conflict = &outcome["conflicts"][0];
+    assert_eq!(
+        conflict["pinned_record_id"],
+        "constraint.payment-links-expire-ten-minutes"
+    );
+    assert!(conflict["question"]
+        .as_str()
+        .unwrap()
+        .contains("¿Cuál debe gobernar?"));
+    let conflict_id = conflict["conflict_id"].as_str().unwrap().to_string();
+    assert_eq!(
+        read_records(&dir).len(),
+        1,
+        "nada se escribe hasta que el humano decide"
+    );
+
+    // Sin la respuesta humana transcrita, no hay resolución.
+    let without_answer = client.call(
+        2,
+        "resolve_conflict",
+        json!({
+            "conflict_id": conflict_id,
+            "decision": "adopt_new",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(without_answer["result"]["isError"], true);
+
+    let resolution = client.call_ok(
         3,
-        "constraint.govpaths-missing",
-        "retention.audit-log-window",
-        "Audit log retention window",
-        json!({"governs_paths": ["src/never-touched.ts"]}),
+        "resolve_conflict",
+        json!({
+            "conflict_id": conflict_id,
+            "decision": "adopt_new",
+            "human_answer": "La configurable por tenant debe gobernar.",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
     );
-    assert_eq!(
-        result["isError"], true,
-        "una ruta ausente del diff debe fallar explícitamente: {result}"
-    );
-    let message = result["content"][0]["text"].as_str().unwrap();
+    let new_id = resolution["outcome"]["committed"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(resolution["outcome"]["committed"][0]["authority"], "pinned");
+    let records = read_records(&dir);
+    let old = &records
+        .iter()
+        .find(|(id, _)| id == "constraint.payment-links-expire-ten-minutes")
+        .unwrap()
+        .1;
+    assert!(old.contains("status: superseded"), "{old}");
+    assert!(old.contains(&format!("superseded_by: {new_id}")), "{old}");
+    let new = &records.iter().find(|(id, _)| *id == new_id).unwrap().1;
+    assert!(new.contains("authority: pinned"), "{new}");
+    assert!(new.contains("client: codex"), "{new}");
     assert!(
-        message.contains("src/never-touched.ts"),
-        "el error debe nombrar la ruta ofensora: {message}"
+        new.contains("La configurable por tenant debe gobernar."),
+        "{new}"
     );
 
-    // 4. Vacío no es lo mismo que ausente: un Record que no gobierna nada
-    //    casi seguro es un error del caller.
-    let result = finalize(
-        &mut client,
+    // El mismo conflicto no puede resolverse dos veces.
+    let again = client.call(
         4,
-        "constraint.govpaths-empty",
-        "notifications.push-delivery",
-        "Push notification delivery",
-        json!({"governs_paths": []}),
+        "resolve_conflict",
+        json!({
+            "conflict_id": conflict_id,
+            "decision": "keep_pinned",
+            "human_answer": "otra vez",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
     );
-    assert_eq!(
-        result["isError"], true,
-        "governs_paths vacío debe rechazarse en vez de atar todo: {result}"
+    assert_eq!(again["result"]["isError"], true);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Reemplazar una regla fijada exige autoridad declarada
+/// (`constraint.f8-project-authority`); mantenerla no exige nada.
+#[test]
+fn adopting_over_a_pinned_rule_requires_declared_authority() {
+    let dir = make_test_project();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("src/payments.ts"),
+        "export function createLink() {}\n",
+    )
+    .unwrap();
+    write_pinned_record(
+        &dir,
+        "constraint.payment-links-expire-ten-minutes",
+        "Payment links must expire after ten minutes.",
+        "src/payments.ts",
     );
+    let mut replacement = durable_candidate(
+        "Payment links should not expire at all.",
+        "Customers complained that links died while they were still typing card details.",
+        &["src/payments.ts"],
+    );
+    replacement["supersedes"] = json!(["constraint.payment-links-expire-ten-minutes"]);
+
+    let mut client = TestClient::spawn_without_provider(&[]);
+    client.initialize();
+    let outcome = client.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "candidates": [replacement],
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    let conflict_id = outcome["conflicts"][0]["conflict_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let refused = client.call(
+        2,
+        "resolve_conflict",
+        json!({
+            "conflict_id": conflict_id,
+            "decision": "adopt_new",
+            "human_answer": "la nueva",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(refused["result"]["isError"], true);
+    assert!(refused["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("no está declarado"));
+
+    let kept = client.call_ok(
+        3,
+        "resolve_conflict",
+        json!({
+            "conflict_id": conflict_id,
+            "decision": "keep_pinned",
+            "human_answer": "Mantén la regla fijada.",
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    assert_eq!(kept["decision"], "keep_pinned");
+    assert_eq!(read_records(&dir).len(), 1);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Identidad del cliente: el flag gana; sin flag, el nombre que el cliente
+/// declara en `initialize` se registra con su fuente.
+#[test]
+fn client_identity_comes_from_the_flag_or_the_client_report() {
+    let dir = make_test_project();
+    std::fs::write(dir.join("f.txt"), "changed\n").unwrap();
+
+    let mut reported = TestClient::spawn_without_provider(&[]);
+    reported.initialize_as("claude-code");
+    reported.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "candidates": [durable_candidate(STAFF, STAFF_WHY, &["f.txt"])],
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    let (_, content) = &read_records(&dir)[0];
+    assert!(content.contains("client: claude-code"), "{content}");
+    assert!(
+        content.contains("client_source: mcp-client-info"),
+        "{content}"
+    );
+
+    let mut flagged = TestClient::spawn_without_provider(&["--client", "cursor"]);
+    flagged.initialize_as("codex-mcp-client");
+    let outcome = flagged.call_ok(
+        1,
+        "finalize_change",
+        json!({
+            "candidates": [durable_candidate(
+                "Refund links must expire after one hour.",
+                "Refunds need longer confirmation windows because banks batch them.",
+                &["f.txt"],
+            )],
+            "project_root": dir.to_string_lossy(),
+            "repo_path": dir.to_string_lossy(),
+        }),
+    );
+    let path = outcome["committed"][0]["path"].as_str().unwrap();
+    let content = std::fs::read_to_string(path).unwrap();
+    assert!(content.contains("client: cursor"), "{content}");
+    assert!(content.contains("client_source: flag"), "{content}");
 
     std::fs::remove_dir_all(&dir).ok();
 }

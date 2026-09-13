@@ -10,23 +10,19 @@
 
 use crate::providers::{Coverage, ProviderStatus};
 use crate::revision::{Consistency, GitSnapshot};
-use crate::storage::{has_approved_authority, EpistemicStatus, Record};
+use crate::storage::{EpistemicStatus, Record, RecordAuthority};
 use serde::Serialize;
 use std::path::Path;
 
-/// Rationale_v0.5.md §10.6 / §12.2. `unreviewed` es el estado inicial de
-/// todo Record nuevo — nunca se autoaprueba (Proceso §21).
+/// Autoridad vNext. `normal` es el estado de todo Record capturado en
+/// trabajo normal; `pinned` solo lo otorga una persona; `revoked` gana sobre
+/// ambos. La era de aprobaciones (`unreviewed`/`approved`) queda como
+/// historia en `Record.approvals`, no como estado de autoridad.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthorityStatus {
-    Unreviewed,
-    Approved,
-    // Policy (regla de repositorio aprobada) y Revoked solo se alcanzan vía
-    // `review_record` (Fase F) — todavía no implementado. Se declaran aquí
-    // para que el schema esté completo desde ahora, no para usarse ya.
-    #[allow(dead_code)]
-    Policy,
-    #[allow(dead_code)]
+    Normal,
+    Pinned,
     Revoked,
 }
 
@@ -80,9 +76,8 @@ pub struct BindingResolution {
 impl std::fmt::Display for AuthorityStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            AuthorityStatus::Unreviewed => "unreviewed",
-            AuthorityStatus::Approved => "approved",
-            AuthorityStatus::Policy => "policy",
+            AuthorityStatus::Normal => "normal",
+            AuthorityStatus::Pinned => "pinned",
             AuthorityStatus::Revoked => "revoked",
         };
         write!(f, "{s}")
@@ -135,10 +130,11 @@ pub struct Assessment {
 fn authority_status(record: &Record) -> AuthorityStatus {
     if crate::storage::is_revoked(record) {
         AuthorityStatus::Revoked
-    } else if has_approved_authority(record) {
-        AuthorityStatus::Approved
     } else {
-        AuthorityStatus::Unreviewed
+        match crate::storage::record_authority(record) {
+            RecordAuthority::Pinned => AuthorityStatus::Pinned,
+            RecordAuthority::Normal => AuthorityStatus::Normal,
+        }
     }
 }
 
@@ -318,6 +314,9 @@ mod tests {
             statement: "test".to_string(),
             rationale: None,
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             evidence: vec![],
             risks: vec![],
             approvals: if approved {
@@ -368,14 +367,38 @@ mod tests {
         assert_eq!(assessment.revision_consistency, Consistency::Exact);
         assert_eq!(assessment.state.applicability, Applicability::Active);
         assert_eq!(assessment.state.linkage, Linkage::Current);
-        assert_eq!(assessment.state.authority, AuthorityStatus::Approved);
+        assert_eq!(
+            assessment.state.authority,
+            AuthorityStatus::Normal,
+            "una aprobación heredada es respaldo, no autoridad fijada"
+        );
         assert!(assessment.binding_resolution[0].resolved);
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn unreviewed_authority_never_becomes_approved() {
+    fn only_an_explicit_pin_produces_pinned_authority() {
+        let dir = temp_repo();
+        let mut record = record_with(true, "abc123");
+        let snap = GitSnapshot {
+            head: Some("abc123".to_string()),
+            working_tree_dirty: false,
+        };
+        record.authority = Some("pinned".to_string());
+        let assessment = compute(
+            &record,
+            &snap,
+            ProviderStatus::Successful,
+            Coverage::Complete,
+            &dir,
+        );
+        assert_eq!(assessment.state.authority, AuthorityStatus::Pinned);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn agent_asserted_authority_is_normal_never_pinned() {
         let dir = temp_repo();
         let record = record_with(false, "abc123");
         let snap = GitSnapshot {
@@ -389,7 +412,7 @@ mod tests {
             Coverage::Complete,
             &dir,
         );
-        assert_eq!(assessment.state.authority, AuthorityStatus::Unreviewed);
+        assert_eq!(assessment.state.authority, AuthorityStatus::Normal);
         std::fs::remove_dir_all(&dir).ok();
     }
 

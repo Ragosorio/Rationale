@@ -155,6 +155,18 @@ fn is_active(record: &Record) -> bool {
         && crate::storage::lifecycle_status(record) != Some("superseded")
 }
 
+/// Precedencia vNext: lo fijado por una persona ordena antes que lo normal.
+fn pinned_first(a: &Record, b: &Record) -> std::cmp::Ordering {
+    let pinned =
+        |r: &Record| crate::storage::record_authority(r) == crate::storage::RecordAuthority::Pinned;
+    pinned(b).cmp(&pinned(a))
+}
+
+/// Desempate de calidad: un respaldo humano heredado ordena antes.
+fn endorsed_first(a: &Record, b: &Record) -> std::cmp::Ordering {
+    crate::storage::has_human_endorsement(b).cmp(&crate::storage::has_human_endorsement(a))
+}
+
 struct ConstraintSelection<'a> {
     constraints: Vec<&'a Record>,
     /// Relevantes (señal léxica con la intención) que no cupieron bajo el
@@ -200,12 +212,9 @@ fn select_constraints<'a>(
         governing
             .get(&b.id)
             .cmp(&governing.get(&a.id))
+            .then_with(|| pinned_first(a, b))
             .then_with(|| crate::storage::severity_of(b).cmp(&crate::storage::severity_of(a)))
-            .then_with(|| {
-                let a_approved = crate::storage::has_approved_authority(a);
-                let b_approved = crate::storage::has_approved_authority(b);
-                b_approved.cmp(&a_approved)
-            })
+            .then_with(|| endorsed_first(a, b))
             .then_with(|| a.id.cmp(&b.id))
     });
 
@@ -224,14 +233,10 @@ fn select_constraints<'a>(
         None => Vec::new(),
     };
     related.sort_by(|(a, a_overlap), (b, b_overlap)| {
-        b_overlap
-            .cmp(a_overlap)
+        pinned_first(a, b)
+            .then_with(|| b_overlap.cmp(a_overlap))
             .then_with(|| crate::storage::severity_of(b).cmp(&crate::storage::severity_of(a)))
-            .then_with(|| {
-                let a_approved = crate::storage::has_approved_authority(a);
-                let b_approved = crate::storage::has_approved_authority(b);
-                b_approved.cmp(&a_approved)
-            })
+            .then_with(|| endorsed_first(a, b))
             .then_with(|| a.id.cmp(&b.id))
     });
 
@@ -276,7 +281,7 @@ fn normalized_terms(text: &str) -> std::collections::HashSet<String> {
 /// (statement en inglés, intención en español comparten pocos tokens
 /// literales incluso cuando sí hay conflicto — confirmado con el propio
 /// canon de este repo: constraint.no-provider-internal-access).
-fn shared_terms(intent: &str, statement: &str) -> Vec<String> {
+pub(crate) fn shared_terms(intent: &str, statement: &str) -> Vec<String> {
     let intent_terms = normalized_terms(intent);
     let statement_terms = normalized_terms(statement);
     let mut shared: Vec<String> = intent_terms
@@ -321,7 +326,7 @@ fn has_marker(text: &str, markers: &[&str]) -> bool {
 /// (ambos, ninguno) es `Undetermined`, nunca se sube a un veredicto por
 /// descarte. `Aligned` está modelado pero esta heurística nunca lo
 /// produce con confianza suficiente.
-fn polarity_of(intent: &str, statement: &str) -> Polarity {
+pub(crate) fn polarity_of(intent: &str, statement: &str) -> Polarity {
     let intent_prohibits = has_marker(intent, PROHIBITION_MARKERS);
     let statement_prohibits = has_marker(statement, PROHIBITION_MARKERS);
     if intent_prohibits != statement_prohibits {
@@ -541,6 +546,9 @@ mod tests {
             statement: "Golden packet statement.".to_string(),
             rationale: Some("Because golden reasons.".to_string()),
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             evidence: vec![],
             risks: vec![Risk {
                 id: "risk.golden".to_string(),
@@ -599,7 +607,7 @@ mod tests {
         );
 
         let json = serde_json::to_string(&packet).unwrap();
-        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","authority":"approved","severity":"critical","governs_target":true,"match_kind":"structural"}],"intent_conflicts":[],"governance_verdict_required":false,"primary_reason":"Because golden reasons.","known_risks":["Golden risk statement."],"affected_targets":["golden.qualifiedName","src/golden.ts"],"additional_history_available":0,"resolved_target":"golden.qualifiedName","warnings":[],"token_estimate":25}"#;
+        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","authority":"normal","severity":"critical","governs_target":true,"match_kind":"structural"}],"intent_conflicts":[],"governance_verdict_required":false,"primary_reason":"Because golden reasons.","known_risks":["Golden risk statement."],"affected_targets":["golden.qualifiedName","src/golden.ts"],"additional_history_available":0,"resolved_target":"golden.qualifiedName","warnings":[],"token_estimate":25}"#;
         assert_eq!(json, expected);
     }
 
@@ -748,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    fn unapproved_record_is_never_exposed_as_approved() {
+    fn agent_asserted_record_is_never_exposed_as_pinned() {
         let records = vec![fixed_record("constraint.unreviewed", false)];
         let packet = compile_packet(
             None,
@@ -762,11 +770,55 @@ mod tests {
             &Budget::default(),
             &governing_all(&["constraint.unreviewed"], MatchKind::FileExact),
         );
-        assert_eq!(packet.critical_constraints[0].authority, "unreviewed");
+        assert_eq!(packet.critical_constraints[0].authority, "normal");
     }
 
     #[test]
-    fn approved_records_sort_before_unreviewed() {
+    fn pinned_records_sort_before_normal_and_endorsed_before_unendorsed() {
+        let mut pinned = fixed_record("constraint.c-pinned", false);
+        pinned.authority = Some("pinned".to_string());
+        let records = vec![
+            fixed_record("constraint.b-unreviewed", false),
+            fixed_record("constraint.a-approved", true),
+            pinned,
+        ];
+        let packet = compile_packet(
+            None,
+            Consistency::Unresolved,
+            ProviderStatus::Unavailable,
+            Coverage::Unknown,
+            &records,
+            None,
+            None,
+            vec![],
+            &Budget::default(),
+            &governing_all(
+                &[
+                    "constraint.b-unreviewed",
+                    "constraint.a-approved",
+                    "constraint.c-pinned",
+                ],
+                MatchKind::FileExact,
+            ),
+        );
+        let ids: Vec<&str> = packet
+            .critical_constraints
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                "constraint.c-pinned",
+                "constraint.a-approved",
+                "constraint.b-unreviewed"
+            ]
+        );
+        assert_eq!(packet.critical_constraints[0].authority, "pinned");
+    }
+
+    #[test]
+    fn endorsed_records_sort_before_unendorsed() {
         let records = vec![
             fixed_record("constraint.b-unreviewed", false),
             fixed_record("constraint.a-approved", true),
@@ -864,6 +916,9 @@ mod tests {
             statement: statement.to_string(),
             rationale: None,
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             evidence: vec![],
             risks: vec![],
             approvals: vec![Approval {
@@ -1003,9 +1058,9 @@ mod tests {
             &governing_all(&["constraint.injection-attempt"], MatchKind::FileExact),
         );
         assert_eq!(packet.critical_constraints[0].statement, malicious);
-        // Nunca se autoaprueba autoridad por el contenido del statement —
-        // solo por `approvals` reales (Rationale_v0.5.md §10.7).
-        assert_eq!(packet.critical_constraints[0].authority, "approved");
+        // Nunca se otorga autoridad por el contenido del statement — solo
+        // un `authority: pinned` explícito fija un Record.
+        assert_eq!(packet.critical_constraints[0].authority, "normal");
     }
 
     fn record_with_severity_and_id(id: &str, severity: &str) -> Record {
@@ -1016,6 +1071,9 @@ mod tests {
             statement: format!("statement for {id}"),
             rationale: None,
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             evidence: vec![],
             risks: vec![],
             approvals: vec![],

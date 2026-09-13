@@ -202,8 +202,8 @@ pub fn materialize_proposed(
     review.insert(
         yaml_serde::Value::String("note".to_string()),
         yaml_serde::Value::String(
-            "Propuesto por finalize_change. Sin autoridad hasta rationale review \
-             (evaluation.no-self-certification, Proceso §21)."
+            "Materializado por finalize_change junto a su Record. Es identidad \
+             conceptual: no otorga autoridad normativa a nada."
                 .to_string(),
         ),
     );

@@ -15,18 +15,85 @@
 
 use crate::mcp::framing;
 use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
-use crate::{configuration, pipeline, retrieval};
+use crate::{canon, configuration, pipeline, retrieval};
 use serde_json::{json, Value};
 use std::io::{self, BufReader};
 use std::path::PathBuf;
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
-pub fn run() {
+/// Estado de la sesión MCP: quién es el cliente y qué sesión de actividad
+/// representa este proceso.
+pub struct Session {
+    pub actor: canon::ActorContext,
+}
+
+impl Session {
+    pub fn new(client_flag: Option<String>) -> Self {
+        let (client, client_source) = match client_flag.as_deref().and_then(normalize_client) {
+            Some(client) => (client, "flag"),
+            None => ("unknown".to_string(), "unknown"),
+        };
+        Session {
+            actor: canon::ActorContext {
+                client,
+                client_source: client_source.to_string(),
+                session_id: Some(canon::generate_id("session")),
+                operation_id: None,
+            },
+        }
+    }
+
+    /// El flag `--client` (escrito por `install-agent`) gana. Sin flag, el
+    /// nombre que el propio cliente declara en `initialize.clientInfo` es un
+    /// dato reportado — se registra con su fuente, nunca como certeza.
+    fn observe_initialize(&mut self, params: &Value) {
+        if self.actor.client_source == "flag" {
+            return;
+        }
+        let reported = params
+            .get("clientInfo")
+            .and_then(|info| info.get("name"))
+            .and_then(Value::as_str)
+            .and_then(normalize_client);
+        if let Some(client) = reported {
+            self.actor.client = client;
+            self.actor.client_source = "mcp-client-info".to_string();
+        }
+    }
+}
+
+/// Nombres de cliente normalizados. Los conocidos se reducen a su nombre de
+/// producto (`codex-mcp-client` → `codex`); cualquier otro se conserva si es
+/// un identificador simple. Texto arbitrario nunca llega a logs ni a la UI.
+pub fn normalize_client(raw: &str) -> Option<String> {
+    let lower = raw.trim().to_ascii_lowercase();
+    let known = if lower.starts_with("claude") {
+        Some("claude-code")
+    } else if lower.starts_with("codex") {
+        Some("codex")
+    } else if lower.starts_with("cursor") {
+        Some("cursor")
+    } else {
+        None
+    };
+    if let Some(known) = known {
+        return Some(known.to_string());
+    }
+    let simple = !lower.is_empty()
+        && lower.len() <= 40
+        && lower
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+    simple.then_some(lower)
+}
+
+pub fn run(client_flag: Option<String>) {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut reader = BufReader::new(stdin.lock());
     let mut writer = stdout.lock();
+    let mut session = Session::new(client_flag);
 
     // El proveedor se inicializa de forma lazy. El handshake MCP y
     // `tools/list` no deben depender de que Codebase Memory esté instalado,
@@ -59,6 +126,9 @@ pub fn run() {
 
         match method {
             "initialize" => {
+                if let Some(params) = msg.get("params") {
+                    session.observe_initialize(params);
+                }
                 let resp = json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -82,7 +152,7 @@ pub fn run() {
                 let _ = framing::write_stdio_message(&mut writer, &resp);
             }
             "tools/call" => {
-                let resp = handle_tools_call(&msg, id, &mut provider);
+                let resp = handle_tools_call(&msg, id, &mut provider, &session);
                 let _ = framing::write_stdio_message(&mut writer, &resp);
             }
             "prompts/list" => {
@@ -168,9 +238,11 @@ fn handle_prompts_get(msg: &Value, id: Option<Value>) -> Value {
     }
 }
 
+/// Cada herramienta en su propio `json!`: un único literal con las cinco
+/// supera el límite de recursión del macro.
 fn tool_definitions() -> Value {
-    json!([
-        {
+    Value::Array(vec![
+        json!({
             "name": "prepare_change",
             "description": "Snapshot de consistencia, constraints críticas aprobadas, conflictos con la intención, riesgos y cobertura para un target antes de cambiarlo.",
             "inputSchema": {
@@ -187,8 +259,8 @@ fn tool_definitions() -> Value {
                 },
                 "required": ["target"]
             }
-        },
-        {
+        }),
+        json!({
             "name": "explain_target",
             "description": "Por qué existe un target, qué Records lo gobiernan por binding exacto, y qué es conocido vs desconocido.",
             "inputSchema": {
@@ -200,8 +272,8 @@ fn tool_definitions() -> Value {
                 },
                 "required": ["target"]
             }
-        },
-        {
+        }),
+        json!({
             "name": "health",
             "description": "Revisión Git, working tree, proveedor estructural y cobertura — y qué no sabe.",
             "inputSchema": {
@@ -210,46 +282,58 @@ fn tool_definitions() -> Value {
                     "project_root": {"type": "string"}
                 }
             }
-        },
-        {
+        }),
+        json!({
             "name": "finalize_change",
-            "description": "Captura mecánica del diff + señales de alto valor + resolución de Subject, y escribe una propuesta PENDIENTE en .rationale/proposals/ (nunca en records/ directamente — solo `rationale review` aprueba). Si el cambio es puramente mecánico (Nivel 0, v0.5 §16), no escribe nada.",
+            "description": "Cierra un cambio. Envía en `candidates` solo conocimiento que seguirá siendo cierto después del cambio (por qué el código es como es, qué debe mantenerse). Rationale descarta ruido y duplicados y escribe el resto como Records canónicos automáticamente — no hay aprobación pendiente. Sin candidatos no se escribe memoria. Si un candidato intenta reemplazar una regla fijada (pinned), devuelve `conflicts`: pregunta al humano cuál debe gobernar y llama `resolve_conflict`.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "target": {"type": "string", "description": "path::symbol del target principal del cambio"},
-                    "base_revision": {"type": "string", "description": "Revisión Git desde la que capturar el diff — normalmente la que un prepare_change anterior reportó"},
-                    "intent": {"type": "string", "description": "Por qué se hizo el cambio — nunca inferido, debe venir de quien hizo el cambio"},
-                    "statement": {"type": "string", "description": "La afirmación normativa propuesta (solo se usa si el nivel resultante supera Git-only)"},
-                    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"], "description": "Peso de la afirmación normativa — sin default: inventar uno oculta al Record en retrieval sin avisar"},
-                    "kind": {"type": "string", "enum": ["constraint", "decision", "risk", "exception"], "description": "Naturaleza de la afirmación — por defecto 'constraint' si se omite"},
-                    "record_id": {"type": "string", "description": "Slug único para la propuesta, ej. constraint.no-double-charge"},
-                    "subject_id": {"type": "string", "description": "Subject candidato — el Subject Resolver contrasta contra el canon existente"},
-                    "subject_title": {"type": "string"},
-                    "subject_type": {"type": "string", "description": "Clasificación libre del Subject (ver subject.schema.json); si se omite, se materializa como 'unclassified'"},
-                    "novelty_reason": {
-                        "type": "object",
-                        "description": "Contraste estructurado requerido al no reutilizar un candidato fuerte (v0.5 §9.2)",
-                        "required": ["contrasted_subject", "difference_kind", "difference", "evidence"],
-                        "properties": {
-                            "contrasted_subject": {"type": "string"},
-                            "difference_kind": {"type": "string", "enum": ["behavior", "scope", "lifecycle", "authority", "invariant"]},
-                            "difference": {"type": "string"},
-                            "evidence": {"type": "string"}
-                        }
-                    },
-                    "risks": {"type": "array", "items": {"type": "string"}},
-                    "governs_paths": {
-                        "description": "Rutas repo-relativas que ESTA decisión gobierna. Omítelo si el árbol de trabajo contiene un solo cambio. Declárralo cuando el árbol contenga varias decisiones independientes: permite escribir un Record pequeño por decisión en vez de uno gigante que ate todo el diff. Solo se aceptan rutas presentes en el diff desde base_revision.",
+                    "operation_id": {"type": "string", "description": "El operation_id que devolvió prepare_change, si existe"},
+                    "summary": {"type": "string", "description": "Qué cambió, en una o dos frases — informa, no se convierte en memoria"},
+                    "target": {"type": "string", "description": "path::symbol del target principal (diagnóstico)"},
+                    "base_revision": {"type": "string", "description": "Revisión Git desde la que capturar el diff; por defecto HEAD"},
+                    "candidates": {
                         "type": "array",
-                        "items": {"type": "string"}
+                        "description": "Conocimiento durable. Un Record por decisión: divide cuando las partes podrían reemplazarse o revocarse por separado.",
+                        "items": {
+                            "type": "object",
+                            "required": ["kind", "statement", "rationale", "durability", "bindings"],
+                            "properties": {
+                                "kind": {"type": "string", "enum": ["constraint", "decision", "risk", "exception"]},
+                                "statement": {"type": "string", "description": "La afirmación que debe seguir siendo cierta"},
+                                "rationale": {"type": "string", "description": "Por qué — la causa, no una repetición del statement"},
+                                "durability": {"type": "string", "enum": ["durable", "transient"], "description": "'durable' solo si seguirá siendo cierto después de este cambio"},
+                                "bindings": {"type": "array", "items": {"type": "string"}, "description": "Código que gobierna: 'src/x.rs' o 'src/x.rs::symbol'"},
+                                "supersedes": {"type": "array", "items": {"type": "string"}, "description": "ids de Records que este reemplaza explícitamente"},
+                                "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                                "id": {"type": "string", "description": "Opcional: '<kind>.<slug>'; si falta se genera"},
+                                "risks": {"type": "array", "items": {"type": "string"}},
+                                "evidence": {"type": "array", "items": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string"}, "type": {"type": "string"}, "note": {"type": "string"}}}},
+                                "subject": {"type": "object", "required": ["id", "title"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "type": {"type": "string"}}}
+                            }
+                        }
                     },
                     "project_root": {"type": "string"},
                     "repo_path": {"type": "string"}
-                },
-                "required": ["target", "base_revision", "intent", "statement", "severity", "record_id", "subject_id", "subject_title"]
+                }
             }
-        }
+        }),
+        json!({
+            "name": "resolve_conflict",
+            "description": "Aplica la decisión del humano sobre un conflicto devuelto por finalize_change. Úsalo solo después de preguntarle al humano cuál afirmación debe gobernar; nunca decidas por él. keep_pinned conserva la regla fijada; adopt_new la reemplaza (requiere autoridad declarada en .rationale/config.yaml).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "conflict_id": {"type": "string"},
+                    "decision": {"type": "string", "enum": ["keep_pinned", "adopt_new"]},
+                    "human_answer": {"type": "string", "description": "La respuesta literal del humano, para la auditoría"},
+                    "project_root": {"type": "string"},
+                    "repo_path": {"type": "string"}
+                },
+                "required": ["conflict_id", "decision", "human_answer"]
+            }
+        }),
     ])
 }
 
@@ -257,6 +341,7 @@ fn handle_tools_call(
     msg: &Value,
     id: Option<Value>,
     provider: &mut Option<ProviderHandle>,
+    session: &Session,
 ) -> Value {
     let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
     let name = params
@@ -277,7 +362,8 @@ fn handle_tools_call(
         "prepare_change" => call_prepare_change(&arguments, provider_mut(provider)),
         "explain_target" => call_explain_target(&arguments),
         "health" => call_health(&arguments, provider_mut(provider)),
-        "finalize_change" => call_finalize_change(&arguments, provider_mut(provider)),
+        "finalize_change" => call_finalize_change(&arguments, provider_mut(provider), session),
+        "resolve_conflict" => call_resolve_conflict(&arguments, session),
         other => Err(format!("herramienta desconocida: '{other}'")),
     }));
 
@@ -451,145 +537,99 @@ fn call_health(args: &Value, provider: &mut ProviderHandle) -> Result<Value, Str
     }))
 }
 
-fn call_finalize_change(args: &Value, provider: &mut ProviderHandle) -> Result<Value, String> {
-    let require_str = |field: &str| -> Result<String, String> {
+fn call_finalize_change(
+    args: &Value,
+    provider: &mut ProviderHandle,
+    session: &Session,
+) -> Result<Value, String> {
+    let optional_str = |field: &str| -> Option<String> {
         args.get(field)
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| format!("falta el argumento requerido '{field}'"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .filter(|s| !s.trim().is_empty())
     };
-
-    let target_spec = require_str("target")?;
-    let base_revision = require_str("base_revision")?;
-    let intent = require_str("intent")?;
-    let statement = require_str("statement")?;
-    let record_id = require_str("record_id")?;
-    let subject_id = require_str("subject_id")?;
-    let subject_title = require_str("subject_title")?;
-    // Antes defaulteaba a "normal" — un valor fuera del propio enum del
-    // schema (`critical|high|medium|low`), que hacía invisible el Record
-    // en retrieval sin ningún error (el defecto real de un dogfood). Un
-    // default de severidad es Rationale inventando el peso de una
-    // afirmación normativa ajena; ahora se exige explícita y se valida.
-    let severity = require_str("severity")?;
-    if crate::storage::Severity::parse(&severity).is_none() {
-        return Err(format!(
-            "severity '{severity}' inválida — valores válidos: {}",
-            crate::storage::Severity::ALL.join(", ")
-        ));
-    }
-    // `kind: "exception"` está en el enum del schema desde el principio
-    // (junto a constraint/decision/risk), pero nada lo escribía: el
-    // productor hardcodeaba "constraint" siempre. Eso producía Records
-    // `id: decision.*` escritos con `kind: constraint` en silencio cuando el
-    // caller no declaraba `kind` — el defecto real que rompió CI (ver
-    // `crate::storage::infer_kind_from_id`). Ahora, sin `kind` explícito, se
-    // deriva del prefijo del `record_id`; solo cae al default histórico
-    // "constraint" cuando el prefijo no es reconocido. Si el caller SÍ
-    // declara `kind` y contradice el prefijo, se rechaza en vez de
-    // escribir un Record internamente inconsistente.
-    let declared_kind = args.get("kind").and_then(|v| v.as_str());
-    if let Some(kind) = declared_kind {
-        const VALID_KINDS: [&str; 4] = ["constraint", "decision", "risk", "exception"];
-        if !VALID_KINDS.contains(&kind) {
-            return Err(format!(
-                "kind '{kind}' inválido — valores válidos: {}",
-                VALID_KINDS.join(", ")
-            ));
-        }
-    }
-    let inferred_kind = crate::storage::infer_kind_from_id(&record_id);
-    let kind = match (declared_kind, inferred_kind) {
-        (Some(declared), Some(inferred)) if declared != inferred => {
-            return Err(format!(
-                "kind '{declared}' no coincide con el prefijo de record_id '{record_id}' \
-                 (se esperaba '{inferred}') — declara el kind correcto o usa un record_id \
-                 con el prefijo que corresponde"
-            ));
-        }
-        (Some(declared), _) => declared.to_string(),
-        (None, Some(inferred)) => inferred.to_string(),
-        (None, None) => "constraint".to_string(),
+    let candidates: Vec<Result<canon::Candidate, String>> = match args.get("candidates") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| {
+                serde_json::from_value::<canon::Candidate>(item.clone()).map_err(|e| e.to_string())
+            })
+            .collect(),
+        Some(_) => return Err("candidates debe ser un array".to_string()),
     };
-    let subject_type = args
-        .get("subject_type")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let novelty_reason = args
-        .get("novelty_reason")
-        .map(|value| {
-            serde_json::from_value::<crate::subjects::NoveltyReason>(value.clone())
-                .map_err(|e| format!("novelty_reason inválida: {e}"))
-        })
-        .transpose()?;
-    let risks: Vec<String> = args
-        .get("risks")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
-    // Ausente conserva el comportamiento histórico (un binding por archivo
-    // del diff). Presente pero vacío no: eso sería un Record que no gobierna
-    // nada, y el caller casi seguro quiso decir otra cosa.
-    let governs_paths = match args.get("governs_paths") {
-        None | Some(serde_json::Value::Null) => None,
-        Some(value) => {
-            let array = value
-                .as_array()
-                .ok_or_else(|| "governs_paths debe ser un array de rutas".to_string())?;
-            let paths: Vec<String> = array
-                .iter()
-                .map(|v| {
-                    v.as_str()
-                        .map(|s| s.to_string())
-                        .ok_or_else(|| "cada ruta de governs_paths debe ser texto".to_string())
-                })
-                .collect::<Result<_, _>>()?;
-            if paths.is_empty() {
-                return Err(
-                    "governs_paths no puede venir vacío: omítelo para atar todo el diff, o \
-                     declara las rutas que esta decisión gobierna"
-                        .to_string(),
-                );
-            }
-            Some(paths)
-        }
+    // Contrato pre-vNext (statement + record_id sin candidates): se responde
+    // con un descarte explícito para que el agente reenvíe candidatos, en
+    // vez de convertir la llamada en una propuesta pendiente.
+    let legacy_statement = if args.get("candidates").is_none() {
+        optional_str("statement")
+    } else {
+        None
     };
     let (project_root, repo_path) = resolve_roots(args)?;
 
     let outcome = pipeline::finalize(
-        &pipeline::FinalizeRequest {
-            target_spec,
+        pipeline::FinalizeRequest {
             project_root,
             repo_path,
-            base_revision,
-            intent,
-            statement,
-            severity,
-            kind,
-            record_id,
-            subject_id,
-            subject_title,
-            subject_type,
-            novelty_reason,
-            risks,
-            governs_paths,
+            operation_id: optional_str("operation_id"),
+            summary: optional_str("summary"),
+            target_spec: optional_str("target"),
+            base_revision: optional_str("base_revision"),
+            candidates,
+            actor: session.actor.clone(),
+            legacy_statement,
         },
         provider,
     )?;
+    serde_json::to_value(&outcome).map_err(|e| format!("no se pudo serializar la respuesta: {e}"))
+}
 
-    Ok(json!({
-        "level": outcome.level,
-        "signals": outcome.signals,
-        "capture": outcome.capture,
-        "subject_resolution": outcome.subject_resolution,
-        "proposal_written": outcome.proposal_written,
-        "proposal_path": outcome.proposal_path,
-        "proposal_id": outcome.proposal_id,
-        "blocked_reason": outcome.blocked_reason,
-        "diagnostics": outcome.diagnostics,
-    }))
+fn call_resolve_conflict(args: &Value, session: &Session) -> Result<Value, String> {
+    let conflict_id = args
+        .get("conflict_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "falta el argumento requerido 'conflict_id'".to_string())?;
+    let decision = args
+        .get("decision")
+        .and_then(Value::as_str)
+        .and_then(canon::ConflictDecision::parse)
+        .ok_or_else(|| "decision debe ser 'keep_pinned' o 'adopt_new'".to_string())?;
+    let human_answer = args
+        .get("human_answer")
+        .and_then(Value::as_str)
+        .map(canon::sanitize_control_chars)
+        .filter(|answer| !answer.trim().is_empty())
+        .ok_or_else(|| {
+            "falta 'human_answer': resolve_conflict solo aplica una decisión que el humano ya \
+             tomó — pregúntale y transcribe su respuesta"
+                .to_string()
+        })?;
+    let (project_root, repo_path) = resolve_roots(args)?;
+    let config = configuration::load(&project_root).map_err(|e| e.to_string())?;
+    let actor = configuration::git_actor(&config.project_root);
+    let declared = config.authority_for_actor(&actor).declared;
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    let ctx = canon::CanonContext {
+        rationale_dir: &config.rationale_dir,
+        project_id: &config.project_id,
+        repo_path: &repo_path,
+        local_dir: &local_dir,
+        head_revision: crate::revision::snapshot(&repo_path).head,
+        uncommitted_paths: Default::default(),
+        actor: session.actor.clone(),
+    };
+    let resolution = canon::resolve_conflict(
+        &ctx,
+        conflict_id,
+        decision,
+        canon::HumanDecision {
+            actor,
+            declared,
+            relayed_by: Some(session.actor.client.clone()),
+            human_answer: Some(human_answer),
+        },
+    )?;
+    serde_json::to_value(&resolution)
+        .map_err(|e| format!("no se pudo serializar la respuesta: {e}"))
 }

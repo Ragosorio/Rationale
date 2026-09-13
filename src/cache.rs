@@ -247,7 +247,7 @@ mod tests {
             revision_consistency: Consistency::Exact,
             state: AssessmentState {
                 epistemic: EpistemicStatus::Stated,
-                authority: AuthorityStatus::Approved,
+                authority: AuthorityStatus::Normal,
                 applicability: Applicability::Active,
                 linkage: Linkage::Current,
             },

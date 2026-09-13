@@ -125,6 +125,22 @@ fn read_claimed_content(
     Ok(current)
 }
 
+/// Claim atómico + verificación de contenido para cualquier promoción o
+/// descarte de una propuesta fuera de `rationale review` — hoy la migración
+/// vNext (`canon::migrate_pending_proposals`). Misma garantía que
+/// `approve`/`reject` (`constraint.f8-atomic-proposal-claim`): el perdedor de
+/// una carrera falla explícitamente y un claim interrumpido queda recuperable
+/// en `.in-review/`.
+pub(crate) fn claim_verified(
+    rationale_dir: &Path,
+    proposal: &PendingProposal,
+) -> Result<PathBuf, storage::StorageError> {
+    storage::validate_safe_id(&proposal.record.id)?;
+    let claimed = claim_proposal(rationale_dir, proposal).map_err(storage::StorageError::Io)?;
+    read_claimed_content(&claimed, proposal)?;
+    Ok(claimed)
+}
+
 /// El "efecto práctico" de aprobar (v0.5 §15.5) — nunca el YAML completo.
 /// Una sola afirmación, su razón, a qué Subject y estructura afecta, y sus
 /// riesgos declarados.
@@ -304,6 +320,17 @@ pub enum RecordMutation {
     AddHumanConfirmedBinding {
         path_hint: String,
         symbol: Option<String>,
+        reason: String,
+    },
+    /// vNext: fijar un Record. Es la única forma de autoridad humana del
+    /// trabajo normal — un agente puede usarlo, nunca reemplazarlo en
+    /// silencio. Exige actor declarado (`constraint.f8-project-authority`).
+    Pin {
+        reason: String,
+    },
+    /// Devuelve un Record fijado a `normal`: los agentes vuelven a poder
+    /// reemplazarlo con un `supersedes` explícito.
+    Unpin {
         reason: String,
     },
 }
@@ -626,6 +653,40 @@ pub fn mutate_record(
                 event_extra,
             );
         }
+        RecordMutation::Pin { reason } => {
+            if storage::record_authority(&record) == storage::RecordAuthority::Pinned {
+                return Err(storage::StorageError::Parse(format!(
+                    "'{record_id}' ya está fijado"
+                )));
+            }
+            record.authority = Some(storage::RecordAuthority::Pinned.as_str().to_string());
+            add_lifecycle_event(
+                &mut record,
+                None,
+                "pinned",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![],
+            );
+        }
+        RecordMutation::Unpin { reason } => {
+            if storage::record_authority(&record) != storage::RecordAuthority::Pinned {
+                return Err(storage::StorageError::Parse(format!(
+                    "'{record_id}' no está fijado"
+                )));
+            }
+            record.authority = Some(storage::RecordAuthority::Normal.as_str().to_string());
+            add_lifecycle_event(
+                &mut record,
+                None,
+                "unpinned",
+                reviewer_actor,
+                reviewer_role,
+                &reason,
+                vec![],
+            );
+        }
     }
 
     let current_content = std::fs::read_to_string(&path).map_err(storage::StorageError::Io)?;
@@ -702,6 +763,9 @@ mod tests {
             statement: "original statement".to_string(),
             rationale: Some("because reasons".to_string()),
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![BindingDeclaration {
                 id: "binding.test".to_string(),
@@ -824,7 +888,7 @@ mod tests {
         assert_eq!(approved.approvals.len(), 1);
         assert_eq!(approved.approvals[0].status, "approved");
         assert_eq!(approved.approvals[0].actor, "user:test-reviewer");
-        assert!(storage::has_approved_authority(&approved));
+        assert!(storage::has_human_endorsement(&approved));
         // `approval.schema.json` declara `approved_at`; antes de este fix
         // nada lo escribía — de la aprobación solo quedaba el "quién".
         let approved_at = approved.approvals[0]
@@ -1122,7 +1186,7 @@ mod tests {
 
         let revoked = storage::read_record(&path).unwrap();
         assert_eq!(storage::lifecycle_status(&revoked), Some("revoked"));
-        assert!(!storage::has_approved_authority(&revoked));
+        assert!(!storage::has_human_endorsement(&revoked));
         assert_eq!(revoked.evidence.len(), 1);
         let lifecycle = revoked
             .extra
@@ -1201,6 +1265,84 @@ mod tests {
         };
         assert_eq!(events.len(), 1);
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pin_and_unpin_require_a_declared_actor_and_leave_history() {
+        let (dir, path) = canonical_record_dir("constraint.pin-test");
+        let refused = mutate_record(
+            &dir,
+            "constraint.pin-test",
+            RecordMutation::Pin {
+                reason: "un agente intentando fijar".to_string(),
+            },
+            "agent:claude-code",
+            storage::AuthorityRole::Contributor,
+            false,
+        );
+        assert!(refused.is_err());
+        assert_eq!(
+            storage::record_authority(&storage::read_record(&path).unwrap()),
+            storage::RecordAuthority::Normal
+        );
+
+        mutate_record(
+            &dir,
+            "constraint.pin-test",
+            RecordMutation::Pin {
+                reason: "esta regla no cambia sin preguntarme".to_string(),
+            },
+            "user:declared",
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        )
+        .unwrap();
+        let pinned = storage::read_record(&path).unwrap();
+        assert_eq!(
+            storage::record_authority(&pinned),
+            storage::RecordAuthority::Pinned
+        );
+        assert!(mutate_record(
+            &dir,
+            "constraint.pin-test",
+            RecordMutation::Pin {
+                reason: "otra vez".to_string()
+            },
+            "user:declared",
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        )
+        .is_err());
+
+        mutate_record(
+            &dir,
+            "constraint.pin-test",
+            RecordMutation::Unpin {
+                reason: "ya no hace falta fijarla".to_string(),
+            },
+            "user:declared",
+            storage::AuthorityRole::ArchitectureOwner,
+            true,
+        )
+        .unwrap();
+        let unpinned = storage::read_record(&path).unwrap();
+        assert_eq!(
+            storage::record_authority(&unpinned),
+            storage::RecordAuthority::Normal
+        );
+        let events = match unpinned
+            .extra
+            .get(yaml_serde::Value::String("lifecycle".to_string()))
+        {
+            Some(yaml_serde::Value::Mapping(map)) => map
+                .get(yaml_serde::Value::String("events".to_string()))
+                .and_then(|value| value.as_sequence())
+                .unwrap()
+                .len(),
+            _ => panic!("lifecycle debe ser un mapping"),
+        };
+        assert_eq!(events, 2);
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -21,7 +21,7 @@
 //! inventar una gramática que el canon no garantiza.
 
 use crate::project::Target;
-use crate::storage::{has_approved_authority, BindingDeclaration, Record};
+use crate::storage::{has_human_endorsement, BindingDeclaration, Record};
 use std::path::Path;
 
 #[derive(Debug, Clone, Default)]
@@ -184,7 +184,7 @@ pub fn governing<'a>(key: &TargetKey, records: &'a [Record]) -> Vec<GovernanceMa
     matches.sort_by(|a, b| {
         b.kind
             .cmp(&a.kind)
-            .then_with(|| has_approved_authority(b.record).cmp(&has_approved_authority(a.record)))
+            .then_with(|| has_human_endorsement(b.record).cmp(&has_human_endorsement(a.record)))
             .then_with(|| a.record.id.cmp(&b.record.id))
     });
     matches
@@ -203,6 +203,9 @@ mod tests {
             statement: format!("statement for {id}"),
             rationale: None,
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![binding],
             evidence: vec![],

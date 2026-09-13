@@ -1,13 +1,15 @@
 //! Señales de captura de alto valor y niveles de captura — Rationale_v0.5.md
 //! §15.4 y §16.
 //!
-//! Rationale no pregunta por todo cambio; activa captura asistida solo
-//! cuando detecta señales concretas. La detección es determinista —
-//! coincidencia de palabras/paths, nunca un LLM ni una heurística difusa
-//! (`policy.no-inferred-blocks.yaml`: ninguna inferencia decide bloqueo o
-//! captura por "parecer importante"). Este módulo solo detecta y clasifica
-//! el nivel candidato; nunca escribe nada (eso es `finalize_change`, F5) ni
-//! asigna autoridad (eso requiere `rationale review`, F6).
+//! Detección determinista — coincidencia de palabras/paths, nunca un LLM
+//! ni una heurística difusa (`policy.no-inferred-blocks.yaml`).
+//!
+//! vNext: las señales ya no deciden si se escribe memoria. Los "niveles de
+//! captura" 0-3 creaban propuestas a partir del diff mismo, justo el ruido
+//! que el canon autónomo elimina; ahora la memoria durable nace solo de
+//! candidatos explícitos que pasan el gate de `canon`. Las señales quedan
+//! como hechos observados del cambio (`finalize_change` las reporta), útiles
+//! para el agente y la UI, sin poder de escritura.
 
 use crate::capture::ChangedFile;
 
@@ -140,98 +142,6 @@ pub fn signals_from_text(text: &str) -> Vec<Signal> {
     found.into_iter().collect()
 }
 
-/// Rationale_v0.5.md §16 — a qué nivel de captura corresponde un cambio.
-/// **`CriticalInvariant` nunca lo asigna esta función** — v0.5 §16 exige
-/// autoridad aprobada o policy, scope explícito y evidencia para ese nivel,
-/// ninguno alcanzable por un agente solo; solo `rationale review` (F6) puede
-/// promover una propuesta hasta ahí.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum CaptureLevel {
-    /// Formato, renombres, dependencias menores, cambios mecánicos — no se
-    /// crea ningún registro.
-    GitOnly,
-    Intent,
-    Decision,
-    OperationalKnowledge,
-}
-
-/// Extensiones/paths cuyo cambio, en ausencia de cualquier señal, nunca por
-/// sí solo justifica una propuesta (v0.5 §16, Nivel 0). Deliberadamente
-/// corta y ampliable — la garantía real es que la AUSENCIA de una lista
-/// exhaustiva nunca bloquea captura real (si hay señales, este chequeo ni
-/// se consulta).
-fn is_mechanical_only_path(path: &str) -> bool {
-    const MECHANICAL_SUFFIXES: &[&str] = &[
-        ".lock",
-        "Cargo.lock",
-        "package-lock.json",
-        "yarn.lock",
-        "pnpm-lock.yaml",
-        ".gitignore",
-        ".editorconfig",
-    ];
-    MECHANICAL_SUFFIXES.iter().any(|s| path.ends_with(s))
-}
-
-/// Determina el nivel candidato — nunca el nivel final: `rationale review`
-/// (Fase F6) es quien decide si una propuesta de nivel `Decision` sube a
-/// `CriticalInvariant` con autoridad real.
-///
-/// `declared_severity` (revisión adversarial de Fase F, hallazgo 5): un bug
-/// real de doble cobro en pagos, sin keyword de path ni lenguaje normativo
-/// en `intent`/`statement`, se clasificaba en `Intent` — el mismo nivel que
-/// un refactor trivial, aunque el caller ya había declarado
-/// `severity: "critical"`. Esa señal (barata, ya provista, nunca
-/// autoritativa por sí sola) ahora se usa como respaldo: si no hay ninguna
-/// señal de dominio ni lenguaje normativo pero el caller declaró severidad
-/// crítica, el nivel sube a `Decision` en vez de quedarse en el mínimo.
-/// Nunca sube a `OperationalKnowledge` solo por esto — esa combinación
-/// sigue exigiendo señal real de dominio o lenguaje normativo.
-pub fn determine_level(
-    changed_files: &[ChangedFile],
-    signals: &[Signal],
-    declared_severity: &str,
-) -> CaptureLevel {
-    if signals.is_empty()
-        && !changed_files.is_empty()
-        && changed_files
-            .iter()
-            .all(|f| is_mechanical_only_path(&f.path))
-    {
-        return CaptureLevel::GitOnly;
-    }
-
-    let has_domain_signal = signals.iter().any(|s| {
-        matches!(
-            s,
-            Signal::Authorization
-                | Signal::Payments
-                | Signal::Billing
-                | Signal::Security
-                | Signal::DestructiveMigration
-        )
-    });
-    let has_normative_language = signals.contains(&Signal::NormativeLanguage);
-
-    if has_domain_signal && has_normative_language {
-        return CaptureLevel::OperationalKnowledge;
-    }
-    if has_normative_language || has_domain_signal {
-        return CaptureLevel::Decision;
-    }
-    if signals.is_empty() {
-        if declared_severity == "critical" {
-            return CaptureLevel::Decision;
-        }
-        // Sin ninguna señal de alto valor pero tampoco puramente mecánico
-        // (p. ej. cambios en código de aplicación sin lenguaje normativo):
-        // Nivel 1, el mínimo que registra intención sin sobre-preguntar.
-        return CaptureLevel::Intent;
-    }
-    CaptureLevel::Decision
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,91 +196,5 @@ mod tests {
     fn plain_refactor_with_no_signals_yields_no_normative_language() {
         let signals = signals_from_text("Renamed variable for clarity.");
         assert!(signals.is_empty());
-    }
-
-    #[test]
-    fn mechanical_only_changes_with_no_signals_are_level_zero() {
-        let level = determine_level(
-            &[changed("Cargo.lock"), changed("package-lock.json")],
-            &[],
-            "normal",
-        );
-        assert_eq!(level, CaptureLevel::GitOnly);
-    }
-
-    #[test]
-    fn any_signal_prevents_level_zero_even_with_lockfile_changes() {
-        let level = determine_level(&[changed("Cargo.lock")], &[Signal::Security], "normal");
-        assert_ne!(level, CaptureLevel::GitOnly);
-    }
-
-    #[test]
-    fn domain_signal_plus_normative_language_is_operational_knowledge() {
-        let level = determine_level(
-            &[changed("src/auth/authorization.ts")],
-            &[Signal::Authorization, Signal::NormativeLanguage],
-            "normal",
-        );
-        assert_eq!(level, CaptureLevel::OperationalKnowledge);
-    }
-
-    #[test]
-    fn domain_signal_alone_is_decision() {
-        let level = determine_level(
-            &[changed("src/auth/authorization.ts")],
-            &[Signal::Authorization],
-            "normal",
-        );
-        assert_eq!(level, CaptureLevel::Decision);
-    }
-
-    #[test]
-    fn plain_code_change_with_no_signals_is_at_least_intent() {
-        let level = determine_level(&[changed("src/utils/format.rs")], &[], "normal");
-        assert_eq!(level, CaptureLevel::Intent);
-    }
-
-    /// Revisión adversarial de Fase F, hallazgo 5: un bug real (doble cobro
-    /// en pagos) sin keyword de path ni lenguaje normativo se clasificaba en
-    /// `Intent` — el mismo nivel que un refactor trivial — aunque el caller
-    /// ya había declarado `severity: "critical"`. Esa señal ahora eleva el
-    /// nivel mínimo a `Decision`.
-    #[test]
-    fn declared_critical_severity_elevates_level_when_no_other_signal_present() {
-        let level = determine_level(&[changed("src/core/ledger_math.rs")], &[], "critical");
-        assert_eq!(
-            level,
-            CaptureLevel::Decision,
-            "severity: critical debe evitar que un cambio críticamente peligroso caiga en Intent"
-        );
-    }
-
-    #[test]
-    fn declared_critical_severity_never_reaches_operational_knowledge_alone() {
-        // La severidad declarada es una señal de respaldo barata, nunca
-        // autoritativa por sí sola — sin señal de dominio o lenguaje
-        // normativo real, nunca debe alcanzar OperationalKnowledge.
-        let level = determine_level(&[changed("src/core/ledger_math.rs")], &[], "critical");
-        assert_ne!(level, CaptureLevel::OperationalKnowledge);
-    }
-
-    #[test]
-    fn determine_level_never_returns_critical_invariant() {
-        // Ningún combinación de señales debe alcanzar CriticalInvariant —
-        // ese nivel solo lo asigna rationale review (F6) con autoridad real.
-        // (No hay variante CriticalInvariant en CaptureLevel: si se agregara
-        // sin actualizar esta función, este test seguiría compilando y
-        // pasando, así que la garantía real es estructural: el enum de esta
-        // fase no tiene ese variante en absoluto.)
-        let level = determine_level(
-            &[changed("src/payments/process.rs")],
-            &[
-                Signal::Payments,
-                Signal::NormativeLanguage,
-                Signal::Security,
-            ],
-            "critical",
-        );
-        assert_eq!(level, CaptureLevel::OperationalKnowledge);
     }
 }

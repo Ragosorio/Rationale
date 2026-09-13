@@ -28,8 +28,8 @@
         },
         "authority": {
           "type": "string",
-          "enum": ["unreviewed", "approved", "policy", "revoked"],
-          "description": "'revoked' se alcanza mediante rationale review-record; 'policy' sigue reservado para una decisión futura explícita."
+          "enum": ["normal", "pinned", "revoked"],
+          "description": "Autoridad vNext: 'normal' para todo Record capturado en trabajo normal, 'pinned' solo por decisión humana explícita (rationale pin o resolución de conflicto), 'revoked' gana sobre ambos. Las aprobaciones heredadas quedan como historia en Record.approvals."
         },
         "applicability": {
           "type": "string",

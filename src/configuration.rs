@@ -132,6 +132,49 @@ pub fn load(start: &Path) -> Result<ResolvedConfig, ConfigError> {
     })
 }
 
+/// `.rationale-local/` junto a la raíz Git que contiene al proyecto (para el
+/// fixture de la vertical slice, el repo real de Rationale — evita ensuciar
+/// `fixtures/` con estado local). Sin repo Git, junto al proyecto.
+pub fn find_rationale_local(project_root: &Path) -> PathBuf {
+    let mut current = project_root.to_path_buf();
+    loop {
+        if current.join(".git").exists() {
+            return current.join(".rationale-local");
+        }
+        if !current.pop() {
+            return project_root.join(".rationale-local");
+        }
+    }
+}
+
+/// Identidad humana local — `git config user.name`/`user.email` del propio
+/// repo, en el mismo formato que las claves de `authority` en
+/// `.rationale/config.yaml`. Nunca inventa una identidad ni asume "el
+/// agente" como humano.
+pub fn git_actor(repo_path: &Path) -> String {
+    let name = git_config_value(repo_path, "user.name");
+    let email = git_config_value(repo_path, "user.email");
+    match (name, email) {
+        (Some(n), Some(e)) => format!("user:{n} <{e}>"),
+        (Some(n), None) => format!("user:{n}"),
+        _ => "user:local-reviewer".to_string(),
+    }
+}
+
+fn git_config_value(repo_path: &Path, key: &str) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .args(["config", "--get", key])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (!value.is_empty()).then_some(value)
+}
+
 fn default_project_id(project_root: &Path) -> String {
     project_root
         .file_name()

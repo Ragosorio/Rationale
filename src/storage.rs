@@ -267,7 +267,68 @@ pub struct Risk {
     pub extra: yaml_serde::Mapping,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+/// De dónde viene la afirmación de un Record (vNext). Nunca `structural`: lo
+/// observado en el grafo es evidencia, no memoria causal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProvenanceKind {
+    /// Un agente la afirmó durante trabajo normal (`finalize_change`).
+    AgentAsserted,
+    /// Una persona la afirmó explícitamente (CLI o decisión de conflicto).
+    HumanStated,
+    /// Existía antes de vNext: canon aprobado o propuesta migrada.
+    Migrated,
+}
+
+impl ProvenanceKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AgentAsserted => "agent_asserted",
+            Self::HumanStated => "human_stated",
+            Self::Migrated => "migrated",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "agent_asserted" => Some(Self::AgentAsserted),
+            "human_stated" => Some(Self::HumanStated),
+            "migrated" => Some(Self::Migrated),
+            _ => None,
+        }
+    }
+}
+
+/// `provenance` ya existía en el canon como mapping libre
+/// (`created_by`, `created_at`). vNext añade `kind` sin volver ilegible lo
+/// anterior: el resto del mapping viaja intacto en `extra`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Provenance {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(flatten)]
+    pub extra: yaml_serde::Mapping,
+}
+
+/// Autoridad vNext: el humano no aprueba, fija. `Normal` puede ser
+/// reemplazado explícitamente por un agente; `Pinned` nunca en silencio.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordAuthority {
+    Normal,
+    Pinned,
+}
+
+impl RecordAuthority {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Pinned => "pinned",
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Record {
     pub id: String,
     pub kind: String,
@@ -278,6 +339,19 @@ pub struct Record {
     pub rationale: Option<String>,
     #[serde(default)]
     pub epistemic_status: EpistemicStatus,
+    /// `normal | pinned`. Texto y no enum a propósito, igual que `severity`:
+    /// un valor desconocido escrito a mano no debe volver ilegible el Record;
+    /// `record_authority` lo trata como `normal` y `doctor` puede señalarlo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
+    /// Records que este reemplaza explícitamente. La precedencia nunca se
+    /// infiere del orden de escritura ni comparando SHAs de Git.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supersedes: Vec<String>,
+    /// Aprobaciones de la era pre-vNext: historia auditable de un respaldo
+    /// humano, ya no la fuente de autoridad.
     #[serde(default)]
     pub approvals: Vec<Approval>,
     #[serde(default)]
@@ -315,6 +389,7 @@ pub enum StorageError {
     /// nada nuevo debe entrar al canon con un valor que el propio schema no
     /// declara.
     InvalidSeverity(String),
+    InvalidProvenance(String),
 }
 
 impl std::fmt::Display for StorageError {
@@ -331,6 +406,12 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::InvalidAuthority(authority) => {
                 write!(f, "autoridad inválida: '{authority}'")
+            }
+            StorageError::InvalidProvenance(kind) => {
+                write!(
+                    f,
+                    "provenance.kind inválido: '{kind}' — valores válidos: agent_asserted, human_stated, migrated"
+                )
             }
             StorageError::InvalidSeverity(severity) => {
                 write!(
@@ -445,6 +526,18 @@ pub fn write_record(path: &Path, record: &Record) -> Result<(), StorageError> {
     if Severity::parse(&record.severity).is_none() {
         return Err(StorageError::InvalidSeverity(record.severity.clone()));
     }
+    // Misma regla para la autoridad y la procedencia vNext: leer es
+    // tolerante, escribir nunca introduce un valor que nada interpreta.
+    if let Some(authority) = &record.authority {
+        if !matches!(authority.as_str(), "normal" | "pinned") {
+            return Err(StorageError::InvalidAuthority(authority.clone()));
+        }
+    }
+    if let Some(kind) = record.provenance.as_ref().and_then(|p| p.kind.as_deref()) {
+        if ProvenanceKind::parse(kind).is_none() {
+            return Err(StorageError::InvalidProvenance(kind.to_string()));
+        }
+    }
 
     let yaml = yaml_serde::to_string(record).map_err(|e| StorageError::Serialize(e.to_string()))?;
 
@@ -482,24 +575,40 @@ pub fn write_record(path: &Path, record: &Record) -> Result<(), StorageError> {
     Ok(())
 }
 
-/// Un Record solo puede bloquear si cumple TODAS las condiciones de
-/// `Rationale_v0.5.md §10.7` / `.rationale/subjects/policy.no-inferred-blocks.yaml`.
-/// Esta vertical slice no implementa bloqueo todavía (Fase F), pero calcula
-/// la señal de autoridad aprobada que ese futuro predicado necesitará.
-pub fn has_approved_authority(record: &Record) -> bool {
+/// Respaldo humano heredado de la era de aprobaciones. En vNext ya no
+/// otorga autoridad (eso es `pinned`), pero sigue siendo una señal de
+/// calidad: una persona leyó y confirmó esa afirmación.
+pub fn has_human_endorsement(record: &Record) -> bool {
     !is_revoked(record) && record.approvals.iter().any(|a| a.status == "approved")
 }
 
+/// Autoridad efectiva vNext. Ausente o desconocida → `Normal`: nunca se
+/// infiere `Pinned` de nada que no sea el valor explícito.
+pub fn record_authority(record: &Record) -> RecordAuthority {
+    match record.authority.as_deref() {
+        Some("pinned") => RecordAuthority::Pinned,
+        _ => RecordAuthority::Normal,
+    }
+}
+
+/// Procedencia efectiva. Un Record sin `provenance.kind` fue escrito antes
+/// de vNext, así que su procedencia honesta es `migrated`.
+pub fn provenance_kind(record: &Record) -> ProvenanceKind {
+    record
+        .provenance
+        .as_ref()
+        .and_then(|p| p.kind.as_deref())
+        .and_then(ProvenanceKind::parse)
+        .unwrap_or(ProvenanceKind::Migrated)
+}
+
 /// Etiqueta estable para packets y diagnostics. Revocado tiene prioridad
-/// sobre aprobaciones históricas porque esas aprobaciones siguen en el canon
-/// solo como evidencia de la decisión anterior.
+/// sobre cualquier autoridad porque la regla dejó de gobernar.
 pub fn authority_label(record: &Record) -> &'static str {
     if is_revoked(record) {
         "revoked"
-    } else if has_approved_authority(record) {
-        "approved"
     } else {
-        "unreviewed"
+        record_authority(record).as_str()
     }
 }
 
@@ -649,6 +758,9 @@ mod tests {
             statement: "valid statement".to_string(),
             rationale: None,
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             approvals: vec![Approval {
                 actor: "user:test".to_string(),
                 authority: "reviewer".to_string(),
@@ -721,7 +833,7 @@ mod tests {
         let record = read_record(&path).unwrap();
         assert_eq!(record.id, "constraint.no-global-admin-for-staff");
         assert_eq!(record.severity, "critical");
-        assert!(has_approved_authority(&record));
+        assert!(has_human_endorsement(&record));
         assert_eq!(record.binding_declarations.len(), 1);
         assert_eq!(
             record.binding_declarations[0].structural_id.as_deref(),
@@ -736,8 +848,14 @@ mod tests {
         let record = read_record(&path).unwrap();
         assert_eq!(record.id, "constraint.no-provider-internal-access");
         assert!(
-            !has_approved_authority(&record),
-            "no debe tener autoridad aprobada todavía"
+            !has_human_endorsement(&record),
+            "nunca tuvo respaldo humano: approvals está vacío"
+        );
+        assert_eq!(record_authority(&record), RecordAuthority::Normal);
+        assert_eq!(
+            provenance_kind(&record),
+            ProvenanceKind::Migrated,
+            "un Record pre-vNext sin provenance.kind es migrado, aunque su mapping legado exista"
         );
         assert_eq!(
             record.binding_declarations.len(),
@@ -833,6 +951,9 @@ mod tests {
             statement: "first statement".to_string(),
             rationale: None,
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![],
             evidence: vec![],
@@ -904,6 +1025,9 @@ mod tests {
                         statement,
                         rationale: None,
                         epistemic_status: EpistemicStatus::Stated,
+                        authority: None,
+                        provenance: None,
+                        supersedes: vec![],
                         approvals: vec![],
                         binding_declarations: vec![],
                         evidence: vec![],
@@ -965,6 +1089,9 @@ mod tests {
             statement: String::new(),
             rationale: None,
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![],
             evidence: vec![],
@@ -995,6 +1122,9 @@ mod tests {
             statement: "a statement".to_string(),
             rationale: None,
             epistemic_status: EpistemicStatus::Stated,
+            authority: None,
+            provenance: None,
+            supersedes: vec![],
             approvals: vec![],
             binding_declarations: vec![],
             evidence: vec![],
@@ -1082,5 +1212,87 @@ mod tests {
         assert_eq!(severity_of(&record), None);
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// vNext añade `provenance.kind`, `authority` y `supersedes` sin volver
+    /// ilegible el canon anterior: el mapping legado de `provenance`
+    /// (`created_by`, `created_at`) sobrevive leer→escribir→leer.
+    #[test]
+    fn vnext_fields_roundtrip_and_preserve_legacy_provenance() {
+        let dir = std::env::temp_dir().join(format!(
+            "rationale-storage-vnext-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("vnext.yaml");
+        std::fs::write(
+            &path,
+            "id: constraint.vnext\nkind: constraint\nseverity: high\nstatement: \"x must hold\"\n\
+             authority: pinned\nsupersedes: [constraint.old]\nprovenance:\n  kind: agent_asserted\n\
+             \x20 client: claude-code\n  created_by:\n    type: agent\n",
+        )
+        .unwrap();
+        let record = read_record(&path).unwrap();
+        assert_eq!(record_authority(&record), RecordAuthority::Pinned);
+        assert_eq!(provenance_kind(&record), ProvenanceKind::AgentAsserted);
+        assert_eq!(record.supersedes, vec!["constraint.old".to_string()]);
+
+        write_record(&path, &record).unwrap();
+        let reread = read_record(&path).unwrap();
+        assert_eq!(record_authority(&reread), RecordAuthority::Pinned);
+        let provenance = reread.provenance.unwrap();
+        assert!(provenance
+            .extra
+            .contains_key(yaml_serde::Value::String("created_by".to_string())));
+        assert!(provenance
+            .extra
+            .contains_key(yaml_serde::Value::String("client".to_string())));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Lectura tolerante, escritura estricta — igual que `severity`.
+    #[test]
+    fn unknown_authority_reads_as_normal_but_is_never_written() {
+        let mut record = record_with_severity("high");
+        record.authority = Some("approved".to_string());
+        assert_eq!(record_authority(&record), RecordAuthority::Normal);
+        assert_eq!(authority_label(&record), "normal");
+
+        let dir = std::env::temp_dir().join(format!(
+            "rationale-storage-authority-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("authority.yaml");
+        assert!(matches!(
+            write_record(&path, &record),
+            Err(StorageError::InvalidAuthority(value)) if value == "approved"
+        ));
+        record.authority = Some("pinned".to_string());
+        record.provenance = Some(Provenance {
+            kind: Some("structural".to_string()),
+            extra: yaml_serde::Mapping::new(),
+        });
+        assert!(matches!(
+            write_record(&path, &record),
+            Err(StorageError::InvalidProvenance(value)) if value == "structural"
+        ));
+        assert!(!path.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Una aprobación histórica no convierte un Record en `pinned`: fijar es
+    /// un acto explícito, nunca una inferencia desde la era de aprobaciones.
+    #[test]
+    fn legacy_approval_is_endorsement_not_pinned_authority() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "fixtures/vertical-slice/.rationale/records/constraint.no-global-admin-for-staff.yaml",
+        );
+        let record = read_record(&path).unwrap();
+        assert!(has_human_endorsement(&record));
+        assert_eq!(record_authority(&record), RecordAuthority::Normal);
+        assert_eq!(authority_label(&record), "normal");
     }
 }

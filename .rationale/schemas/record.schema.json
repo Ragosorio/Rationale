@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://rationale.dev/schemas/record.schema.json",
   "title": "Record",
-  "description": "Rationale_v0.5.md §5.2 — una decisión, restricción, riesgo o conocimiento operativo consolidado. Corresponde a src/storage.rs::Record. Un Record nunca se autoaprueba (Proceso §21) — approvals empieza vacío.",
+  "description": "Una decisión, restricción, riesgo o excepción consolidada. Corresponde a src/storage.rs::Record. vNext: el canon se mantiene solo — un candidato que pasa el gate de captura se vuelve Record con authority 'normal'; solo una persona lo fija ('pinned'). approvals conserva la historia de la era de aprobaciones.",
   "type": "object",
   "required": ["id", "kind", "severity", "statement"],
   "additionalProperties": true,
@@ -72,9 +72,37 @@
       "default": "stated",
       "description": "Rationale_v0.5.md §10, §12.1. Nunca se asume 'observed' por defecto — eso implicaría verificación mecánica que no ocurrió."
     },
+    "authority": {
+      "type": "string",
+      "enum": ["normal", "pinned"],
+      "default": "normal",
+      "description": "vNext. 'pinned' solo por decisión humana explícita (rationale pin o resolución de conflicto); un agente nunca lo otorga. Ausente = normal."
+    },
+    "supersedes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "ids de Records que este reemplaza explícitamente. La precedencia nunca se infiere del orden de escritura ni de SHAs de Git; reemplazar un Record pinned exige resolver un conflicto."
+    },
+    "lifecycle": {
+      "type": "object",
+      "properties": {
+        "status": { "type": "string", "enum": ["active", "superseded", "revoked", "disputed"] },
+        "events": { "type": "array", "items": { "type": "object" } }
+      }
+    },
     "provenance": {
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["agent_asserted", "human_stated", "migrated"],
+          "description": "vNext. Ausente = migrated (escrito antes de vNext). Nunca 'structural': lo observado en el grafo es evidencia, no memoria causal."
+        },
+        "client": { "type": "string" },
+        "client_source": { "type": "string", "enum": ["flag", "mcp-client-info", "cli", "unknown"] },
+        "operation_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "asserted_at": { "type": "string", "format": "date-time" },
         "created_by": {
           "type": "object",
           "properties": {

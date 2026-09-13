@@ -145,6 +145,11 @@ fn help_is_successful_and_non_mutating_for_every_command() {
         &["uninstall-agent", "--help"],
         &["update", "--help"],
         &["doctor", "--help"],
+        &["pin", "--help"],
+        &["unpin", "--help"],
+        &["migrate", "--help"],
+        &["conflicts", "--help"],
+        &["resolve", "--help"],
     ];
 
     for args in commands {
@@ -189,6 +194,16 @@ fn invalid_project_root_is_a_clean_cli_error() {
         &["install-agent", "--project-root", no_rationale_dir],
         &["uninstall-agent", "--project-root", no_rationale_dir],
         &["doctor", "--project-root", no_rationale_dir],
+        &["pin", "record-id", "--project-root", no_rationale_dir],
+        &["migrate", "--project-root", no_rationale_dir],
+        &["conflicts", "--project-root", no_rationale_dir],
+        &[
+            "resolve",
+            "conflict_x",
+            "keep-pinned",
+            "--project-root",
+            no_rationale_dir,
+        ],
     ];
     for args in cases {
         let output = run(&project, args);
@@ -564,4 +579,108 @@ fn health_skill_injection_shows_findings_without_failing_but_keeps_real_errors()
 
     std::fs::remove_dir_all(project).ok();
     std::fs::remove_dir_all(broken).ok();
+}
+
+/// Fijar es un acto humano: sin terminal interactiva (el caso de un agente
+/// ejecutando comandos), `pin`/`unpin`/`resolve` se niegan antes de tocar el
+/// canon, aunque el actor Git esté declarado.
+#[test]
+fn authority_commands_refuse_without_an_interactive_terminal() {
+    let project = unique_temp_project("pin-no-tty");
+    assert!(
+        run(&project, &["init", "--skip-agent-config", "--no-mascot"])
+            .status
+            .success()
+    );
+    let record =
+        "id: constraint.pin-me\nkind: constraint\nseverity: high\nstatement: \"x must hold\"\n";
+    std::fs::write(
+        project.join(".rationale/records/constraint.pin-me.yaml"),
+        record,
+    )
+    .unwrap();
+
+    for args in [
+        &["pin", "constraint.pin-me"][..],
+        &["unpin", "constraint.pin-me"][..],
+        &["resolve", "conflict_x", "adopt-new"][..],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rationale"))
+            .current_dir(&project)
+            .env("HOME", project.join(".test-home"))
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("terminal interactiva"));
+    }
+    assert_eq!(
+        std::fs::read_to_string(project.join(".rationale/records/constraint.pin-me.yaml")).unwrap(),
+        record,
+        "el Record no cambió"
+    );
+    std::fs::remove_dir_all(project).ok();
+}
+
+/// `rationale migrate` procesa las propuestas pre-vNext sin revisión manual:
+/// las válidas quedan canónicas, las ruidosas archivadas con su motivo.
+#[test]
+fn migrate_canonicalizes_valid_legacy_proposals_and_archives_noise() {
+    let project = unique_temp_project("migrate");
+    assert!(
+        run(&project, &["init", "--skip-agent-config", "--no-mascot"])
+            .status
+            .success()
+    );
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(project.join("src/pay.rs"), "fn pay() {}\n").unwrap();
+    let proposals = project.join(".rationale/proposals");
+    std::fs::create_dir_all(&proposals).unwrap();
+    std::fs::write(
+        proposals.join("constraint.legacy-valid.yaml"),
+        "id: constraint.legacy-valid\nkind: constraint\nseverity: high\nstatement: \"Payments must be idempotent per invoice.\"\nrationale: \"Card networks retry on timeouts, so charges were duplicated.\"\nbinding_declarations:\n  - id: b\n    type: file\n    path_hint: src/pay.rs\nstatus: pending\n",
+    )
+    .unwrap();
+    std::fs::write(
+        proposals.join("constraint.legacy-noise.yaml"),
+        "id: constraint.legacy-noise\nkind: constraint\nseverity: low\nstatement: \"Updated pay.rs formatting\"\nrationale: \"It looked inconsistent\"\nbinding_declarations:\n  - id: b\n    type: file\n    path_hint: src/pay.rs\nstatus: pending\n",
+    )
+    .unwrap();
+
+    let dry = run(&project, &["migrate", "--dry-run", "--json"]);
+    assert!(dry.status.success(), "{dry:?}");
+    assert!(proposals.join("constraint.legacy-valid.yaml").is_file());
+
+    let output = run(&project, &["migrate", "--json"]);
+    assert!(output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["canonicalized"][0]["record_id"],
+        "constraint.legacy-valid"
+    );
+    assert_eq!(
+        report["archived"][0]["proposal_id"],
+        "constraint.legacy-noise"
+    );
+    assert_eq!(report["archived"][0]["reason"], "mechanical_noise");
+    assert!(project
+        .join(".rationale/records/constraint.legacy-valid.yaml")
+        .is_file());
+    assert!(project
+        .join(".rationale/archive/proposals/constraint.legacy-noise.yaml")
+        .is_file());
+    assert!(!proposals.join("constraint.legacy-valid.yaml").exists());
+
+    let doctor = run(&project, &["doctor", "--json"]);
+    let doctor: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    assert!(
+        !doctor["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["kind"] == "pending-legacy-proposals"),
+        "tras migrar no quedan propuestas pendientes: {doctor}"
+    );
+    std::fs::remove_dir_all(project).ok();
 }

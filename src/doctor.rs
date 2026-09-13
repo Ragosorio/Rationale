@@ -56,12 +56,20 @@ pub enum Finding {
         path: PathBuf,
         subject_id: String,
     },
-    /// Un Record ya en `records/` (canon aprobado) sin ninguna
-    /// `Approval` — solo alcanzable escribiendo el archivo a mano, nunca
-    /// vía `rationale review`. Nunca se repara automáticamente: podría
-    /// ser evidencia de una violación de Proceso §21 que alguien necesita
-    /// investigar, no solo "arreglar".
-    RecordInCanonWithoutApproval { record_id: String, path: PathBuf },
+    /// `authority` con un valor que ni `normal` ni `pinned`: se lee como
+    /// `normal`, pero quien lo escribió a mano probablemente quiso otra
+    /// cosa. Nunca se repara solo — fijar es un acto humano explícito.
+    ///
+    /// Reemplaza al antiguo "Record sin aprobación": en vNext el canon se
+    /// mantiene solo y un Record sin `approvals` es el caso normal.
+    InvalidRecordAuthority {
+        record_id: String,
+        path: PathBuf,
+        current: String,
+    },
+    /// Propuestas de la era de aprobaciones todavía en `.rationale/proposals/`.
+    /// vNext no las revisa a mano: `rationale migrate` las pasa por el gate.
+    PendingLegacyProposals { count: usize, path: PathBuf },
     /// `.rationale/bindings/` ya no lo crea `cmd_init` (nada lo lee ni
     /// escribe) — si existe y está vacío, es seguro borrarlo a mano.
     EmptyBindingsDirectory { path: PathBuf },
@@ -144,10 +152,16 @@ impl Finding {
                  .rationale/subjects/ — se puede materializar un stub con review.status: \
                  unreviewed."
             ),
-            Finding::RecordInCanonWithoutApproval { record_id, .. } => format!(
-                "'{record_id}' está en records/ (canon aprobado) pero approvals está vacío — \
-                 esto es estructuralmente inalcanzable vía 'rationale review'; investigar antes \
-                 de tocarlo, nunca reparar automáticamente."
+            Finding::InvalidRecordAuthority {
+                record_id, current, ..
+            } => format!(
+                "'{record_id}' declara authority '{current}', que no es 'normal' ni 'pinned' — \
+                 se trata como 'normal'. Para fijarlo de verdad: 'rationale pin {record_id}'."
+            ),
+            Finding::PendingLegacyProposals { count, path } => format!(
+                "{count} propuesta(s) pre-vNext pendientes en {} — 'rationale migrate' las pasa \
+                 por el gate de captura (canonizadas o archivadas, nunca borradas).",
+                path.display()
             ),
             Finding::EmptyBindingsDirectory { path } => format!(
                 "{} existe y está vacío — nada en el código lo lee ni lo escribe; seguro de \
@@ -265,11 +279,14 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
             }
         }
 
-        if record.approvals.is_empty() {
-            findings.push(Finding::RecordInCanonWithoutApproval {
-                record_id: record.id.clone(),
-                path: path.clone(),
-            });
+        if let Some(authority) = &record.authority {
+            if !matches!(authority.as_str(), "normal" | "pinned") {
+                findings.push(Finding::InvalidRecordAuthority {
+                    record_id: record.id.clone(),
+                    path: path.clone(),
+                    current: authority.clone(),
+                });
+            }
         }
 
         if let Some(found_version) = schema_version_of(&record.extra) {
@@ -291,6 +308,22 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
         if is_empty {
             findings.push(Finding::EmptyBindingsDirectory { path: bindings_dir });
         }
+    }
+
+    let proposals_dir = rationale_dir.join("proposals");
+    let pending_count = std::fs::read_dir(&proposals_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("yaml"))
+                .count()
+        })
+        .unwrap_or(0);
+    if pending_count > 0 {
+        findings.push(Finding::PendingLegacyProposals {
+            count: pending_count,
+            path: proposals_dir,
+        });
     }
 
     let in_review_dir = rationale_dir.join("proposals").join(".in-review");
@@ -682,22 +715,50 @@ mod tests {
         std::fs::remove_dir_all(&project).ok();
     }
 
+    /// vNext: un Record sin aprobaciones es el caso normal del canon
+    /// autónomo, nunca un hallazgo.
     #[test]
-    fn detects_record_without_approval() {
+    fn record_without_approval_is_not_a_finding() {
         let project = unique_dir("no-approval");
         let rationale_dir = project.join(".rationale");
         write_record_yaml(
             &rationale_dir.join("records"),
             "constraint.no-approval",
-            "id: constraint.no-approval\nkind: constraint\nseverity: high\nstatement: \"x\"\napprovals: []\n",
+            "id: constraint.no-approval\nkind: constraint\nseverity: high\nstatement: \"x\"\napprovals: []\nbinding_declarations:\n  - id: binding.a\n    type: file\n    path_hint: README.md\n",
+        );
+        std::fs::write(project.join("README.md"), "x\n").unwrap();
+
+        let report = check(&rationale_dir, &project);
+        assert!(report.findings.is_empty(), "{:?}", report.findings);
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    #[test]
+    fn detects_invalid_authority_and_pending_legacy_proposals() {
+        let project = unique_dir("vnext-findings");
+        let rationale_dir = project.join(".rationale");
+        write_record_yaml(
+            &rationale_dir.join("records"),
+            "constraint.odd-authority",
+            "id: constraint.odd-authority\nkind: constraint\nseverity: high\nstatement: \"x\"\nauthority: approved\nbinding_declarations:\n  - id: binding.a\n    type: file\n    path_hint: README.md\n",
+        );
+        std::fs::write(project.join("README.md"), "x\n").unwrap();
+        write_record_yaml(
+            &rationale_dir.join("proposals"),
+            "constraint.legacy",
+            "id: constraint.legacy\nkind: constraint\nseverity: high\nstatement: \"x\"\nstatus: pending\n",
         );
 
         let report = check(&rationale_dir, &project);
         assert!(report.findings.iter().any(|f| matches!(
             f,
-            Finding::RecordInCanonWithoutApproval { record_id, .. }
-                if record_id == "constraint.no-approval"
+            Finding::InvalidRecordAuthority { current, .. } if current == "approved"
         )));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| matches!(f, Finding::PendingLegacyProposals { count: 1, .. })));
 
         std::fs::remove_dir_all(&project).ok();
     }
