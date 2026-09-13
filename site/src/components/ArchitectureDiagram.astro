@@ -1,0 +1,131 @@
+---
+interface Props {
+  lang: "en" | "es";
+}
+
+const { lang } = Astro.props;
+const es = lang === "es";
+
+type Kind = "module" | "external" | "store" | "focal" | "entry" | "readonly";
+type Box = { x: number; y: number; kind: Kind; tag: string; name: string; sub: string };
+type Label = { text: string; x: number; y: number; anchor: "start" | "middle" | "end" };
+type Edge = { d: string; kind: "call" | "read" | "write"; label?: Label };
+
+// Rejilla de 4px en tres filas: las fuentes (dónde, qué, por qué), el núcleo y
+// la frontera. Cada arista corresponde a llamadas reales entre módulos en el
+// grafo CALLS de Codebase Memory (revisión 4be2ecd); si el código cambia de
+// forma, este dibujo debe volver a derivarse del grafo.
+const W = 888;
+const H = 448;
+const NW = 200;
+const NH = 72;
+const module = es ? "MÓDULO" : "MODULE";
+
+const boxes: Box[] = [
+  { x: 40, y: 40, kind: "external", tag: es ? "PROVEEDOR" : "PROVIDER", name: "Codebase Memory", sub: es ? "dónde · cómo se conecta" : "where · how it connects" },
+  { x: 340, y: 40, kind: "external", tag: "GIT", name: "Git", sub: es ? "qué · cuándo" : "what · when" },
+  { x: 640, y: 40, kind: "focal", tag: "RECORDS", name: "Canon", sub: es ? ".rationale/ · por qué" : ".rationale/ · why" },
+  { x: 40, y: 192, kind: "module", tag: module, name: es ? "Compilador de contexto" : "Context compiler", sub: "context · retrieval" },
+  { x: 340, y: 192, kind: "module", tag: module, name: "Pipeline", sub: "prepare · finalize" },
+  { x: 640, y: 192, kind: "module", tag: module, name: es ? "Gate de captura" : "Capture gate", sub: "canon · storage" },
+  { x: 40, y: 344, kind: "entry", tag: es ? "FRONTERA" : "BOUNDARY", name: es ? "Servidor MCP · CLI" : "MCP server · CLI", sub: "mcp::server · main" },
+  { x: 340, y: 344, kind: "store", tag: "LOCAL", name: es ? "Actividad" : "Activity", sub: ".rationale-local/" },
+  { x: 640, y: 344, kind: "readonly", tag: es ? "SOLO LECTURA" : "READ-ONLY", name: "Control Room", sub: "ui · 127.0.0.1" },
+];
+
+const edges: Edge[] = [
+  // mcp::server → pipeline, y main → pipeline
+  { kind: "call", d: "M140 344 V312 Q140 304 148 304 H408 Q416 304 416 296 V265.2" },
+  // pipeline → context::gather, retrieval::compile
+  { kind: "call", d: "M340 228 H241.2", label: { text: es ? "COMPILA" : "COMPILE", x: 290, y: 212, anchor: "middle" } },
+  // pipeline::finalize → canon::capture_candidates
+  { kind: "call", d: "M540 228 H638.8", label: { text: es ? "CANDIDATOS" : "CANDIDATES", x: 590, y: 212, anchor: "middle" } },
+  // context → providers (solo herramientas públicas del proveedor)
+  { kind: "read", d: "M140 192 V113.2", label: { text: es ? "TOOLS MCP" : "MCP TOOLS", x: 152, y: 152, anchor: "start" } },
+  // pipeline → revision::check_consistency y la captura del diff
+  { kind: "read", d: "M416 192 V113.2", label: { text: es ? "REVISIÓN" : "REVISION", x: 404, y: 152, anchor: "end" } },
+  // pipeline::prepare → storage::list_records
+  { kind: "read", d: "M464 192 V160 Q464 152 472 152 H708 Q716 152 716 144 V113.2" },
+  // canon → storage: la única escritura de Records que llega desde un agente
+  { kind: "write", d: "M764 192 V113.2", label: { text: es ? "ESCRIBE" : "WRITES", x: 776, y: 152, anchor: "start" } },
+  // pipeline → activity::Recorder.emit, operations::save
+  { kind: "call", d: "M464 264 V342.8", label: { text: es ? "TRAZAS" : "TRACES", x: 476, y: 304, anchor: "start" } },
+  // ui::api → operations, activity
+  { kind: "read", d: "M640 380 H541.2" },
+  // ui::api → storage, canon
+  { kind: "read", d: "M840 380 H856 Q864 380 864 372 V84 Q864 76 856 76 H841.2" },
+];
+
+const maskFor = (label: Label) => {
+  const w = label.text.length * 6 + 8;
+  const x = label.anchor === "start" ? label.x - 4 : label.anchor === "end" ? label.x + 4 - w : label.x - w / 2;
+  return { x, y: label.y - 6, w };
+};
+
+const copy = es
+  ? {
+      title: "Cómo está conectado Rationale",
+      desc: "Los agentes y la CLI llegan al pipeline. El pipeline lee Codebase Memory, Git y el canon, compila el packet, registra trazas locales y envía candidatos al gate de captura, que escribe los Records. El Control Room solo lee.",
+      call: "Llamada entre módulos",
+      read: "Lectura",
+      write: "Escribe Records en el canon",
+      source: "Aristas del grafo de llamadas de Codebase Memory sobre este repositorio, revisión 4be2ecd.",
+    }
+  : {
+      title: "How Rationale is wired",
+      desc: "Agents and the CLI reach the pipeline. The pipeline reads Codebase Memory, Git and the canon, compiles the packet, records local traces and sends candidates to the capture gate, which writes Records. The Control Room only reads.",
+      call: "Call between modules",
+      read: "Read",
+      write: "Writes Records to the canon",
+      source: "Edges from Codebase Memory's call graph of this repository, revision 4be2ecd.",
+    };
+---
+
+<figure class="dg-figure dg-figure-wide">
+  <div class="dg-scroll">
+    <svg class="dg dg-arch" viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby="arch-title arch-desc">
+      <title id="arch-title">{copy.title}</title>
+      <desc id="arch-desc">{copy.desc}</desc>
+      <defs>
+        <marker id="arch-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="dg-head" points="0 0, 8 3, 0 6" /></marker>
+        <marker id="arch-arrow-soft" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="dg-head-soft" points="0 0, 8 3, 0 6" /></marker>
+        <marker id="arch-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="dg-head-accent" points="0 0, 8 3, 0 6" /></marker>
+      </defs>
+
+      {edges.map((edge) => (
+        <path
+          class:list={["dg-edge", { "dg-edge-read": edge.kind === "read", "dg-edge-write": edge.kind === "write" }]}
+          d={edge.d}
+          marker-end={edge.kind === "write" ? "url(#arch-arrow-accent)" : edge.kind === "read" ? "url(#arch-arrow-soft)" : "url(#arch-arrow)"}
+        />
+      ))}
+      {edges.filter((edge) => edge.label).map((edge) => {
+        const label = edge.label!;
+        const mask = maskFor(label);
+        return (
+          <g>
+            <rect class="dg-mask" x={mask.x} y={mask.y} width={mask.w} height="12" rx="2" />
+            <text class:list={["dg-label", { "dg-label-accent": edge.kind === "write" }]} x={label.x} y={label.y + 3.5} text-anchor={label.anchor}>{label.text}</text>
+          </g>
+        );
+      })}
+
+      {boxes.map((box) => (
+        <g>
+          <rect class="dg-mask" x={box.x} y={box.y} width={NW} height={NH} rx="4" />
+          <rect class:list={["dg-node", `dg-node-${box.kind}`]} x={box.x} y={box.y} width={NW} height={NH} rx="4" />
+          <rect class="dg-tag-box" x={box.x + 8} y={box.y + 8} width={Math.round(box.tag.length * 5.4 + 10)} height="14" rx="2" />
+          <text class="dg-tag" x={box.x + 13} y={box.y + 18.5}>{box.tag}</text>
+          <text class:list={["dg-name", { "dg-name-focal": box.kind === "focal" }]} x={box.x + NW / 2} y={box.y + 45} text-anchor="middle">{box.name}</text>
+          <text class="dg-sub" x={box.x + NW / 2} y={box.y + 61} text-anchor="middle">{box.sub}</text>
+        </g>
+      ))}
+    </svg>
+  </div>
+  <figcaption class="dg-caption">
+    <span class="dg-key"><svg viewBox="0 0 24 8" aria-hidden="true"><line class="dg-edge" x1="0" y1="4" x2="24" y2="4" /></svg>{copy.call}</span>
+    <span class="dg-key"><svg viewBox="0 0 24 8" aria-hidden="true"><line class="dg-edge dg-edge-read" x1="0" y1="4" x2="24" y2="4" /></svg>{copy.read}</span>
+    <span class="dg-key"><svg viewBox="0 0 24 8" aria-hidden="true"><line class="dg-edge dg-edge-write" x1="0" y1="4" x2="24" y2="4" /></svg>{copy.write}</span>
+    <span class="dg-source">{copy.source}</span>
+  </figcaption>
+</figure>

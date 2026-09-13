@@ -1,5 +1,13 @@
 ---
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/400-italic.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import "../styles/global.css";
+import Icon from "../components/Icon.astro";
+import RMark from "../components/RMark.astro";
 import { DOC_GROUPS, docHref, docsRoot, homeHref } from "../lib/docs";
 
 interface DocEntry {
@@ -28,7 +36,7 @@ const { lang, title, description, slug = "", entries, headings = [], previous, n
 const isSpanish = lang === "es";
 const languageHref = slug ? (isSpanish ? docHref("en", slug) : docHref("es", slug)) : (isSpanish ? "/docs" : "/es/docs");
 const languageLabel = isSpanish ? "EN" : "ES";
-const languageAria = isSpanish ? "Cambiar a inglés" : "Switch to Spanish";
+const languageAria = isSpanish ? "Read in English" : "Leer en español";
 const entryBySlug = new Map(entries.map((entry) => [entry.data.slug, entry]));
 ---
 
@@ -40,60 +48,69 @@ const entryBySlug = new Map(entries.map((entry) => [entry.data.slug, entry]));
     <meta name="generator" content={Astro.generator} />
     <meta name="theme-color" content="#04060a" />
     <meta name="description" content={description} />
-    <meta property="og:title" content={`Rationale — ${title}`} />
+    <meta property="og:title" content={`Rationale · ${title}`} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="article" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>{`Rationale — ${title}`}</title>
+    <title>{`${title} · Rationale`}</title>
+    <script is:inline>
+      // Aplica el tema guardado antes del primer pintado para no parpadear.
+      try {
+        if (localStorage.getItem("rationale-theme") === "light") document.documentElement.dataset.theme = "light";
+      } catch {}
+    </script>
   </head>
   <body>
+    <a class="sr-only fixed left-4 top-4 z-50 bg-[var(--signal)] px-4 py-3 text-[var(--canvas)] focus:not-sr-only" href="#docs-main">{isSpanish ? "Saltar al contenido" : "Skip to content"}</a>
     <div class="docs-frame">
       <header class="docs-header">
         <div class="docs-header-inner">
           <a class="docs-brand" href={homeHref(lang)} aria-label={isSpanish ? "Inicio de Rationale" : "Rationale home"}>
-            <span class="docs-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="20" height="20"><circle cx="16" cy="16" r="11.5" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5"/><circle cx="16" cy="16" r="4.5" fill="currentColor"/><circle cx="26.5" cy="10" r="2.6" fill="#f2b544"/></svg></span>
-            <span><strong>Rationale</strong><small>{isSpanish ? "Memoria causal para agentes" : "Causal memory for agents"}</small></span>
+            <RMark size={28} />
+            <span><strong>Rationale</strong><small>{isSpanish ? "Documentación" : "Documentation"}</small></span>
           </a>
           <nav class="docs-header-actions" aria-label={isSpanish ? "Acciones del sitio" : "Site actions"}>
-            <a href={docsRoot(lang)} class="docs-header-link">{isSpanish ? "Docs" : "Docs"}</a>
-            <a href={languageHref} class="docs-language" aria-label={languageAria}>{languageLabel}</a>
-            <button class="docs-theme" type="button" data-docs-theme-toggle aria-label={isSpanish ? "Modo oscuro" : "Dark mode"} aria-pressed="false"><span data-docs-theme-icon aria-hidden="true">◐</span></button>
-            <a class="docs-github" href="https://github.com/Ragosorio/Rationale" target="_blank" rel="noreferrer">GitHub ↗</a>
+            <a href={docsRoot(lang)} class="docs-action">Docs</a>
+            <a href={languageHref} class="docs-action" hreflang={isSpanish ? "en" : "es"} aria-label={languageAria}>{languageLabel}</a>
+            <button class="docs-action" type="button" data-docs-theme-toggle aria-label={isSpanish ? "Tema oscuro" : "Dark theme"} aria-pressed="true">
+              <Icon name="sun" class="theme-to-light" />
+              <Icon name="moon" class="theme-to-dark" />
+            </button>
+            <a class="docs-action docs-github" href="https://github.com/Ragosorio/Rationale" target="_blank" rel="noreferrer" aria-label={isSpanish ? "Rationale en GitHub" : "Rationale on GitHub"}><span>GitHub</span><Icon name="external" /></a>
           </nav>
         </div>
       </header>
 
       <div class="docs-layout">
         <aside class="docs-sidebar" aria-label={isSpanish ? "Navegación de documentación" : "Documentation navigation"}>
-          <p class="eyebrow">{isSpanish ? "Rationale / Manual" : "Rationale / Handbook"}</p>
           {DOC_GROUPS.map((group) => (
             <div class="docs-nav-group">
               <p class="docs-nav-label">{isSpanish ? group.es : group.en}</p>
               <nav>
                 {group.slugs.map((itemSlug) => {
                   const entry = entryBySlug.get(itemSlug);
-                  return entry ? <a class:list={["docs-nav-link", { active: itemSlug === slug }]} href={docHref(lang, itemSlug)}>{entry.data.title}</a> : null;
+                  return entry ? <a class:list={["docs-nav-link", { active: itemSlug === slug }]} href={docHref(lang, itemSlug)} aria-current={itemSlug === slug ? "page" : undefined}>{entry.data.title}</a> : null;
                 })}
               </nav>
             </div>
           ))}
         </aside>
 
-        <main class="docs-main">
-          <div class="docs-breadcrumbs" aria-label={isSpanish ? "Migas de pan" : "Breadcrumbs"}>
+        <main class="docs-main" id="docs-main">
+          <nav class="docs-breadcrumbs" aria-label={isSpanish ? "Migas de pan" : "Breadcrumbs"}>
             <a href={homeHref(lang)}>Rationale</a><span aria-hidden="true">/</span><a href={docsRoot(lang)}>{isSpanish ? "Documentación" : "Documentation"}</a>{slug && <><span aria-hidden="true">/</span><span>{title}</span></>}
-          </div>
+          </nav>
           <div class="docs-content-grid">
             <article class="docs-prose">
               <header class="docs-article-header">
-                <p class="eyebrow">{isSpanish ? "Documentación" : "Documentation"}</p>
                 <h1>{title}</h1>
                 <p class="docs-lede">{description}</p>
               </header>
+              <slot name="lead" />
               <slot />
               {(previous || next) && <nav class="docs-pager" aria-label={isSpanish ? "Paginación" : "Pagination"}>
-                {previous ? <a href={docHref(lang, previous.data.slug)}><small>← {isSpanish ? "Anterior" : "Previous"}</small><strong>{previous.data.title}</strong></a> : <span></span>}
-                {next ? <a class="next" href={docHref(lang, next.data.slug)}><small>{isSpanish ? "Siguiente" : "Next"} →</small><strong>{next.data.title}</strong></a> : <span></span>}
+                {previous ? <a href={docHref(lang, previous.data.slug)}><small>{isSpanish ? "Anterior" : "Previous"}</small><strong>{previous.data.title}</strong></a> : <span></span>}
+                {next ? <a class="next" href={docHref(lang, next.data.slug)}><small>{isSpanish ? "Siguiente" : "Next"}</small><strong>{next.data.title}</strong></a> : <span></span>}
               </nav>}
             </article>
             {headings.length > 0 && <aside class="docs-toc" aria-label={isSpanish ? "En esta página" : "On this page"}>
@@ -106,24 +123,30 @@ const entryBySlug = new Map(entries.map((entry) => [entry.data.slug, entry]));
 
       <footer class="docs-footer">
         <span>{isSpanish ? "Tu repo. Tu proceso. Tu contexto." : "Your repo. Your process. Your context."}</span>
-        <a href={homeHref(lang)}>{isSpanish ? "Volver a la landing" : "Back to landing"} ↗</a>
+        <a href={homeHref(lang)}>{isSpanish ? "Volver al inicio" : "Back to the home page"}</a>
       </footer>
     </div>
     <script>
       const root = document.documentElement;
       const toggle = document.querySelector("[data-docs-theme-toggle]");
-      const icon = document.querySelector("[data-docs-theme-icon]");
-      const saved = window.localStorage.getItem("rationale-theme");
+      let saved = null;
+      try {
+        saved = window.localStorage.getItem("rationale-theme");
+      } catch {
+        // Sin almacenamiento, el tema por defecto sigue siendo válido.
+      }
       // Oscuro por defecto, como la landing y el Control Room; el toggle recuerda la elección.
-      const preferred = "dark";
       const setTheme = (theme) => {
-        const selected = theme === "dark" ? "dark" : "light";
+        const selected = theme === "light" ? "light" : "dark";
         root.dataset.theme = selected;
-        window.localStorage.setItem("rationale-theme", selected);
-        if (toggle) toggle.setAttribute("aria-pressed", String(selected === "dark"));
-        if (icon) icon.textContent = selected === "dark" ? "☼" : "◐";
+        try {
+          window.localStorage.setItem("rationale-theme", selected);
+        } catch {
+          // El tema aplica igual aunque no se pueda recordar.
+        }
+        toggle?.setAttribute("aria-pressed", String(selected === "dark"));
       };
-      setTheme(saved || preferred);
+      setTheme(saved || "dark");
       toggle?.addEventListener("click", () => setTheme(root.dataset.theme === "dark" ? "light" : "dark"));
       document.querySelectorAll("[data-docs-copy]").forEach((button) => {
         button.addEventListener("click", async () => {

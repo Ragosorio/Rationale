@@ -1,5 +1,8 @@
 ---
 import { getCollection, render } from "astro:content";
+import ArchitectureDiagram from "../../components/ArchitectureDiagram.astro";
+import LoopDiagram from "../../components/LoopDiagram.astro";
+import SubgraphDiagram from "../../components/SubgraphDiagram.astro";
 import DocsLayout from "../../layouts/DocsLayout.astro";
 import masterPrompt from "../../../../docs/prompt-master.md?raw";
 import masterPromptEs from "../../../../docs/prompt-master.es.md?raw";
@@ -20,6 +23,13 @@ export async function getStaticPaths() {
 
 const { entry, entries, previous, next } = Astro.props;
 const { Content, headings } = await render(entry);
+// Los diagramas son componentes compartidos con la landing: se dibujan una vez.
+const leadFigures: Record<string, typeof LoopDiagram> = {
+  architecture: ArchitectureDiagram,
+  workflow: LoopDiagram,
+  "control-room": SubgraphDiagram,
+};
+const LeadFigure = leadFigures[entry.data.slug];
 ---
 
 <DocsLayout
@@ -32,6 +42,7 @@ const { Content, headings } = await render(entry);
   previous={previous}
   next={next}
 >
+  {LeadFigure && <div slot="lead" class="docs-lead-figure"><LeadFigure lang="en" /></div>}
   <Content />
   {entry.data.slug === "prompt-master" && <div class="docs-prompt-block">
     <div class="docs-prompt-toolbar"><span>Paste at the start of each conversation</span><button type="button" data-docs-copy data-copy-value={masterPrompt.trim()}>Copy prompt</button></div>

@@ -7,21 +7,6 @@ section: Proyecto
 order: 12
 ---
 
-## El flujo
-
-```text
-Codebase Memory (dónde / cómo) ─┐
-Git (qué / cuándo) ─────────────┼─> compilador de contexto ─> packet ─> agente
-canon .rationale (por qué) ─────┘            │
-                                   snapshot de operación
-cambio del agente ─> finalize_change ─> gate de captura ─> Records canónicos
-                                              │
-                        conflicto con un Record fijado ─> decisión humana
-
-sesiones ─> .rationale-local/activity ─┐
-operaciones ───────────────────────────┴─> rationale ui (solo lectura)
-```
-
 ## Componentes
 
 | Módulo | Responsabilidad |

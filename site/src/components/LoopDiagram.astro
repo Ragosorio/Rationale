@@ -1,0 +1,182 @@
+---
+interface Props {
+  lang: "en" | "es";
+}
+
+const { lang } = Astro.props;
+const es = lang === "es";
+
+type Spoke = { dir: "in" | "out"; label: string; side: 1 | -1 };
+type Station = { name: string; sub: string; focal?: boolean; spoke?: Spoke };
+
+// Tipo "Loop" de diagram-design: estaciones en un círculo, flujo en arcos del
+// mismo radio y rayos hacia el hub. La geometría se deriva de estos parámetros,
+// así que cambiar un texto nunca desalinea una flecha.
+const W = 664;
+const H = 560;
+const cx = 332;
+const cy = 296;
+const R = 240;
+const SW = 160;
+const SH = 64;
+const HW = 176;
+const HH = 88;
+const MARKER_OVERHANG = 1.2;
+const MARKER_GAP = 6;
+const LABEL_GAP = 8;
+const TAU = Math.PI * 2;
+
+const stations: Station[] = [
+  { name: es ? "Localizar" : "Locate", sub: "codebase memory" },
+  { name: es ? "Preparar" : "Prepare", sub: "prepare_change", spoke: { dir: "out", label: "PACKET", side: 1 } },
+  { name: es ? "Cambiar" : "Change", sub: es ? "agente + tests" : "agent + tests" },
+  { name: es ? "Capturar" : "Capture", sub: "finalize_change", spoke: { dir: "in", label: "RECORDS", side: 1 } },
+  { name: es ? "Fijar" : "Pin", sub: "rationale pin", focal: true, spoke: { dir: "in", label: "PINNED", side: -1 } },
+];
+
+const snap = (value: number) => Math.round(value / 4) * 4;
+const f = (value: number) => Number(value.toFixed(2));
+const wrap = (angle: number) => ((((angle + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
+
+const nodes = stations.map((station, k) => {
+  const theta = -Math.PI / 2 + (k * TAU) / stations.length;
+  const x = snap(cx + R * Math.cos(theta) - SW / 2);
+  const y = snap(cy + R * Math.sin(theta) - SH / 2);
+  return { ...station, theta, x, y, mx: x + SW / 2, my: y + SH / 2 };
+});
+type Node = (typeof nodes)[number];
+
+/** Cortes del círculo con el borde de una estación, con su ángulo relativo. */
+function ringHits(node: Node) {
+  const hits: Array<{ x: number; y: number; d: number }> = [];
+  const push = (x: number, y: number) => hits.push({ x, y, d: wrap(Math.atan2(y - cy, x - cx) - node.theta) });
+  for (const xe of [node.x, node.x + SW]) {
+    const rest = R * R - (xe - cx) ** 2;
+    if (rest < 0) continue;
+    for (const sign of [-1, 1]) {
+      const y = cy + sign * Math.sqrt(rest);
+      if (y >= node.y && y <= node.y + SH) push(xe, y);
+    }
+  }
+  for (const ye of [node.y, node.y + SH]) {
+    const rest = R * R - (ye - cy) ** 2;
+    if (rest < 0) continue;
+    for (const sign of [-1, 1]) {
+      const x = cx + sign * Math.sqrt(rest);
+      if (x >= node.x && x <= node.x + SW) push(x, ye);
+    }
+  }
+  return hits;
+}
+const entryOf = (node: Node) => ringHits(node).filter((p) => p.d < 0).sort((a, b) => b.d - a.d)[0];
+const exitOf = (node: Node) => ringHits(node).filter((p) => p.d > 0).sort((a, b) => a.d - b.d)[0];
+
+const ring = nodes.map((node, k) => {
+  const from = exitOf(node);
+  const to = entryOf(nodes[(k + 1) % nodes.length]);
+  // La punta de la flecha sobresale 1.2px: el arco termina antes para que la
+  // punta toque el borde de la estación sin cruzarlo.
+  const phi = Math.atan2(to.y - cy, to.x - cx) - MARKER_OVERHANG / R;
+  return `M${f(from.x)} ${f(from.y)} A${R} ${R} 0 0 1 ${f(cx + R * Math.cos(phi))} ${f(cy + R * Math.sin(phi))}`;
+});
+
+const reach = (ux: number, uy: number, hw: number, hh: number) =>
+  Math.min(ux === 0 ? Infinity : hw / Math.abs(ux), uy === 0 ? Infinity : hh / Math.abs(uy));
+
+const spokes = nodes.flatMap((node) => {
+  if (!node.spoke) return [];
+  const length = Math.hypot(node.mx - cx, node.my - cy);
+  const ux = (node.mx - cx) / length;
+  const uy = (node.my - cy) / length;
+  const stationEdge = length - reach(ux, uy, SW / 2, SH / 2);
+  const hubEdge = reach(ux, uy, HW / 2, HH / 2);
+  const inward = node.spoke.dir === "in";
+  const start = inward ? stationEdge : hubEdge;
+  const end = inward ? hubEdge + MARKER_GAP : stationEdge - MARKER_GAP;
+  const mid = (start + end) / 2;
+  const labelW = node.spoke.label.length * 6 + 8;
+  const labelH = 12;
+  const nx = -uy * node.spoke.side;
+  const ny = ux * node.spoke.side;
+  // Distancia de soporte del rectángulo de la etiqueta sobre la normal: el
+  // hueco con el trazo es LABEL_GAP en cualquier ángulo.
+  const offset = (labelW / 2) * Math.abs(nx) + (labelH / 2) * Math.abs(ny) + LABEL_GAP;
+  const lx = cx + ux * mid + nx * offset;
+  const ly = cy + uy * mid + ny * offset;
+  return [
+    {
+      inward,
+      d: `M${f(cx + ux * start)} ${f(cy + uy * start)} L${f(cx + ux * end)} ${f(cy + uy * end)}`,
+      label: node.spoke.label,
+      mask: { x: f(lx - labelW / 2), y: f(ly - labelH / 2), w: labelW, h: labelH },
+      text: { x: f(lx), y: f(ly + 3.5) },
+    },
+  ];
+});
+
+const copy = es
+  ? {
+      title: "El ciclo de Rationale",
+      desc: "Cinco pasos en sentido horario: localizar, preparar, cambiar, capturar y fijar. Preparar entrega al agente un packet desde el canon; capturar y fijar escriben Records de vuelta en él.",
+      hub: "Canon",
+      flow: "Paso siguiente",
+      packet: "Packet que recibe el agente",
+      writeback: "Escrito de vuelta en el canon",
+      human: "Reservado a una persona",
+    }
+  : {
+      title: "The Rationale loop",
+      desc: "Five steps run clockwise: locate, prepare, change, capture and pin. Prepare hands the agent a packet from the canon; capture and pin write Records back to it.",
+      hub: "Canon",
+      flow: "Next step",
+      packet: "Packet the agent receives",
+      writeback: "Written back to the canon",
+      human: "Reserved for a person",
+    };
+---
+
+<figure class="dg-figure dg-figure-loop">
+  <svg class="dg" viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby="loop-title loop-desc">
+    <title id="loop-title">{copy.title}</title>
+    <desc id="loop-desc">{copy.desc}</desc>
+    <defs>
+      <marker id="loop-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="dg-head" points="0 0, 8 3, 0 6" /></marker>
+      <marker id="loop-arrow-soft" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="dg-head-soft" points="0 0, 8 3, 0 6" /></marker>
+      <marker id="loop-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="dg-head-link" points="0 0, 8 3, 0 6" /></marker>
+    </defs>
+
+    {ring.map((d) => <path class="dg-edge" d={d} marker-end="url(#loop-arrow)" />)}
+    {spokes.map((spoke) => (
+      <path
+        class:list={["dg-edge", spoke.inward ? "dg-edge-writeback dg-flow" : "dg-edge-link"]}
+        d={spoke.d}
+        marker-end={spoke.inward ? "url(#loop-arrow-soft)" : "url(#loop-arrow-link)"}
+      />
+    ))}
+    {spokes.map((spoke) => (
+      <g>
+        <rect class="dg-mask" x={spoke.mask.x} y={spoke.mask.y} width={spoke.mask.w} height={spoke.mask.h} rx="2" />
+        <text class="dg-label" x={spoke.text.x} y={spoke.text.y} text-anchor="middle">{spoke.label}</text>
+      </g>
+    ))}
+
+    {nodes.map((node) => (
+      <g>
+        <rect class="dg-mask" x={node.x} y={node.y} width={SW} height={SH} rx="4" />
+        <rect class:list={["dg-node", { "dg-node-focal": node.focal }]} x={node.x} y={node.y} width={SW} height={SH} rx="4" />
+        <text class:list={["dg-name dg-name-lg", { "dg-name-focal": node.focal }]} x={node.mx} y={node.my - 3} text-anchor="middle">{node.name}</text>
+        <text class="dg-sub dg-sub-lg" x={node.mx} y={node.my + 16} text-anchor="middle">{node.sub}</text>
+      </g>
+    ))}
+
+    <rect class="dg-hub" x={cx - HW / 2} y={cy - HH / 2} width={HW} height={HH} rx="4" />
+    <text class="dg-hub-name" x={cx} y={cy - 2} text-anchor="middle">{copy.hub}</text>
+    <text class="dg-hub-sub" x={cx} y={cy + 18} text-anchor="middle">.rationale/ · Git</text>
+  </svg>
+  <figcaption class="dg-caption">
+    <span class="dg-key"><svg viewBox="0 0 24 8" aria-hidden="true"><line class="dg-edge" x1="0" y1="4" x2="24" y2="4" /></svg>{copy.flow}</span>
+    <span class="dg-key"><svg viewBox="0 0 24 8" aria-hidden="true"><line class="dg-edge dg-edge-link" x1="0" y1="4" x2="24" y2="4" /></svg>{copy.packet}</span>
+    <span class="dg-key"><svg viewBox="0 0 24 8" aria-hidden="true"><line class="dg-edge dg-edge-writeback" x1="0" y1="4" x2="24" y2="4" /></svg>{copy.writeback}</span>
+    <span class="dg-key"><i class="dg-swatch dg-swatch-focal" aria-hidden="true"></i>{copy.human}</span>
+  </figcaption>
+</figure>

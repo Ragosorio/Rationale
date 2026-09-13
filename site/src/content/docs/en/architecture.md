@@ -7,21 +7,6 @@ section: Project
 order: 12
 ---
 
-## The flow
-
-```text
-Codebase Memory (where / how) ──┐
-Git (what / when) ──────────────┼─> context compiler ─> packet ─> agent
-.rationale canon (why) ─────────┘          │
-                                     operation snapshot
-agent change ─> finalize_change ─> capture gate ─> canonical Records
-                                        │
-                           conflict with a pinned Record ─> human decision
-
-sessions ─> .rationale-local/activity ─┐
-operations ────────────────────────────┴─> rationale ui (read-only)
-```
-
 ## Components
 
 | Module | Responsibility |

@@ -1,7 +1,17 @@
 ---
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import "../styles/global.css";
 import "../styles/landing.css";
 import { landingCopy } from "../lib/landing";
+import ArchitectureDiagram from "./ArchitectureDiagram.astro";
+import Icon from "./Icon.astro";
+import LoopDiagram from "./LoopDiagram.astro";
+import RMark from "./RMark.astro";
+import SubgraphDiagram from "./SubgraphDiagram.astro";
 
 interface Props {
   lang: "en" | "es";
@@ -20,106 +30,24 @@ const docs = {
   evidence: `${docsBase}evidence`,
   limits: `${docsBase}limits`,
   controlRoom: `${docsBase}control-room`,
+  architecture: `${docsBase}architecture`,
 };
 const home = isSpanish ? "/es/" : "/";
 const alternateHome = isSpanish ? "/" : "/es/";
 const alternateLabel = isSpanish ? "EN" : "ES";
 const pageTitle = isSpanish
-  ? "Rationale 1.0 — Tus agentes olvidan el porqué. Rationale lo recuerda."
-  : "Rationale 1.0 — Your agents forget why. Rationale remembers.";
+  ? "Rationale 1.0 · Tus agentes olvidan el porqué. Rationale lo recuerda."
+  : "Rationale 1.0 · Your agents forget why. Rationale remembers.";
 const pageDescription = isSpanish
   ? "Memoria causal local para agentes de código: contexto antes del cambio, memoria durable después, y las reglas que fijas fuera del alcance de cualquier agente."
   : "Local causal memory for coding agents: context before the change, durable memory after it, and the rules you pin out of any agent's reach.";
 const installCommand = `curl --proto '=https' --tlsv1.2 -LsSf ${repo}/releases/latest/download/rationale-installer.sh | sh`;
 const codebaseMemoryUrl = "https://github.com/DeusData/codebase-memory-mcp";
 const codebaseMemoryCommand = "curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash";
-const githubStarsFallback = 0;
 
 /** Texto con `código` en línea → segmentos para renderizar. */
 const inline = (text: string) =>
   text.split("`").map((part, index) => ({ code: index % 2 === 1, part }));
-
-// ---------- hero graph (ilustrativo, determinista) ----------
-const roleColor: Record<string, string> = {
-  target: "#e6f6ff",
-  caller: "#58a6ff",
-  callee: "#3dd6c6",
-  dependency: "#a391ff",
-  dependent: "#7383ff",
-  test: "#6fe3a1",
-  context: "#7c8799",
-};
-const stateStroke: Record<string, { color: string; dash?: string; flow?: string; width: number }> = {
-  explained: { color: "#f2b544", flow: "flow", width: 2.2 },
-  observed: { color: "#27a693", flow: "flow-slow", width: 1.4 },
-  indirect: { color: "#f59e0b", dash: "7 6", width: 1.3 },
-  orphaned: { color: "#f0575f", dash: "2 8", width: 1.4 },
-  unknown: { color: "#5b6678", dash: "1 7", width: 1 },
-};
-const center = { x: 300, y: 262 };
-const heroNodes = [
-  { id: "checkout", x: 112, y: 176, role: "caller", label: "checkout", state: "observed" },
-  { id: "retry", x: 124, y: 372, role: "caller", label: "retry_worker", state: "indirect" },
-  { id: "bank", x: 488, y: 156, role: "callee", label: "bank_client", state: "explained" },
-  { id: "ledger", x: 504, y: 316, role: "callee", label: "ledger", state: "observed" },
-  { id: "idem", x: 300, y: 86, role: "dependency", label: "idempotency_key", state: "explained", pinned: true },
-  { id: "refunds", x: 440, y: 428, role: "dependent", label: "refunds", state: "orphaned" },
-  { id: "test", x: 236, y: 452, role: "test", label: "charge_test", state: "observed" },
-];
-const contextDots = [
-  [52, 262], [556, 232], [404, 34], [180, 58], [572, 424], [58, 470], [360, 500], [196, 280], [420, 250], [148, 470], [540, 60], [70, 90],
-];
-const curve = (x1: number, y1: number, x2: number, y2: number, bend = 0.14) => {
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  const px = mx - (y2 - y1) * bend;
-  const py = my + (x2 - x1) * bend;
-  return `M${x1} ${y1} Q${px.toFixed(1)} ${py.toFixed(1)} ${x2} ${y2}`;
-};
-
-// ---------- control room mock graph ----------
-let seed = 7;
-const rand = () => {
-  seed = (seed * 16807) % 2147483647;
-  return (seed - 1) / 2147483646;
-};
-const clusters = [
-  { cx: 120, cy: 90, role: "caller" },
-  { cx: 300, cy: 70, role: "callee" },
-  { cx: 330, cy: 200, role: "dependency" },
-  { cx: 110, cy: 210, role: "test" },
-];
-const roomCenter = { x: 215, y: 140 };
-const roomNodes = clusters.flatMap((cluster, clusterIndex) =>
-  Array.from({ length: 7 }, (_, index) => {
-    const angle = rand() * Math.PI * 2;
-    const distance = 14 + rand() * 46;
-    return {
-      x: +(cluster.cx + Math.cos(angle) * distance).toFixed(1),
-      y: +(cluster.cy + Math.sin(angle) * distance * 0.8).toFixed(1),
-      r: +(2.2 + rand() * 2.6).toFixed(1),
-      role: index === 0 && clusterIndex % 2 === 0 ? "context" : cluster.role,
-      explained: clusterIndex === 1 && index === 2,
-      edge: index < 3,
-    };
-  }),
-);
-
-const edgeSamples: Record<string, { color: string; dash?: string }> = {
-  observed: { color: "#27a693" },
-  indirect: { color: "#f59e0b", dash: "7 5" },
-  orphaned: { color: "#f0575f", dash: "2 6" },
-  unknown: { color: "#7c8799", dash: "1 5" },
-};
-
-const tickerEvents = [
-  ["session.started", "l-k-session", "Claude Code"],
-  ["context.requested", "l-k-context", "retry.rs::charge"],
-  ["provider.finished", "l-k-provider", "codebase-memory · 64 ms"],
-  ["packet.compiled", "l-k-packet", "12/52 · ~1.7k tokens"],
-  ["change.finalized", "l-k-context", "2 candidates"],
-  ["record.committed", "l-k-record", "decision.retry-budget-three"],
-];
 ---
 
 <!doctype html>
@@ -142,18 +70,22 @@ const tickerEvents = [
     <link rel="alternate" hreflang="x-default" href="/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{pageTitle}</title>
+    <script is:inline>
+      // Aplica el tema guardado antes del primer pintado para no parpadear.
+      try {
+        if (localStorage.getItem("rationale-theme") === "light") document.documentElement.dataset.theme = "light";
+      } catch {}
+    </script>
   </head>
   <body>
-    <a class="sr-only fixed left-4 top-4 z-50 rounded-lg bg-[var(--signal)] px-4 py-3 text-[#031018] focus:not-sr-only" href="#main">{t.skip}</a>
+    <a class="sr-only fixed left-4 top-4 z-50 bg-[var(--signal)] px-4 py-3 text-[var(--canvas)] focus:not-sr-only" href="#main">{t.skip}</a>
 
     <div class="l-page">
-      <header class="l-header" aria-label={isSpanish ? "Navegación principal" : "Primary navigation"}>
+      <header class="l-header">
         <div class="l-container l-header-inner">
           <a href={home} class="l-brand" aria-label={isSpanish ? "Inicio de Rationale" : "Rationale home"}>
-            <span class="l-brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 32 32" width="20" height="20"><circle cx="16" cy="16" r="11.5" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" /><circle cx="16" cy="16" r="4.5" fill="currentColor" /><circle cx="26.5" cy="10" r="2.6" fill="#f2b544" /></svg>
-            </span>
-            <span><strong>Rationale</strong><small>{t.brandTagline}</small></span>
+            <RMark size={28} />
+            <span class="l-brand-text"><strong>Rationale</strong><small>{t.brandTagline}</small></span>
           </a>
 
           <nav class="l-nav" aria-label={isSpanish ? "Secciones de la página" : "Page sections"}>
@@ -165,173 +97,97 @@ const tickerEvents = [
           </nav>
 
           <div class="l-actions">
-            <a class="l-icon-button" href={repo} target="_blank" rel="noreferrer" aria-label={isSpanish ? "Rationale en GitHub" : "Rationale on GitHub"}><span>{t.githubStar}</span><span aria-hidden="true">★</span><span data-github-stars>{githubStarsFallback}</span></a>
-            <a class="l-icon-button" href={alternateHome} aria-label={t.languageLabel}>{alternateLabel}</a>
-            <button class="l-icon-button" type="button" data-theme-toggle aria-label={t.themeLight} aria-pressed="true"><span aria-hidden="true" data-theme-icon>☼</span></button>
+            <a class="l-action" href={repo} target="_blank" rel="noreferrer" aria-label={t.githubLabel}>
+              <span class="l-action-label">GitHub</span>
+              <Icon name="star" />
+              <span class="l-stars" data-github-stars hidden></span>
+            </a>
+            <a class="l-action" href={alternateHome} hreflang={isSpanish ? "en" : "es"} aria-label={t.languageLabel}>{alternateLabel}</a>
+            <button class="l-action" type="button" data-theme-toggle aria-label={t.themeLabel} aria-pressed="true">
+              <Icon name="sun" class="theme-to-light" />
+              <Icon name="moon" class="theme-to-dark" />
+            </button>
           </div>
         </div>
       </header>
 
       <main id="main">
-        <!-- HERO -->
         <section class="l-container l-hero" aria-labelledby="hero-title">
           <div>
-            <p class="l-badge"><strong><i class="l-pulse" aria-hidden="true"></i>{t.heroBadge}</strong><span>{t.heroBadgeNote}</span></p>
-            <h1 id="hero-title" class="l-title"><span>{t.heroTitleA}</span><span class="l-gradient">{t.heroTitleB}</span></h1>
+            <h1 id="hero-title" class="l-h1"><span>{t.heroTitleA}</span><span class="l-h1-accent">{t.heroTitleB}</span></h1>
             <p class="l-hero-body">{t.heroBody}</p>
             <div class="l-hero-cta">
-              <a class="l-btn l-btn-primary" href="#install"><span>{t.installCta}</span><span aria-hidden="true">↗</span></a>
-              <a class="l-btn l-btn-ghost" href="#quick-start"><span>{t.quickstartCta}</span><span aria-hidden="true">→</span></a>
+              <a class="l-btn l-btn-primary" href="#install">{t.installCta}</a>
+              <a class="l-btn" href="#quick-start">{t.quickstartCta}</a>
             </div>
             <div class="l-command l-hero-command">
               <pre>{installCommand}</pre>
               <button type="button" data-copy-value={installCommand}><span data-copy-status>{t.installCopy}</span></button>
             </div>
-            <p class="l-state-line">{t.stateLine}</p>
+            <p class="l-hero-meta">{t.heroMeta}</p>
           </div>
-
-          <figure class="l-screen" aria-label={t.heroVisualLabel}>
-            <div class="l-screen-bar">
-              <span class="l-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span>rationale ui · {t.hudIllustrative}</span>
-              <span class="l-live">{t.roomLive}</span>
-            </div>
-            <svg class="l-graph" viewBox="0 0 600 530" role="img" aria-label={t.heroVisualLabel}>
-              <defs>
-                <filter id="l-glow" x="-100%" y="-100%" width="300%" height="300%">
-                  <feGaussianBlur stdDeviation="4" result="blur" />
-                  <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                </filter>
-                <radialGradient id="l-core" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stop-color="#ffffff" />
-                  <stop offset="55%" stop-color="#bfe6ff" />
-                  <stop offset="100%" stop-color="#7cc8ff" />
-                </radialGradient>
-              </defs>
-              <g class="orbit" fill="none" stroke="#1c2738" stroke-width="1">
-                <circle cx={center.x} cy={center.y} r="150" stroke-dasharray="2 10" />
-                <circle cx={center.x} cy={center.y} r="232" stroke-dasharray="1 14" />
-              </g>
-              {contextDots.map(([x, y]) => (
-                <path class="edge" d={curve(center.x, center.y, x, y, 0.08)} stroke={stateStroke.unknown.color} stroke-width="1" stroke-dasharray="1 7" opacity="0.5" />
-              ))}
-              {heroNodes.map((node) => {
-                const style = stateStroke[node.state];
-                return (
-                  <path
-                    class:list={["edge", style.flow]}
-                    d={curve(center.x, center.y, node.x, node.y)}
-                    stroke={style.color}
-                    stroke-width={style.width}
-                    stroke-dasharray={style.dash}
-                    opacity={node.state === "explained" ? 0.95 : 0.75}
-                  />
-                );
-              })}
-              {contextDots.map(([x, y]) => (
-                <circle cx={x} cy={y} r="2.4" fill={roleColor.context} opacity="0.7" />
-              ))}
-              {heroNodes.map((node) => (
-                <g>
-                  {node.pinned && <circle class="halo" cx={node.x} cy={node.y} r="14" fill="none" stroke="#f2b544" stroke-width="1.5" />}
-                  {node.state === "explained" && <circle cx={node.x} cy={node.y} r="14" fill="none" stroke="#f2b544" stroke-width="1.4" opacity="0.9" />}
-                  <circle class="node-core" cx={node.x} cy={node.y} r="7" fill={roleColor[node.role]} />
-                  <text x={node.x + (node.x < center.x ? -14 : 14)} y={node.y + 4} text-anchor={node.x < center.x ? "end" : "start"}>{node.label}</text>
-                </g>
-              ))}
-              <circle class="halo" cx={center.x} cy={center.y} r="16" fill="none" stroke="#7cc8ff" stroke-width="1.5" />
-              <circle cx={center.x} cy={center.y} r="26" fill="none" stroke="#7cc8ff" stroke-opacity="0.25" />
-              <circle class="node-core" cx={center.x} cy={center.y} r="13" fill="url(#l-core)" />
-              <text class="label-strong" x={center.x} y={center.y + 38} text-anchor="middle">charge</text>
-            </svg>
-            <div class="l-screen-huds">
-              <div class="l-hud">
-                <div class="l-hud-head"><span>{t.hudTitle}</span><span>op_7f3c…</span></div>
-                <div class="l-hud-row"><span>target</span><b>{t.hudTarget}</b></div>
-                <div class="l-hud-row"><span>{t.hudConstraint}</span><b>payments-idempotent</b></div>
-                <div class="l-hud-row"><span>{t.hudDecision}</span><b>retry-budget-three</b></div>
-                <div class="l-hud-row"><span>{t.hudRelationship}</span><b>→ bank_client · observed</b></div>
-                <div class="l-hud-row"><span>{t.hudBudget}</span><b>12/52 · ~1.7k tok</b></div>
-              </div>
-              <div class="l-hud l-hud-causal">
-                <div class="l-hud-head"><span>finalize_change</span><span>✓</span></div>
-                <div class="l-hud-row"><span>committed</span><b>1</b></div>
-                <div class="l-hud-row"><span>discarded</span><b>1 · transient</b></div>
-                <div class="l-hud-row"><span>conflicts</span><b>0</b></div>
-                <div class="l-hud-row"><span>provenance</span><b>agent_asserted</b></div>
-                <div class="l-hud-row"><span>{t.hudCaptured}</span><b>retry-budget-three</b></div>
-              </div>
-            </div>
-            <figcaption class="l-screen-foot">
-              {["caller", "callee", "dependency", "test"].map((role) => (
-                <span class="l-legend"><i style={`background:${roleColor[role]}`}></i>{role}</span>
-              ))}
-              <span class="l-legend"><i style="background:#f2b544"></i>{isSpanish ? "explicado por el canon" : "explained by the canon"}</span>
-            </figcaption>
-          </figure>
-        </section>
-
-        <!-- METRICS -->
-        <section class="l-container" aria-label={isSpanish ? "Rationale en cifras" : "Rationale at a glance"}>
-          <div class="l-metrics">
-            {t.metrics.map((metric) => (
-              <div class="l-metric"><strong>{metric.value}</strong><span>{metric.label}</span></div>
-            ))}
+          <div class="l-hero-figure">
+            <LoopDiagram lang={lang} />
           </div>
         </section>
 
-        <!-- PROBLEM -->
-        <section id="problem" class="l-container l-section" aria-labelledby="problem-title">
-          <div class="l-split">
+        <section id="problem" class="l-section" aria-labelledby="problem-title">
+          <div class="l-container l-split">
             <div>
-              <p class="l-eyebrow">{t.problemEyebrow}</p>
               <h2 id="problem-title" class="l-h2">{t.problemTitle}</h2>
+              <p class="l-lede">{t.problemBody}</p>
             </div>
-            <div class="l-card l-quote-card">
-              <div class="l-chat">
-                <p class="l-bubble l-bubble-fade"><small>{isSpanish ? "lunes · tú" : "monday · you"}</small>{t.problemQuote}</p>
-                <p class="l-bubble l-bubble-forgot"><small>{isSpanish ? "jueves · agente nuevo" : "thursday · fresh agent"}</small><s>if payment.reached_bank {"{"} return {"}"}</s> — {isSpanish ? "limpieza" : "cleanup"}</p>
+            <div>
+              <div class="l-transcript">
+                <div class="l-transcript-row">
+                  <span class="l-transcript-who">{t.problemMonday}</span>
+                  <p class="l-transcript-said">{t.problemQuote}</p>
+                </div>
+                <div class="l-transcript-row">
+                  <span class="l-transcript-who">{t.problemThursday}</span>
+                  <div class="l-diff">
+                    <span class="l-diff-msg">{t.problemCommit}</span>
+                    <del>- if payment.reached_bank {"{"} return {"}"}</del>
+                  </div>
+                </div>
               </div>
-              <p class="mt-5 text-[var(--muted-strong)]">{t.problemBody}</p>
               <p class="l-answer">{t.problemAnswer}</p>
             </div>
           </div>
         </section>
 
-        <div class="l-container"><div class="l-divider"></div></div>
-
-        <!-- LOOP -->
-        <section id="loop" class="l-container l-section" aria-labelledby="loop-title">
-          <div class="l-section-head">
-            <p class="l-eyebrow">{t.loopEyebrow}</p>
-            <h2 id="loop-title" class="l-h2">{t.loopTitle}</h2>
-            <p class="l-lede">{t.loopBody}</p>
+        <section id="loop" class="l-section" aria-labelledby="loop-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="loop-title" class="l-h2">{t.loopTitle}</h2>
+              <p class="l-lede">{t.loopBody}</p>
+            </div>
+            <ol class="l-ledger">
+              {t.loopSteps.map((step, index) => (
+                <li class:list={[{ "is-human": index === t.loopSteps.length - 1 }]}>
+                  <span class="l-ledger-num">{String(index + 1).padStart(2, "0")}</span>
+                  <div class="l-ledger-name">
+                    <h3>{step.title}</h3>
+                    {step.code ? <code>{step.tool}</code> : <span class="l-ledger-tool">{step.tool}</span>}
+                  </div>
+                  <p>{step.body}</p>
+                </li>
+              ))}
+            </ol>
           </div>
-          <ol class="l-loop">
-            {t.loopSteps.map((step, index) => (
-              <li class:list={["l-card l-card-glow l-step", { "l-step-human": index === t.loopSteps.length - 1 }]}>
-                <span class="l-step-index">{String(index + 1).padStart(2, "0")}</span>
-                <h3>{step.title}</h3>
-                <span class="l-mono">{step.tool}</span>
-                <p>{step.body}</p>
-              </li>
-            ))}
-          </ol>
         </section>
 
-        <!-- PACKET -->
-        <section class="l-container l-section" aria-labelledby="packet-title">
-          <div class="l-split">
+        <section id="packet" class="l-section" aria-labelledby="packet-title">
+          <div class="l-container l-split">
             <div>
-              <p class="l-eyebrow">{t.packetEyebrow}</p>
               <h2 id="packet-title" class="l-h2">{t.packetTitle}</h2>
               <p class="l-lede">{t.packetBody}</p>
               <ul class="l-points">
                 {t.packetPoints.map((point) => <li>{point}</li>)}
               </ul>
             </div>
-            <div class="l-card l-packet">
-              <div class="l-packet-bar"><span>{t.packetFile}</span><span class="l-tag">{t.hudIllustrative}</span></div>
+            <figure class="l-code">
+              <figcaption class="l-code-bar"><b>{t.packetFile}</b><span>{t.packetNote}</span></figcaption>
 <pre class="l-json"><span class="m">{"{"}</span>
   <span class="k">"operation_id"</span>: <span class="s">"op_7f3c…"</span>,
   <span class="k">"critical_constraints"</span>: [{"{"}
@@ -347,281 +203,237 @@ const tickerEvents = [
     {"{"} <span class="k">"edge"</span>: <span class="s">"retry_worker → charge"</span>, <span class="k">"state"</span>: <span class="w">"indirect"</span> {"}"}
   ],
   <span class="k">"structure"</span>: {"{"} <span class="k">"nodes"</span>: <span class="s">"12 / 52"</span>, <span class="k">"edges"</span>: <span class="s">"11 / 51"</span> {"}"},
-  <span class="k">"estimated_tokens"</span>: <span class="m">1707</span>, <span class="m">// ≤ 2400</span>
+  <span class="k">"estimated_tokens"</span>: <span class="s">1707</span>, <span class="m">// ≤ 2400</span>
   <span class="k">"known_unknowns"</span>: [<span class="s">"refunds → charge: orphaned"</span>]
 <span class="m">{"}"}</span></pre>
-            </div>
-          </div>
-        </section>
-
-        <div class="l-container"><div class="l-divider"></div></div>
-
-        <!-- CONTROL ROOM -->
-        <section id="control-room" class="l-container l-section" aria-labelledby="room-title">
-          <div class="l-section-head">
-            <p class="l-eyebrow">{t.roomEyebrow}</p>
-            <h2 id="room-title" class="l-h2">{t.roomTitle}</h2>
-            <p class="l-lede">{inline(t.roomBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
-          </div>
-          <div class="l-room">
-            <figure class="l-screen" aria-label={t.heroVisualLabel}>
-              <div class="l-app-top">
-                <b>RATIONALE</b>
-                <span class="l-app-tabs">{t.roomTabs.map((tab, index) => <span class:list={[{ on: index === 0 }]}>{tab}</span>)}</span>
-                <span class="l-live">{t.roomLive}</span>
-              </div>
-              <div class="l-app-body">
-                <div class="l-app-graph">
-                  <svg class="l-graph" viewBox="0 0 430 280" role="img" aria-label={t.heroVisualLabel}>
-                    {roomNodes.filter((node) => node.edge).map((node) => (
-                      <path class:list={["edge", node.explained ? "flow" : "flow-slow"]} d={curve(roomCenter.x, roomCenter.y, node.x, node.y, 0.1)} stroke={node.explained ? "#f2b544" : "#27a693"} stroke-width={node.explained ? 1.8 : 0.9} opacity={node.explained ? 0.95 : 0.55} />
-                    ))}
-                    {roomNodes.map((node) => (
-                      <g>
-                        {node.explained && <circle class="halo" cx={node.x} cy={node.y} r="7" fill="none" stroke="#f2b544" stroke-width="1.2" />}
-                        <circle class="node-core" cx={node.x} cy={node.y} r={node.r} fill={roleColor[node.role]} opacity="0.92" />
-                      </g>
-                    ))}
-                    <circle class="halo" cx={roomCenter.x} cy={roomCenter.y} r="11" fill="none" stroke="#7cc8ff" stroke-width="1.2" />
-                    <circle class="node-core" cx={roomCenter.x} cy={roomCenter.y} r="8" fill="url(#l-core)" />
-                  </svg>
-                </div>
-                <div class="l-app-panel">
-                  <span class="eyebrowish">{t.roomOperation}</span>
-                  <h4>{t.roomIntent}</h4>
-                  <span style="color:#5d697a">src.payments.retry.charge</span>
-                  <div class="l-app-stats">
-                    <div><span>{t.roomNodes}</span><strong>12</strong><em>{t.roomOf} 52</em></div>
-                    <div><span>{t.roomRelations}</span><strong>11</strong><em>{t.roomOf} 51</em></div>
-                    <div><span>{t.roomRecords}</span><strong>2</strong><em>{t.roomOf} 15</em></div>
-                    <div><span>{t.roomPacket}</span><strong>6.8 KB</strong><em>~1.7k tokens</em></div>
-                  </div>
-                </div>
-              </div>
-              <div class="l-ticker" aria-hidden="true">
-                <div class="l-ticker-track">
-                  {[...tickerEvents, ...tickerEvents].map(([kind, klass, detail]) => (
-                    <span><b class={klass}>{kind}</b> {detail}</span>
-                  ))}
-                </div>
-              </div>
             </figure>
-            <div class="l-features">
+          </div>
+        </section>
+
+        <section id="control-room" class="l-section" aria-labelledby="room-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="room-title" class="l-h2">{t.roomTitle}</h2>
+              <p class="l-lede">{inline(t.roomBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+            </div>
+            <div class="l-room-figure">
+              <SubgraphDiagram lang={lang} />
+            </div>
+            <dl class="l-defs l-defs-2">
               {t.roomFeatures.map((feature) => (
-                <article class="l-card l-card-glow l-feature"><h3>{feature.title}</h3><p>{feature.body}</p></article>
+                <div><dt>{feature.title}</dt><dd>{feature.body}</dd></div>
               ))}
-              <p class="l-safety"><span aria-hidden="true">◎</span>{t.roomSafety}</p>
-              <a class="l-btn l-btn-ghost" href={docs.controlRoom}><span>Control Room docs</span><span aria-hidden="true">→</span></a>
+            </dl>
+            <p class="l-after"><span>{t.roomSafety}</span><a class="l-link" href={docs.controlRoom}>{t.roomDocs}</a></p>
+          </div>
+        </section>
+
+        <section id="memory" class="l-section" aria-labelledby="memory-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="memory-title" class="l-h2">{t.memoryTitle}</h2>
+              <p class="l-lede">{t.memoryBody}</p>
+            </div>
+            <div class="l-memory">
+              <dl class="l-defs">
+                {t.memoryTerms.map((item) => (
+                  <div>
+                    <dt><span>{item.title}</span><code class:list={[{ "is-causal": item.term === "pinned" }]}>{item.term}</code></dt>
+                    <dd>{item.body}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div class="l-terminal">
+                <div class="l-terminal-lines">
+                  <div class="l-terminal-line"><span><span class="prompt">$</span> rationale pin constraint.payments-idempotent</span><span class="cmt">{t.commentPin}</span></div>
+                  <div class="l-terminal-line"><span><span class="prompt">$</span> rationale conflicts</span><span class="cmt">{t.commentConflicts}</span></div>
+                  <div class="l-terminal-line"><span><span class="prompt">$</span> rationale resolve <span class="amber">conflict_…</span> keep-pinned</span><span class="cmt">{t.commentResolve}</span></div>
+                </div>
+                <p class="l-terminal-note">{t.memoryTerminalNote}</p>
+              </div>
             </div>
           </div>
         </section>
 
-        <!-- MEMORY & AUTHORITY -->
-        <section id="memory" class="l-container l-section" aria-labelledby="memory-title">
-          <div class="l-section-head">
-            <p class="l-eyebrow">{t.memoryEyebrow}</p>
-            <h2 id="memory-title" class="l-h2">{t.memoryTitle}</h2>
-            <p class="l-lede">{t.memoryBody}</p>
-          </div>
-          <div class="l-grid-3">
-            {t.memoryCards.map((card, index) => (
-              <article class="l-card l-card-glow l-memory-card">
-                <span class:list={["l-tag", index === 1 ? "l-tag-causal" : "l-tag-signal"]}>{card.tag}</span>
-                <h3>{card.title}</h3>
-                <p>{card.body}</p>
-              </article>
-            ))}
-          </div>
-          <div class="l-card l-terminal">
-            <div class="l-terminal-lines">
-              <div class="l-terminal-line"><span><span class="prompt">$</span> rationale pin constraint.payments-idempotent</span><span class="cmt">{t.commentPin}</span></div>
-              <div class="l-terminal-line"><span><span class="prompt">$</span> rationale conflicts</span><span class="cmt">{t.commentConflicts}</span></div>
-              <div class="l-terminal-line"><span><span class="prompt">$</span> rationale resolve <span class="amber">conflict_…</span> keep-pinned</span><span class="cmt">{t.commentResolve}</span></div>
-            </div>
-            <p class="l-terminal-note">{t.memoryTerminalNote}</p>
-          </div>
-        </section>
-
-        <!-- RELATIONSHIP WHY -->
-        <section class="l-container l-section" aria-labelledby="edges-title">
-          <div class="l-split">
+        <section id="relationships" class="l-section" aria-labelledby="edges-title">
+          <div class="l-container l-split">
             <div>
-              <p class="l-eyebrow">{t.edgesEyebrow}</p>
               <h2 id="edges-title" class="l-h2">{t.edgesTitle}</h2>
               <p class="l-lede">{t.edgesBody}</p>
             </div>
-            <div class="l-states">
-              {t.edgeStates.map((item) => {
-                const sample = edgeSamples[item.state];
-                return (
-                  <article class="l-card l-state">
-                    <svg viewBox="0 0 88 26" aria-hidden="true">
-                      <circle cx="6" cy="13" r="4" fill="#58a6ff" />
-                      <line x1="12" y1="13" x2="76" y2="13" stroke={sample.color} stroke-width="2" stroke-dasharray={sample.dash} stroke-linecap="round" />
-                      <circle cx="82" cy="13" r="4" fill="#3dd6c6" />
-                    </svg>
-                    <div><strong style={`color:${sample.color}`}>{item.state}</strong><p>{item.body}</p></div>
-                  </article>
-                );
-              })}
+            <div class="l-table-wrap">
+              <table class="l-states">
+                <thead>
+                  <tr>
+                    <th scope="col">{t.edgesStateHead}</th>
+                    <th scope="col"><span class="sr-only">{t.edgesSampleHead}</span></th>
+                    <th scope="col">{t.edgesMeaningHead}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {t.edgeStates.map((item) => (
+                    <tr>
+                      <th scope="row"><code>{item.state}</code></th>
+                      <td class="l-state-sample"><svg viewBox="0 0 88 12" aria-hidden="true"><line class={`l-state-line is-${item.state}`} x1="2" y1="6" x2="86" y2="6" /></svg></td>
+                      <td>{item.body}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </section>
 
-        <div class="l-container"><div class="l-divider"></div></div>
-
-        <!-- THREE SYSTEMS -->
-        <section id="proof" class="l-container l-section" aria-labelledby="systems-title">
-          <div class="l-section-head">
-            <p class="l-eyebrow">{t.systemsEyebrow}</p>
-            <h2 id="systems-title" class="l-h2">{t.systemsTitle}</h2>
-          </div>
-          <div class="l-systems">
-            <article class="l-card l-system"><p class="l-mono">01 / WHAT</p><h3>Git</h3><p>{t.gitQuestion}</p></article>
-            <article class="l-card l-system"><p class="l-mono">02 / WHERE</p><h3><a class="hover:text-[var(--signal)]" href={codebaseMemoryUrl} target="_blank" rel="noreferrer">Codebase Memory ↗</a></h3><p>{t.memoryQuestion}</p></article>
-            <article class="l-card l-system l-system-why"><p class="l-mono">03 / WHY</p><h3>Rationale</h3><p>{t.rationaleQuestion}</p></article>
+        <section id="architecture" class="l-section" aria-labelledby="systems-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="systems-title" class="l-h2">{t.systemsTitle}</h2>
+              <p class="l-lede">{t.systemsBody}</p>
+            </div>
+            <ArchitectureDiagram lang={lang} />
+            <p class="l-after"><span></span><a class="l-link" href={docs.architecture}>{t.systemsDocs}</a></p>
           </div>
         </section>
 
-        <!-- AGENTS / QUICK START -->
-        <section id="quick-start" class="l-container l-section" aria-labelledby="quick-start-title">
-          <div class="l-section-head">
-            <p class="l-eyebrow">{t.agentsEyebrow}</p>
-            <h2 id="quick-start-title" class="l-h2">{t.agentsTitle}</h2>
-            <p class="l-lede">{inline(t.agentsBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
-          </div>
-          <div class="l-agents">
-            <article class="l-card l-card-glow l-agent">
-              <div class="l-agent-head">
-                <div><p>Claude Code</p><h3>{t.claudeTitle}</h3></div>
-                <span class="l-tag l-tag-signal">6 skills</span>
-              </div>
-              <div class="l-skill-list">
-                <code class="hi">/rationale-preflight &lt;target&gt; &lt;intent&gt;</code>
-                <code>/rationale-explain &lt;target&gt;</code>
-                <code>/rationale-capture [statement]</code>
-                <code class="human">/rationale-conflicts</code>
-                <code>/rationale-health</code>
-                <code>/rationale-protocol</code>
-              </div>
-              <p class="l-agent-note l-agent-note-spaced">{inline(t.claudeNote).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
-            </article>
-            <article class="l-card l-card-glow l-agent">
-              <div class="l-agent-head">
-                <div><p>Codex</p><h3>{t.codexTitle}</h3></div>
-                <span class="l-tag l-tag-signal">MCP</span>
-              </div>
-              <div class="l-phrases">
-                <p class="hi">“{inline(t.codexPrepare).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}”</p>
-                <p>“{inline(t.codexExplain).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}”</p>
-                <p>“{inline(t.codexCapture).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}”</p>
-                <p>“{inline(t.codexHealth).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}”</p>
-              </div>
-              <p class="l-agent-note l-agent-note-spaced">{inline(t.codexNote).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
-            </article>
-            <article class="l-card l-card-glow l-agent">
-              <div class="l-agent-head">
-                <div><p>Cursor</p><h3>{t.cursorTitle}</h3></div>
-                <span class="l-tag l-tag-signal">rule</span>
-              </div>
-              <p class="l-agent-note" style="margin-top:1rem">{inline(t.cursorBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
-              <a class="l-btn l-btn-ghost" style="margin-top:1.4rem;align-self:flex-start" href={docs.agents}><span>{t.agentsDocs}</span></a>
-            </article>
-          </div>
-        </section>
-
-        <div class="l-container"><div class="l-divider"></div></div>
-
-        <!-- TRUST -->
-        <section class="l-container l-section" aria-labelledby="trust-title">
-          <div class="l-section-head">
-            <p class="l-eyebrow">{t.trustEyebrow}</p>
-            <h2 id="trust-title" class="l-h2">{t.trustTitle}</h2>
-          </div>
-          <div class="l-trust">
-            {t.trustItems.map((item, index) => (
-              <article class="l-trust-item">
-                <span class="l-trust-icon" aria-hidden="true">{["⎇", "⌂", "◎", "⇄"][index]}</span>
-                <h3>{item.title}</h3>
-                <p>{inline(item.body).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+        <section id="quick-start" class="l-section" aria-labelledby="quick-start-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="quick-start-title" class="l-h2">{t.agentsTitle}</h2>
+              <p class="l-lede">{inline(t.agentsBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+            </div>
+            <div class="l-agents">
+              <article class="l-agent">
+                <p class="l-agent-name">Claude Code</p>
+                <h3>{t.claudeTitle}</h3>
+                <ul class="l-skill-list">
+                  <li><code>/rationale-preflight &lt;target&gt; &lt;intent&gt;</code></li>
+                  <li><code>/rationale-explain &lt;target&gt;</code></li>
+                  <li><code>/rationale-capture [statement]</code></li>
+                  <li><code class="is-human">/rationale-conflicts</code></li>
+                  <li><code>/rationale-health</code></li>
+                  <li><code>/rationale-protocol</code></li>
+                </ul>
+                <p class="l-agent-note">{inline(t.claudeNote).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
               </article>
-            ))}
+              <article class="l-agent">
+                <p class="l-agent-name">Codex</p>
+                <h3>{t.codexTitle}</h3>
+                <ul class="l-phrases">
+                  <li>“{inline(t.codexPrepare).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}”</li>
+                  <li>“{inline(t.codexExplain).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}”</li>
+                  <li>“{inline(t.codexCapture).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}”</li>
+                  <li>“{inline(t.codexHealth).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}”</li>
+                </ul>
+                <p class="l-agent-note">{inline(t.codexNote).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+              </article>
+              <article class="l-agent">
+                <p class="l-agent-name">Cursor</p>
+                <h3>{t.cursorTitle}</h3>
+                <p class="l-agent-body">{inline(t.cursorBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+                <p class="l-agent-note"><a class="l-link" href={docs.agents}>{t.agentsDocs}</a></p>
+              </article>
+            </div>
           </div>
         </section>
 
-        <!-- RELEASE -->
-        <section id="release" class="l-container l-section" aria-labelledby="release-title">
-          <div class="l-section-head">
-            <p class="l-eyebrow">{t.releaseEyebrow}</p>
-            <h2 id="release-title" class="l-h2">{t.releaseTitle}</h2>
-            <p class="l-lede">{t.releaseBody}</p>
-          </div>
-          <div class="l-release">
-            <article class="l-card l-release-card">
-              <span class="l-tag l-tag-signal">v1.0.0 · {t.releaseVerifiedLabel}</span>
-              <ul class="l-check-list">{t.releaseVerified.map((item) => <li>{item}</li>)}</ul>
-              <div class="l-release-links"><a href={docs.evidence}>{t.releaseEvidence}</a></div>
-            </article>
-            <article class="l-card l-release-card">
-              <span class="l-tag l-tag-causal">{t.releaseOpenLabel}</span>
-              <ul class="l-check-list l-open-list">{t.releaseOpen.map((item) => <li>{item}</li>)}</ul>
-              <div class="l-release-links"><a href={docs.limits}>{t.releaseLimits}</a></div>
-            </article>
+        <section id="trust" class="l-section" aria-labelledby="trust-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="trust-title" class="l-h2">{t.trustTitle}</h2>
+            </div>
+            <dl class="l-defs l-defs-2">
+              {t.trustItems.map((item) => (
+                <div>
+                  <dt>{item.title}</dt>
+                  <dd>{inline(item.body).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</dd>
+                </div>
+              ))}
+            </dl>
+            <p class="l-spec">{t.trustSpec}</p>
           </div>
         </section>
 
-        <!-- INSTALL -->
-        <section id="install" class="l-container l-section" aria-labelledby="install-title">
-          <div class="l-card l-install">
+        <section id="release" class="l-section" aria-labelledby="release-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="release-title" class="l-h2">{t.releaseTitle}</h2>
+              <p class="l-lede">{t.releaseBody}</p>
+            </div>
+            <div class="l-release">
+              <div>
+                <h3>{t.releaseVerifiedLabel}<small>v1.0.0</small></h3>
+                <ul class="l-checks">{t.releaseVerified.map((item) => <li>{item}</li>)}</ul>
+                <a class="l-link" href={docs.evidence}>{t.releaseEvidence}</a>
+              </div>
+              <div>
+                <h3>{t.releaseOpenLabel}</h3>
+                <ul class="l-checks l-checks-open">{t.releaseOpen.map((item) => <li>{item}</li>)}</ul>
+                <a class="l-link" href={docs.limits}>{t.releaseLimits}</a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="install" class="l-section" aria-labelledby="install-title">
+          <div class="l-container l-install">
             <div>
-              <p class="l-eyebrow">{t.installEyebrow}</p>
               <h2 id="install-title" class="l-h2">{t.installTitle}</h2>
               <p class="l-lede">{inline(t.installBody).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
             </div>
-            <div class="l-install-steps">
-              <div>
-                <p class="l-step-label">{t.installCompanion} · <a class="text-[var(--signal)] hover:underline" href={codebaseMemoryUrl} target="_blank" rel="noreferrer">Codebase Memory ↗</a></p>
+            <ol class="l-steps">
+              <li>
+                <p class="l-step-label"><span class="l-step-num">1</span><span>{t.installCompanionA} <a class="l-link" href={codebaseMemoryUrl} target="_blank" rel="noreferrer">Codebase Memory</a>{t.installCompanionB}</span></p>
                 <div class="l-command"><pre>{codebaseMemoryCommand}</pre><button type="button" data-copy-value={codebaseMemoryCommand}><span data-copy-status>{t.installCopy}</span></button></div>
-              </div>
-              <div>
-                <p class="l-step-label">{t.installStep1}</p>
+              </li>
+              <li>
+                <p class="l-step-label"><span class="l-step-num">2</span><span>{t.installStep1}</span></p>
                 <div class="l-command"><pre>{installCommand}</pre><button type="button" data-copy-value={installCommand}><span data-copy-status>{t.installCopy}</span></button></div>
-              </div>
-              <div>
-                <p class="l-step-label">{t.installStep2}</p>
+              </li>
+              <li>
+                <p class="l-step-label"><span class="l-step-num">3</span><span>{t.installStep2}</span></p>
                 <div class="l-command"><pre>rationale init</pre><button type="button" data-copy-value="rationale init"><span data-copy-status>{t.installCopy}</span></button></div>
-              </div>
-              <div>
-                <p class="l-step-label">{t.installStep3}</p>
+              </li>
+              <li>
+                <p class="l-step-label"><span class="l-step-num">4</span><span>{t.installStep3}</span></p>
                 <div class="l-command"><pre>rationale ui</pre><button type="button" data-copy-value="rationale ui"><span data-copy-status>{t.installCopy}</span></button></div>
-              </div>
-              <p class="l-install-note">{inline(t.installRestart).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
-              <p class="l-install-note"><a href={docs.quickstart}>{t.installWindows}</a></p>
-            </div>
+              </li>
+              <li>
+                <p class="l-install-note">{inline(t.installRestart).map((seg) => (seg.code ? <code>{seg.part}</code> : seg.part))}</p>
+                <p class="l-install-note"><a class="l-link" href={docs.quickstart}>{t.installWindows}</a></p>
+              </li>
+            </ol>
           </div>
         </section>
 
-        <!-- DOCS -->
-        <section id="documentation" class="l-container l-section" aria-labelledby="docs-title">
-          <div class="l-section-head">
-            <p class="l-eyebrow">{t.docsEyebrow}</p>
-            <h2 id="docs-title" class="l-h2">{t.docsTitle}</h2>
-          </div>
-          <div class="l-docs">
-            {t.docsCards.map((card) => (
-              <a class="l-card l-card-glow l-doc" href={`${docsBase}${card.slug}`}>
-                <span>{card.label}</span>
-                <strong>{card.title} <span aria-hidden="true">↗</span></strong>
-                <small>{card.body}</small>
-              </a>
-            ))}
+        <section id="documentation" class="l-section" aria-labelledby="docs-title">
+          <div class="l-container">
+            <div class="l-section-head">
+              <h2 id="docs-title" class="l-h2">{t.docsTitle}</h2>
+            </div>
+            <div class="l-docs">
+              {t.docsCards.map((card) => (
+                <a class="l-doc" href={`${docsBase}${card.slug}`}>
+                  <strong>{card.title}</strong>
+                  <small>{card.body}</small>
+                </a>
+              ))}
+            </div>
           </div>
         </section>
       </main>
 
-      <footer class="l-container l-footer">
-        <div><p class="font-semibold text-[var(--ink)]">{t.footerLine}</p><p class="mt-1 font-mono text-[0.7rem]">{t.footerStatus}</p></div>
-        <nav aria-label={isSpanish ? "Navegación del pie" : "Footer navigation"}><a href={docs.root}>{t.footerDocs}</a><a href={repo} target="_blank" rel="noreferrer">{t.footerGithub}</a><span>{t.footerLicense}</span></nav>
+      <footer class="l-footer">
+        <div class="l-container l-footer-inner">
+          <div class="l-footer-brand">
+            <RMark size={24} />
+            <div><p>{t.footerLine}</p><p>{t.footerStatus}</p></div>
+          </div>
+          <nav aria-label={isSpanish ? "Navegación del pie" : "Footer navigation"}>
+            <a href={docs.root}>{t.footerDocs}</a>
+            <a href={repo} target="_blank" rel="noreferrer">{t.footerGithub}</a>
+            <span>{t.footerLicense}</span>
+          </nav>
+        </div>
       </footer>
     </div>
 

@@ -7,12 +7,12 @@ function boot() {
     ? {
         copied: "Copiado",
         copyFailed: "Selecciona y copia",
-        copyCommand: "Copiar comando",
+        copyCommand: "Copiar",
       }
     : {
         copied: "Copied",
         copyFailed: "Select and copy",
-        copyCommand: "Copy command",
+        copyCommand: "Copy",
       };
 
   let savedTheme = null;
@@ -22,22 +22,17 @@ function boot() {
     // Sin almacenamiento, el tema por defecto sigue siendo válido.
   }
 
+  // El botón tiene una etiqueta fija ("Tema oscuro") y aria-pressed dice si
+  // está activo; el icono visible lo resuelve el CSS según data-theme.
   function setTheme(theme) {
-    const selected = theme === "dark" ? "dark" : "light";
+    const selected = theme === "light" ? "light" : "dark";
     root.dataset.theme = selected;
     try {
       window.localStorage.setItem("rationale-theme", selected);
     } catch {
       // El tema aplica igual aunque no se pueda recordar.
     }
-    if (themeToggle) {
-      const label = selected === "dark"
-        ? (root.lang === "es" ? "Modo claro" : "Light mode")
-        : (root.lang === "es" ? "Modo oscuro" : "Dark mode");
-      themeToggle.setAttribute("aria-label", label);
-      themeToggle.setAttribute("aria-pressed", String(selected === "dark"));
-      themeToggle.querySelector("[data-theme-icon]").textContent = selected === "dark" ? "☼" : "◐";
-    }
+    themeToggle?.setAttribute("aria-pressed", String(selected === "dark"));
   }
 
   // Oscuro por defecto, como el Control Room; el toggle recuerda la elección.
@@ -61,6 +56,12 @@ function boot() {
     });
   });
 
+  // El contador solo aparece con un valor real: nunca se muestra un 0 inventado.
+  function showStars(count) {
+    githubStars.textContent = String(count);
+    githubStars.hidden = false;
+  }
+
   async function loadGithubStars() {
     if (!githubStars) return;
     const cacheKey = "rationale-github-stars";
@@ -68,7 +69,7 @@ function boot() {
     try {
       const cached = JSON.parse(window.localStorage.getItem(cacheKey) || "null");
       if (cached && Date.now() - cached.fetchedAt < cacheTtlMs && Number.isFinite(cached.count)) {
-        githubStars.textContent = String(cached.count);
+        showStars(cached.count);
       }
     } catch {
       // A blocked or malformed localStorage cache should not affect the landing.
@@ -82,14 +83,14 @@ function boot() {
       const payload = await response.json();
       if (!Number.isFinite(payload.stargazers_count)) return;
       const count = Number(payload.stargazers_count);
-      githubStars.textContent = String(count);
+      showStars(count);
       try {
         window.localStorage.setItem(cacheKey, JSON.stringify({ count, fetchedAt: Date.now() }));
       } catch {
         // The live value is still useful when browser storage is unavailable.
       }
     } catch {
-      // Keep the rendered fallback and the GitHub link when the API is down.
+      // Keep the GitHub link without a count when the API is down.
     }
   }
 

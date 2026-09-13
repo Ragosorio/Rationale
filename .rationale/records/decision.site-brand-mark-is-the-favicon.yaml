@@ -1,0 +1,41 @@
+id: decision.site-brand-mark-is-the-favicon
+kind: decision
+severity: low
+statement: 'Every brand mark on the site (landing header and footer, docs header) is the favicon drawing unchanged: a square frame with R/ in #f0f1ed on #101516, in both themes.'
+rationale: The owner asked that the site's SVG stay R/ like the icon, so the tab, header and footer carry one identity; a separate decorative mark (the previous orbit-and-dot glyph) read as a different product and as generic AI styling.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09a0add965166100e
+  session_id: session_1a099e9d9d97a4eac88
+  asserted_at: 2026-09-13T09:49:46Z
+approvals: []
+binding_declarations:
+- id: binding.decision.site-brand-mark-is-the-favicon.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/components/RMark.astro
+  provisional: true
+- id: binding.decision.site-brand-mark-is-the-favicon.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/public/favicon.svg
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 4be2ecd30e3fbdd6882b3ada494af1a0157d8249
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T09:49:46Z
+    operation_id: op_1a09a0add965166100e

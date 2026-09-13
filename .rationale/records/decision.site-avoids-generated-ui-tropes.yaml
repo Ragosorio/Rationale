@@ -1,0 +1,53 @@
+id: decision.site-avoids-generated-ui-tropes
+kind: decision
+severity: low
+statement: The site does not use eyebrow kickers above headings, gradient text, glow or zero-offset halo shadows, glass blur, colored side borders thicker than 1px, fake window chrome or tickers, identical icon card grids, hero metric strips, or unicode glyphs as icons; structure comes from hairline rules, 2px corners that echo the R/ frame, type weight and meaningful color.
+rationale: The owner asked that no page look AI-generated; these are the patterns the impeccable craft floor and detector flag as generated-UI tells, and the previous landing used most of them. The pass was verified with impeccable detect reporting 0 findings on site/src (7 before).
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09a0add965166100e
+  session_id: session_1a099e9d9d97a4eac88
+  asserted_at: 2026-09-13T09:49:46Z
+approvals: []
+binding_declarations:
+- id: binding.decision.site-avoids-generated-ui-tropes.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/styles/landing.css
+  provisional: true
+- id: binding.decision.site-avoids-generated-ui-tropes.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/styles/global.css
+  provisional: true
+- id: binding.decision.site-avoids-generated-ui-tropes.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/components/LandingPage.astro
+  provisional: true
+- id: binding.decision.site-avoids-generated-ui-tropes.3
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/layouts/DocsLayout.astro
+  provisional: true
+evidence: []
+risks: []
+bound_revision: 4be2ecd30e3fbdd6882b3ada494af1a0157d8249
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T09:49:46Z
+    operation_id: op_1a09a0add965166100e

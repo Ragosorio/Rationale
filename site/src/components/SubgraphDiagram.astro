@@ -1,0 +1,111 @@
+---
+interface Props {
+  lang: "en" | "es";
+}
+
+const { lang } = Astro.props;
+const es = lang === "es";
+
+type Role = "target" | "caller" | "callee" | "test";
+type Box = { x: number; y: number; w: number; h: number; role: Role; path: string; name: string; records: number };
+
+// Subgrafo real de `pipeline::prepare` según Codebase Memory (trace_path sobre
+// la revisión 4be2ecd). Los conteos de Records vienen de `explain_target` para
+// cada símbolo. Los colores de rol y de estado son los del Control Room: el
+// sitio enseña un solo lenguaje visual (decision.site-shares-control-room-dark-palette).
+const W = 900;
+const H = 448;
+
+const boxes: Box[] = [
+  { x: 40, y: 120, w: 224, h: 56, role: "caller", path: "src/main.rs", name: "cmd_prepare", records: 2 },
+  { x: 40, y: 200, w: 224, h: 56, role: "caller", path: "src/mcp/server.rs", name: "call_prepare_change", records: 3 },
+  { x: 40, y: 280, w: 224, h: 56, role: "test", path: "tests/cli.rs", name: "prepare_with_a_relative_…", records: 1 },
+  { x: 348, y: 140, w: 200, h: 176, role: "target", path: "src/pipeline.rs", name: "prepare", records: 1 },
+  { x: 636, y: 40, w: 224, h: 56, role: "callee", path: "src/binding_match.rs", name: "governing", records: 0 },
+  { x: 636, y: 120, w: 224, h: 56, role: "callee", path: "src/storage.rs", name: "list_records", records: 2 },
+  { x: 636, y: 200, w: 224, h: 56, role: "callee", path: "src/context.rs", name: "gather", records: 0 },
+  { x: 636, y: 280, w: 224, h: 56, role: "callee", path: "src/retrieval.rs", name: "compile", records: 0 },
+  { x: 636, y: 360, w: 224, h: 56, role: "callee", path: "src/operations.rs", name: "save", records: 0 },
+];
+
+// Conectores ortogonales con codos de r=8. Los canales verticales (x=300, 580,
+// 604) están separados para que ninguna arista pise a otra.
+const edges = [
+  "M264 148 H292 Q300 148 300 156 V176 Q300 184 308 184 H346.8",
+  "M264 228 H346.8",
+  "M264 308 H292 Q300 308 300 300 V280 Q300 272 308 272 H346.8",
+  "M548 168 H572 Q580 168 580 160 V76 Q580 68 588 68 H634.8",
+  "M548 200 H596 Q604 200 604 192 V156 Q604 148 612 148 H634.8",
+  "M548 228 H634.8",
+  "M548 256 H596 Q604 256 604 264 V300 Q604 308 612 308 H634.8",
+  "M548 288 H572 Q580 288 580 296 V380 Q580 388 588 388 H634.8",
+];
+
+const recordsLabel = (count: number) => `${count} record${count === 1 ? "" : "s"}`;
+const badgeWidth = (count: number) => Math.round(recordsLabel(count).length * 5.4 + 10);
+
+const copy = es
+  ? {
+      title: "Subgrafo de trabajo de pipeline::prepare",
+      desc: "pipeline::prepare en el propio código de Rationale: lo llaman la CLI, el servidor MCP y un test de la CLI; llama a binding_match::governing, storage::list_records, context::gather, retrieval::compile y operations::save. Las etiquetas ámbar cuentan los Records que gobiernan cada símbolo.",
+      calls: "92 llamadas salientes",
+      callers: "5 entrantes",
+      roles: { target: "target", caller: "caller", callee: "callee", test: "test" },
+      observed: "Arista observed",
+      records: "Records que la gobiernan",
+      source: "El propio pipeline::prepare de Rationale según Codebase Memory, revisión 4be2ecd: 3 de sus callers y 5 de sus 92 llamadas. Aquí se dibuja plano; el Control Room lo muestra en 3D.",
+    }
+  : {
+      title: "Working subgraph of pipeline::prepare",
+      desc: "pipeline::prepare in Rationale's own code: called by the CLI, the MCP server and a CLI test; it calls binding_match::governing, storage::list_records, context::gather, retrieval::compile and operations::save. Amber badges count the Records that govern each symbol.",
+      calls: "92 outgoing calls",
+      callers: "5 incoming",
+      roles: { target: "target", caller: "caller", callee: "callee", test: "test" },
+      observed: "Observed edge",
+      records: "Records that govern it",
+      source: "Rationale's own pipeline::prepare from Codebase Memory at revision 4be2ecd: 3 of its callers and 5 of its 92 calls. Drawn flat here; the Control Room renders it in 3D.",
+    };
+---
+
+<figure class="dg-figure dg-figure-wide">
+  <div class="dg-scroll">
+    <svg class="dg dg-subgraph" viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby="subgraph-title subgraph-desc">
+      <title id="subgraph-title">{copy.title}</title>
+      <desc id="subgraph-desc">{copy.desc}</desc>
+      <defs>
+        <marker id="subgraph-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="dg-head-observed" points="0 0, 8 3, 0 6" /></marker>
+      </defs>
+
+      {edges.map((d) => <path class="dg-edge dg-edge-observed" d={d} marker-end="url(#subgraph-arrow)" />)}
+
+      {boxes.map((box) => {
+        const target = box.role === "target";
+        return (
+          <g>
+            <rect class="dg-mask" x={box.x} y={box.y} width={box.w} height={box.h} rx="4" />
+            <rect class:list={["dg-node", { "dg-node-target": target }]} x={box.x} y={box.y} width={box.w} height={box.h} rx="4" />
+            <rect class={`dg-role-${box.role}`} x={box.x + 10} y={box.y + 11} width="8" height="8" rx="1" />
+            <text class="dg-path" x={box.x + 24} y={box.y + 18.5}>{box.path}</text>
+            {box.records > 0 && (
+              <g>
+                <rect class="dg-badge-box" x={box.x + box.w - 8 - badgeWidth(box.records)} y={box.y + 8} width={badgeWidth(box.records)} height="14" rx="2" />
+                <text class="dg-badge" x={box.x + box.w - 13} y={box.y + 18.5} text-anchor="end">{recordsLabel(box.records)}</text>
+              </g>
+            )}
+            <text class:list={["dg-code", { "dg-code-lg": target }]} x={box.x + 10} y={box.y + (target ? 52 : 41)}>{box.name}</text>
+            {target && <text class="dg-sub" x={box.x + 10} y={box.y + 144}>{copy.calls}</text>}
+            {target && <text class="dg-sub" x={box.x + 10} y={box.y + 162}>{copy.callers}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  </div>
+  <figcaption class="dg-caption">
+    {(["target", "caller", "callee", "test"] as const).map((role) => (
+      <span class="dg-key"><i class={`dg-swatch is-${role}`} aria-hidden="true"></i>{copy.roles[role]}</span>
+    ))}
+    <span class="dg-key"><svg viewBox="0 0 24 8" aria-hidden="true"><line class="dg-edge dg-edge-observed" x1="0" y1="4" x2="24" y2="4" /></svg>{copy.observed}</span>
+    <span class="dg-key"><i class="dg-swatch dg-swatch-focal" aria-hidden="true"></i>{copy.records}</span>
+    <span class="dg-source">{copy.source}</span>
+  </figcaption>
+</figure>

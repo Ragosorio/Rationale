@@ -39,9 +39,16 @@ subject: null
 schema_version: rationale/0.1
 project_id: rationale
 lifecycle:
-  status: active
+  status: superseded
   events:
   - type: asserted
     actor: agent:claude-code
     timestamp: 2026-09-13T07:24:23Z
     operation_id: op_1a099a6d58c9df48c14
+  - type: superseded
+    actor: agent:claude-code
+    reason: 'The site shows the product: the working-subgraph diagram, the relationship-state table and the loop use the same role, state and causal colors as rationale ui, so a visitor learns one visual language instead of two. The tokens live once in global.css with light and dark values, so docs, landing and SVG figures switch theme together without duplicated styles.'
+    replacement_id: decision.site-shares-control-room-palette-and-diagram-colors
+    timestamp: 2026-09-13T09:49:46Z
+applicability_policy:
+  superseded_by: decision.site-shares-control-room-palette-and-diagram-colors

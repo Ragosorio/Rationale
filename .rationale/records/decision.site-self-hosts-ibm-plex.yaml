@@ -1,0 +1,53 @@
+id: decision.site-self-hosts-ibm-plex
+kind: decision
+severity: low
+statement: The site uses IBM Plex Sans for text and IBM Plex Mono only for code, commands, paths and identifiers, both self-hosted through @fontsource packages; it loads no fonts from third-party CDNs.
+rationale: A local-first product that promises no telemetry should not make every visit call a font CDN, and the previous unloaded Inter stack fell back to the platform sans, which read as a generic template. Reserving mono for real code keeps it from becoming a 'technical' costume.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09a0add965166100e
+  session_id: session_1a099e9d9d97a4eac88
+  asserted_at: 2026-09-13T09:49:46Z
+approvals: []
+binding_declarations:
+- id: binding.decision.site-self-hosts-ibm-plex.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/components/LandingPage.astro
+  provisional: true
+- id: binding.decision.site-self-hosts-ibm-plex.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/layouts/DocsLayout.astro
+  provisional: true
+- id: binding.decision.site-self-hosts-ibm-plex.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/styles/global.css
+  provisional: true
+- id: binding.decision.site-self-hosts-ibm-plex.3
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/package.json
+  provisional: true
+evidence: []
+risks: []
+bound_revision: 4be2ecd30e3fbdd6882b3ada494af1a0157d8249
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T09:49:46Z
+    operation_id: op_1a09a0add965166100e

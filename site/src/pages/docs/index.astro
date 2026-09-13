@@ -17,7 +17,6 @@ const entries = (await getCollection("docs")).filter((entry) => entry.data.lang 
       <a class="docs-index-card" href={docHref("en", entry.data.slug)}>
         <span class="docs-index-number">{String(index + 1).padStart(2, "0")}</span>
         <span><strong>{entry.data.title}</strong><small>{entry.data.description}</small></span>
-        <span aria-hidden="true">↗</span>
       </a>
     ))}
   </div>

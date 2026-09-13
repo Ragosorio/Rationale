@@ -1,0 +1,41 @@
+id: decision.docs-code-blocks-follow-site-theme
+kind: decision
+severity: low
+statement: Markdown code blocks use Shiki dual themes (github-light and github-dark) with defaultColor false, so Shiki writes no inline background and the site CSS maps --shiki-light or --shiki-dark by data-theme.
+rationale: With Astro's default single theme Shiki inlines background-color:#24292e on every block, which overrides the site tokens and leaves dark GitHub blocks on the light theme. Removing the default color is what lets the block background come from --surface-inset and the syntax colors follow the chosen theme.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09a0add965166100e
+  session_id: session_1a099e9d9d97a4eac88
+  asserted_at: 2026-09-13T09:49:46Z
+approvals: []
+binding_declarations:
+- id: binding.decision.docs-code-blocks-follow-site-theme.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/astro.config.mjs
+  provisional: true
+- id: binding.decision.docs-code-blocks-follow-site-theme.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/styles/global.css
+  provisional: true
+evidence: []
+risks: []
+bound_revision: 4be2ecd30e3fbdd6882b3ada494af1a0157d8249
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T09:49:46Z
+    operation_id: op_1a09a0add965166100e
