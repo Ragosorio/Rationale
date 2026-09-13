@@ -330,7 +330,6 @@ fn order(events: &mut [ActivityEvent]) {
 
 /// Los `limit` eventos más recientes de todas las sesiones, en orden temporal.
 /// Una línea a medio escribir se ignora: no es JSON válido todavía.
-#[allow(dead_code)] // consumido por el backend de la UI (fase 7)
 pub fn read_recent(local_dir: &Path, limit: usize) -> Vec<ActivityEvent> {
     let mut events: Vec<ActivityEvent> = session_files(local_dir)
         .into_iter()
@@ -345,14 +344,12 @@ pub fn read_recent(local_dir: &Path, limit: usize) -> Vec<ActivityEvent> {
 /// Sigue el crecimiento de todas las sesiones: la base del stream en vivo de
 /// la UI. Solo entrega líneas completas; un final parcial espera al siguiente
 /// `poll`.
-#[allow(dead_code)] // consumido por el backend de la UI (fase 7)
 pub struct Tail {
     local_dir: PathBuf,
     offsets: HashMap<PathBuf, u64>,
     pending: HashMap<PathBuf, Vec<u8>>,
 }
 
-#[allow(dead_code)] // consumido por el backend de la UI (fase 7)
 impl Tail {
     /// Empieza después de lo ya escrito: el historial se pide a `read_recent`.
     pub fn from_end(local_dir: &Path) -> Self {

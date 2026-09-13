@@ -32,6 +32,7 @@ mod revision;
 mod signals;
 mod storage;
 mod subjects;
+mod ui;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -68,6 +69,7 @@ fn main() {
                 | "migrate"
                 | "conflicts"
                 | "resolve"
+                | "ui"
         )
     {
         print_command_help(command);
@@ -95,6 +97,7 @@ fn main() {
         "migrate" => cmd_migrate(command_args),
         "conflicts" => cmd_conflicts(command_args),
         "resolve" => cmd_resolve(command_args),
+        "ui" => cmd_ui(command_args),
         _ => {
             eprintln!("comando desconocido: {command}");
             print_usage();
@@ -105,7 +108,7 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "Uso: rationale <init|health|prepare|serve|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
+        "Uso: rationale <init|health|prepare|serve|ui|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
     );
     println!("  rationale --help");
     println!("  rationale --version");
@@ -116,6 +119,9 @@ fn print_usage() {
     );
     println!(
         "  rationale serve [--client <claude-code|codex|cursor>]   # servidor MCP (prepare_change, explain_target, health, finalize_change, resolve_conflict)"
+    );
+    println!(
+        "  rationale ui [--port <n>] [--no-open] [--project-root <path>]   # Control Room local en 127.0.0.1: grafo, memoria y actividad en vivo (solo lectura)"
     );
     println!(
         "  rationale pin <record-id> [--reason \"texto\"] [--project-root <path>]   # fija un Record: ningún agente lo reemplaza sin preguntarte"
@@ -163,6 +169,9 @@ fn print_command_help(command: &str) {
         ),
         "serve" => println!(
             "Uso: rationale serve [--client <claude-code|codex|cursor>]\n\nInicia el servidor MCP persistente por stdin/stdout. El proceso permanece abierto esperando mensajes del agente. --client identifica al agente en la actividad local; sin él se usa el nombre que el cliente declara al conectarse, o 'unknown'."
+        ),
+        "ui" => println!(
+            "Uso: rationale ui [--port <n>] [--no-open] [--project-root <path>]\n\nAbre el Control Room local (por defecto http://127.0.0.1:9748): el subgrafo de trabajo, la memoria causal y la actividad en vivo de los agentes. Solo lectura y solo 127.0.0.1; `rationale serve` sigue siendo el servidor MCP. Sin --port, si el puerto está ocupado prueba los siguientes."
         ),
         "pin" => println!(
             "Uso: rationale pin <record-id> [--reason \"texto\"] [--project-root <path>]\n\nFija un Record. Un agente puede usarlo, pero no reemplazarlo sin que decidas en un conflicto. Requiere terminal interactiva y un actor declarado en .rationale/config.yaml."
@@ -246,6 +255,7 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "migrate" => validate_flags(command, args, &["--dry-run", "--json"], &["--project-root"]),
         "conflicts" => validate_flags(command, args, &["--json"], &["--project-root"]),
         "resolve" => validate_flags(command, args, &[], &["--project-root"]),
+        "ui" => validate_flags(command, args, &["--no-open"], &["--port", "--project-root"]),
         _ => Ok(()),
     }
 }
@@ -1476,6 +1486,25 @@ fn cmd_resolve(args: &[String]) {
         }
         Err(error) => fail(error),
     }
+}
+
+/// `rationale ui` — Control Room local. Observa el mismo estado que la CLI y
+/// el servidor MCP; nunca escribe.
+fn cmd_ui(args: &[String]) {
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let port = match parse_string_flag(args, "--port") {
+        Some(raw) => raw
+            .parse::<u16>()
+            .unwrap_or_else(|_| fail(format!("--port inválido: {raw}"))),
+        None => ui::DEFAULT_PORT,
+    };
+    ui::run(ui::Options {
+        project_root,
+        port,
+        port_explicit: args.iter().any(|arg| arg == "--port"),
+        open_browser: !args.iter().any(|arg| arg == "--no-open"),
+    })
+    .unwrap_or_else(fail);
 }
 
 fn read_interactive_line() -> Option<String> {

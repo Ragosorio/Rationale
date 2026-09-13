@@ -155,7 +155,6 @@ pub fn load(local_dir: &Path, operation_id: &str) -> Option<Operation> {
 }
 
 /// Operaciones más recientes primero (los ids ordenan por tiempo de creación).
-#[allow(dead_code)] // consumido por la UI (fase 7)
 pub fn list_recent(local_dir: &Path, limit: usize) -> Vec<Operation> {
     let Ok(entries) = std::fs::read_dir(operations_dir(local_dir)) else {
         return Vec::new();

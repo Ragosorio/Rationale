@@ -142,6 +142,7 @@ fn help_is_successful_and_non_mutating_for_every_command() {
         &["health", "--help"],
         &["prepare", "--help"],
         &["serve", "--help"],
+        &["ui", "--help"],
         &["review", "--help"],
         &["review-record", "--help"],
         &["install-agent", "--help"],
@@ -187,6 +188,7 @@ fn invalid_project_root_is_a_clean_cli_error() {
     let cases: &[&[&str]] = &[
         &["health", "--project-root", no_rationale_dir],
         &["prepare", "src/main.rs", "--project-root", no_rationale_dir],
+        &["ui", "--no-open", "--project-root", no_rationale_dir],
         &["review", "--project-root", no_rationale_dir],
         &[
             "review-record",

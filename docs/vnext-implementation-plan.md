@@ -203,4 +203,8 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
 - [x] Phase 6 — activity: per-session NDJSON `ActivityEvent` stream
   (ADR-0017), minimization guard test, instrumentation of pipeline, MCP and
   CLI, Git exclusion before vNext writes, `RunLog` retired
-- [ ] Phase 7 … Phase 10 (updated as each lands)
+- [x] Phase 7 — `rationale ui` backend: std-only localhost HTTP (Host
+  allow-list, GET/HEAD, bounded heads, CSP), read-only REST views over canon,
+  operations and activity, SSE activity stream, assets embedded from
+  `ui/dist` with an explicit fallback page
+- [ ] Phase 8 … Phase 10 (updated as each lands)

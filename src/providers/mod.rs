@@ -359,7 +359,7 @@ pub struct IndexStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[allow(dead_code)] // consumido por la UI (fase 7)
+#[allow(dead_code)] // contrato vNext sin caller todavía: la UI lee snapshots, no al proveedor
 pub struct ArchitectureCluster {
     pub label: String,
     pub members: u64,
@@ -367,7 +367,7 @@ pub struct ArchitectureCluster {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[allow(dead_code)] // consumido por la UI (fase 7)
+#[allow(dead_code)] // contrato vNext sin caller todavía: la UI lee snapshots, no al proveedor
 pub struct ArchitectureSummary {
     pub total_nodes: Option<u64>,
     pub total_edges: Option<u64>,
@@ -471,7 +471,7 @@ pub trait CodeIntelligenceProvider {
     }
 
     /// Unión de vecindarios de varias semillas, deduplicada.
-    #[allow(dead_code)] // consumido por la UI (fase 7)
+    #[allow(dead_code)] // contrato vNext sin caller todavía: la UI lee snapshots, no al proveedor
     fn get_subgraph(
         &mut self,
         repo_path: &str,
@@ -559,12 +559,12 @@ pub trait CodeIntelligenceProvider {
         ProviderResult::unsupported(&self.capabilities().name, "get_file_outline")
     }
 
-    #[allow(dead_code)] // consumido por la UI (fase 7)
+    #[allow(dead_code)] // contrato vNext sin caller todavía: la UI lee snapshots, no al proveedor
     fn get_architecture(&mut self, _repo_path: &str) -> ProviderResult<ArchitectureSummary> {
         ProviderResult::unsupported(&self.capabilities().name, "get_architecture")
     }
 
-    #[allow(dead_code)] // consumido por la actividad de finalize (fase 6)
+    #[allow(dead_code)] // contrato vNext sin caller todavía
     fn changed_nodes(
         &mut self,
         _repo_path: &str,
