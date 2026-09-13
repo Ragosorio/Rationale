@@ -153,18 +153,32 @@ responder.
     },
 ];
 
-/// Acciones que Rationale instaló en versiones anteriores y ya no ofrece.
-///
-/// Siguen siendo destinos reconocidos: un manifest existente todavía las
-/// registra, y sin reconocerlas `uninstall-agent` rechazaría la entrada como
-/// ruta no administrada. `install-agent` retira el skill si conserva el hash
-/// que Rationale escribió, y lo deja en paz si alguien lo editó.
+/// Una acción que Rationale instaló en versiones anteriores y ya no ofrece.
+pub struct RetiredAction {
+    pub name: &'static str,
+    /// Qué la reemplaza, para quien todavía la invoque por su nombre.
+    pub replacement: &'static str,
+}
+
+/// Acciones retiradas. Se siguen conociendo por su nombre: un manifest
+/// existente todavía registra su skill —sin reconocerlo, `uninstall-agent`
+/// rechazaría la entrada como ruta no administrada— y un cliente MCP puede
+/// seguir pidiendo el prompt. `install-agent` retira el skill si conserva el
+/// hash que Rationale escribió; `prompts/get` responde con su reemplazo.
 ///
 /// `review` era la cola de aprobación pre-vNext; en vNext el único punto de
 /// decisión humana del flujo normal es un conflicto con una regla fijada
 /// (`conflicts`). `rationale review` sigue existiendo para propuestas
 /// heredadas.
-pub const RETIRED_ACTIONS: &[&str] = &["review"];
+pub const RETIRED_ACTIONS: &[RetiredAction] = &[RetiredAction {
+    name: "review",
+    replacement: "usa 'conflicts' para decidir conflictos con reglas fijadas; las propuestas \
+                  pendientes de antes de vNext se procesan con `rationale migrate`",
+}];
+
+pub fn retired(name: &str) -> Option<&'static RetiredAction> {
+    RETIRED_ACTIONS.iter().find(|retired| retired.name == name)
+}
 
 pub fn action(name: &str) -> Option<&'static Action> {
     ACTIONS.iter().find(|action| action.name == name)
@@ -221,9 +235,11 @@ mod tests {
     fn retired_actions_are_never_offered_again() {
         for retired in RETIRED_ACTIONS {
             assert!(
-                action(retired).is_none(),
-                "'{retired}' está retirada: reofrecerla reinstalaría un skill que install-agent borra"
+                action(retired.name).is_none(),
+                "'{}' está retirada: reofrecerla reinstalaría un skill que install-agent borra",
+                retired.name
             );
+            assert!(!retired.replacement.trim().is_empty());
         }
     }
 

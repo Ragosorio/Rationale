@@ -206,6 +206,14 @@ fn an_unknown_prompt_is_json_rpc_error_and_the_session_stays_alive() {
     let unknown = client.get_prompt(1, "no-existe", json!({}));
     assert_eq!(unknown["error"]["code"], -32602);
 
+    // Un prompt retirado sigue siendo un error, pero nombra su reemplazo.
+    let retired = client.get_prompt(3, "review", json!({}));
+    assert_eq!(retired["error"]["code"], -32602);
+    let message = retired["error"]["message"].as_str().unwrap();
+    assert!(message.contains("se retiró"), "{message}");
+    assert!(message.contains("conflicts"), "{message}");
+    assert!(message.contains("rationale migrate"), "{message}");
+
     let health = client.call(2, "health", json!({}));
     assert_eq!(health["result"]["isError"], false);
 }

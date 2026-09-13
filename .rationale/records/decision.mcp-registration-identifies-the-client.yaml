@@ -1,0 +1,79 @@
+id: decision.mcp-registration-identifies-the-client
+kind: decision
+severity: high
+statement: Each supported client's global MCP registration runs `serve --client <claude-code|codex|cursor>`; install migrates a plain `serve` entry of the same binary, and uninstall removes either form for that binary but never an entry with any other arguments.
+rationale: 'The flag gives each session a client identity that does not depend on initialize.clientInfo, which clients may omit or name inconsistently, so local activity and rationale ui attribute work to the right agent. Pre-vNext installs registered plain `serve`: recognizing both forms keeps install convergent and uninstall complete under ADR-0016, while other arguments are user configuration.'
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a0996617282ec7cc39
+  session_id: session_1a09965ae59030f54ad
+  asserted_at: 2026-09-13T06:15:22Z
+approvals: []
+binding_declarations:
+- id: binding.decision.mcp-registration-identifies-the-client.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/agents.rs
+  provisional: true
+- id: binding.decision.mcp-registration-identifies-the-client.symbol.1
+  type: symbol
+  provider: codebase-memory
+  structural_id: src.agents.serve_args
+  path_hint: src/agents.rs
+  provisional: true
+- id: binding.decision.mcp-registration-identifies-the-client.symbol.2
+  type: symbol
+  provider: codebase-memory
+  structural_id: src.agents.is_rationale_serve_args
+  path_hint: src/agents.rs
+  provisional: true
+- id: binding.decision.mcp-registration-identifies-the-client.symbol.3
+  type: symbol
+  provider: codebase-memory
+  structural_id: src.agents.codex_registration_is_ours
+  path_hint: src/agents.rs
+  provisional: true
+- id: binding.decision.mcp-registration-identifies-the-client.4
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/mcp/server.rs
+  provisional: true
+- id: binding.decision.mcp-registration-identifies-the-client.symbol.5
+  type: symbol
+  provider: codebase-memory
+  structural_id: src.mcp.server.normalize_client
+  path_hint: src/mcp/server.rs
+  provisional: true
+evidence:
+- type: test
+  path: src/agents.rs
+  revision: adf9c6e19c4b8d992ba798e86be61ee470a2de56
+  verified: false
+  content_hash: null
+  visibility: repository
+  note: global_registration_migrates_pre_vnext_serve_and_uninstall_recognizes_both_forms
+- type: test
+  path: tests/cli.rs
+  revision: adf9c6e19c4b8d992ba798e86be61ee470a2de56
+  verified: false
+  content_hash: null
+  visibility: repository
+  note: init_on_an_existing_project_configures_a_newly_available_claude_code
+risks: []
+bound_revision: adf9c6e19c4b8d992ba798e86be61ee470a2de56
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T06:15:22Z
+    operation_id: op_1a0996617282ec7cc39

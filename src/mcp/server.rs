@@ -227,10 +227,16 @@ fn handle_prompts_get(msg: &Value, id: Option<Value>) -> Value {
     let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
     let name = params.get("name").and_then(Value::as_str).unwrap_or("");
     let Some(action) = crate::prompts::action(name) else {
+        // Un cliente que actualizó Rationale puede seguir pidiendo un prompt
+        // por su nombre anterior: se le dice qué lo reemplaza.
+        let message = match crate::prompts::retired(name) {
+            Some(retired) => format!("el prompt '{name}' se retiró: {}", retired.replacement),
+            None => format!("prompt desconocido: '{name}'"),
+        };
         return json!({
             "jsonrpc": "2.0",
             "id": id,
-            "error": {"code": -32602, "message": format!("prompt desconocido: '{name}'")}
+            "error": {"code": -32602, "message": message}
         });
     };
     let arguments = params

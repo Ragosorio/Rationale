@@ -359,7 +359,7 @@ pub fn install(
                     &mut report,
                     project_root,
                     target.name,
-                    &format!("{skills_dir}/rationale-{retired}/SKILL.md"),
+                    &format!("{skills_dir}/rationale-{}/SKILL.md", retired.name),
                     refresh_skills,
                     dry_run,
                 )?;
@@ -612,7 +612,11 @@ fn skill_names() -> impl Iterator<Item = &'static str> {
     crate::prompts::ACTIONS
         .iter()
         .map(|action| action.name)
-        .chain(crate::prompts::RETIRED_ACTIONS.iter().copied())
+        .chain(
+            crate::prompts::RETIRED_ACTIONS
+                .iter()
+                .map(|retired| retired.name),
+        )
 }
 
 /// Retira un skill que Rationale ya no ofrece, con las mismas pruebas de

@@ -249,4 +249,22 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
   only; retired skills removed only when Rationale still owns them. This
   repo's instructions and skills regenerated with an isolated HOME and PATH
   (no global agent configuration touched). Verified over real MCP stdio.
-- [ ] Phase 10 — dogfood
+- [x] Phase 10 — dogfood (`docs/work-items/vnext-dogfood-results.md`): one
+  persistent `serve --client claude-code` session with the real Codebase
+  Memory and the Control Room open. prepare → governance stated → change
+  (retired prompts name their replacement) → tests → finalize with the same
+  `operation_id` (3 Records committed, 0 discarded) → a contradicting
+  prepare surfaced the new constraint as governing → the UI showed session,
+  operations, capture, memory and node overlay live, and the session end.
+  Findings: name-based Rust call resolution in the provider, noisy lexical
+  polarity (a tested fence, left as is), index-freshness wording.
+
+## Remaining before release (out of this work's scope)
+
+- Documentation pass: `README.md`, `docs/user-guide/` (configuration, daily
+  workflow, CLI reference), `site/src/content/docs/` and the landing page
+  still describe the approval queue; `docs/RELEASE_VERSION` says beta.2
+  while beta.3 is installed.
+- Release workflow: build `ui/dist` before `cargo build --release` so the
+  published binary embeds the Control Room instead of the fallback page.
+- Owner decision: retire this repo's tracked legacy `.mcp.json` entry.
