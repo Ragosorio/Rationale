@@ -56,6 +56,11 @@ impl TestClient {
         // llenarse de sesiones de prueba. Quien la verifica pasa
         // `RATIONALE_ACTIVITY=on`.
         command.env("RATIONALE_ACTIVITY", "off");
+        // Tampoco el Codebase Memory real del usuario: los tests con
+        // proyectos temporales lo llenaban de índices desechables (436 de 467
+        // proyectos en el dogfood de vNext). Un test que necesita estructura
+        // pasa su propio fixture.
+        command.env("RATIONALE_PROVIDER", "none");
         for (key, value) in env {
             command.env(key, value);
         }

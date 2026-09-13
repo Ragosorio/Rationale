@@ -19,6 +19,7 @@ fn prepare_on_new_project_returns_empty_packet_instead_of_panicking() {
     let binary = env!("CARGO_BIN_EXE_rationale");
     let init = Command::new(binary)
         .current_dir(&project)
+        .env("RATIONALE_PROVIDER", "none")
         .arg("init")
         .output()
         .unwrap();
@@ -26,6 +27,8 @@ fn prepare_on_new_project_returns_empty_packet_instead_of_panicking() {
 
     let prepared = Command::new(binary)
         .current_dir(&project)
+        // Nunca el Codebase Memory real del usuario sobre un repo temporal.
+        .env("RATIONALE_PROVIDER", "none")
         .args(["prepare", "src/main.rs", "--project-root"])
         .arg(&project)
         .arg("--repo-path")

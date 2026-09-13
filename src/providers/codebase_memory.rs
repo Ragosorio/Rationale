@@ -30,6 +30,11 @@ use std::time::{Duration, Instant};
 
 const INITIALIZE_DEADLINE: Duration = Duration::from_secs(15); // ver 11-performance-observations.md: ~6.8s medido, margen generoso
 const CALL_DEADLINE: Duration = Duration::from_secs(5); // muy por encima de los ~15-30ms medidos en sesión cálida
+/// Indexar un repositorio real no es una llamada de 15-30ms, y la
+/// investigación no midió su duración: con el deadline de una llamada normal
+/// la indexación de primer uso de un repo mediano expiraría, mataría la sesión
+/// y nunca terminaría. Solo `index_repository` usa este techo.
+const INDEX_DEADLINE: Duration = Duration::from_secs(180);
 
 pub struct CodebaseMemoryClient {
     child: Child,
@@ -39,6 +44,9 @@ pub struct CodebaseMemoryClient {
     binary: String,
     init_deadline: Duration,
     call_deadline: Duration,
+    index_deadline: Duration,
+    /// Proyectos ya confirmados en esta sesión (repo → nombre del proveedor).
+    validated_projects: std::collections::HashMap<String, String>,
 }
 
 impl CodebaseMemoryClient {
@@ -95,6 +103,8 @@ impl CodebaseMemoryClient {
             binary,
             init_deadline,
             call_deadline,
+            index_deadline: INDEX_DEADLINE.max(call_deadline),
+            validated_projects: std::collections::HashMap::new(),
         };
 
         client.initialize()?;
@@ -164,6 +174,16 @@ impl CodebaseMemoryClient {
     }
 
     fn call_tool(&mut self, name: &str, arguments: Value) -> Option<Value> {
+        let deadline = self.call_deadline;
+        self.call_tool_within(name, arguments, deadline)
+    }
+
+    fn call_tool_within(
+        &mut self,
+        name: &str,
+        arguments: Value,
+        deadline: Duration,
+    ) -> Option<Value> {
         let id = self.next_id();
         if self
             .send(json!({
@@ -176,7 +196,7 @@ impl CodebaseMemoryClient {
         {
             return None;
         }
-        self.recv_response_for(id, self.call_deadline)
+        self.recv_response_for(id, deadline)
     }
 
     /// Extrae el contenido de texto de una respuesta `tools/call` y lo
@@ -197,14 +217,18 @@ impl CodebaseMemoryClient {
     /// contrato público. Rationale no replica el algoritmo de nombres de
     /// Codebase Memory: ese algoritmo ya cambió (p. ej. colapsa guiones) y
     /// dos implementaciones inevitablemente divergen.
-    fn project_for_repo(&mut self, repo_path: &str) -> Result<Option<String>, ()> {
-        if let Some(project) = Self::load_project_mapping(repo_path) {
-            return Ok(Some(project));
-        }
-        let response = self.call_tool("list_projects", json!({})).ok_or(())?;
-        let Some(payload) = Self::extract_tool_json(&response) else {
-            return Ok(None);
-        };
+    ///
+    /// `Ok(None)` solo cuando la lista se leyó y el repo no está: una lista
+    /// ilegible degrada en vez de invitar a reindexar un proyecto existente.
+    fn project_from_listing(&mut self, repo_path: &str) -> Result<Option<String>, CallFailure> {
+        let response = self.call_tool("list_projects", json!({})).ok_or_else(|| {
+            CallFailure::Unavailable("provider no respondió dentro del deadline".to_string())
+        })?;
+        let payload = Self::extract_tool_json(&response).ok_or_else(|| {
+            CallFailure::Degraded(
+                "respuesta inesperada de Codebase Memory en list_projects".to_string(),
+            )
+        })?;
         let project = Self::project_from_list(&payload, repo_path);
         if let Some(project) = &project {
             let _ = Self::save_project_mapping(repo_path, project);
@@ -222,6 +246,11 @@ impl CodebaseMemoryClient {
                 project
                     .get("root_path")
                     .and_then(Value::as_str)
+                    // Un `root_path` relativo depende del cwd con el que se
+                    // indexó (visto: `fixtures/vertical-slice/repo`);
+                    // resolverlo contra el cwd de Rationale podría atar este
+                    // repo al índice de otro.
+                    .filter(|root| Path::new(root).is_absolute())
                     .map(|root| canonical_or_original(Path::new(root)) == requested)
                     .unwrap_or(false)
             })
@@ -234,20 +263,20 @@ impl CodebaseMemoryClient {
         payload.get("project")?.as_str().map(str::to_owned)
     }
 
+    /// Pide la indexación con la ruta absoluta y devuelve la identidad que el
+    /// proveedor declara. No la recuerda: `resolve_project` la confirma antes.
     fn index_project(&mut self, repo_path: &str) -> Result<Option<String>, ()> {
+        let deadline = self.index_deadline;
         let response = self
-            .call_tool(
+            .call_tool_within(
                 "index_repository",
-                json!({"repo_path": repo_path, "mode": "fast"}),
+                json!({"repo_path": provider_repo_path(repo_path), "mode": "fast"}),
+                deadline,
             )
             .ok_or(())?;
-        let project = Self::extract_tool_json(&response)
+        Ok(Self::extract_tool_json(&response)
             .as_ref()
-            .and_then(Self::project_from_index);
-        if let Some(project) = &project {
-            let _ = Self::save_project_mapping(repo_path, project);
-        }
-        Ok(project)
+            .and_then(Self::project_from_index))
     }
 
     fn mapping_path(repo_path: &str) -> std::path::PathBuf {
@@ -266,6 +295,10 @@ impl CodebaseMemoryClient {
             return None;
         }
         value.get("project")?.as_str().map(str::to_owned)
+    }
+
+    fn forget_project_mapping(repo_path: &str) {
+        let _ = std::fs::remove_file(Self::mapping_path(repo_path));
     }
 
     fn save_project_mapping(repo_path: &str, project: &str) -> Result<(), String> {
@@ -292,6 +325,15 @@ impl CodebaseMemoryClient {
 
 fn canonical_or_original(path: &Path) -> std::path::PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// La ruta del repo tal como la recibe el proveedor: absoluta y canónica. Una
+/// ruta relativa (`--project-root .`) se interpreta en el cwd del proceso del
+/// proveedor, y Codebase Memory nombra el proyecto por su texto.
+fn provider_repo_path(repo_path: &str) -> String {
+    canonical_or_original(Path::new(repo_path))
+        .to_string_lossy()
+        .to_string()
 }
 
 impl Drop for CodebaseMemoryClient {
@@ -446,22 +488,87 @@ fn project_key() -> &'static str {
 
 impl CodebaseMemoryClient {
     fn project_or_failure(&mut self, repo_path: &str) -> Result<String, CallFailure> {
-        match self.project_for_repo(repo_path) {
-            Err(()) => Err(CallFailure::Unavailable(
-                "provider no respondió dentro del deadline".to_string(),
-            )),
-            Ok(Some(project)) => Ok(project),
-            Ok(None) => match self.index_project(repo_path) {
-                Err(()) => Err(CallFailure::Unavailable(
+        if let Some(project) = self.validated_projects.get(repo_path) {
+            return Ok(project.clone());
+        }
+        let project = match Self::load_project_mapping(repo_path) {
+            Some(project) if self.project_exists(&project)? => project,
+            // El vínculo en disco puede sobrevivir al índice del proveedor
+            // (visto en vivo: Codebase Memory perdió el proyecto de este repo
+            // y cada consulta quedaba degradada para siempre). Se olvida y la
+            // identidad se resuelve como la primera vez.
+            Some(_) => {
+                Self::forget_project_mapping(repo_path);
+                self.resolve_project(repo_path)?
+            }
+            None => self.resolve_project(repo_path)?,
+        };
+        self.validated_projects
+            .insert(repo_path.to_string(), project.clone());
+        Ok(project)
+    }
+
+    /// Primera resolución: `list_projects` por raíz y, solo si el proveedor
+    /// confirma que el repo no está, `index_repository`. Nunca se reindexa un
+    /// proyecto existente (`decision.provider-owned-project-identity`).
+    fn resolve_project(&mut self, repo_path: &str) -> Result<String, CallFailure> {
+        if let Some(project) = self.project_from_listing(repo_path)? {
+            return Ok(project);
+        }
+        let project = match self.index_project(repo_path) {
+            Err(()) => {
+                return Err(CallFailure::Unavailable(
                     "provider no respondió durante la indexación inicial".to_string(),
-                )),
-                Ok(Some(project)) => Ok(project),
-                Ok(None) => Err(CallFailure::Degraded(
+                ))
+            }
+            Ok(Some(project)) => project,
+            Ok(None) => {
+                return Err(CallFailure::Degraded(
                     "Codebase Memory no devolvió una identidad de proyecto tras indexar"
                         .to_string(),
-                )),
-            },
+                ))
+            }
+        };
+        // Visto en vivo: `index_repository` con una ruta relativa devolvió el
+        // proyecto `root`, que nunca pudo consultarse. Una identidad se
+        // confirma antes de recordarla.
+        if !self.project_exists(&project)? {
+            return Err(CallFailure::Degraded(format!(
+                "Codebase Memory devolvió el proyecto '{project}' tras indexar, pero todavía no \
+                 puede consultarlo"
+            )));
         }
+        let _ = Self::save_project_mapping(repo_path, &project);
+        Ok(project)
+    }
+
+    /// ¿Sigue existiendo un proyecto recordado? Solo un «not found» explícito
+    /// cuenta como ausencia: un error ambiguo nunca borra el vínculo.
+    fn project_exists(&mut self, project: &str) -> Result<bool, CallFailure> {
+        let response = self
+            .call_tool("index_status", json!({"project": project}))
+            .ok_or_else(|| {
+                CallFailure::Unavailable("provider no respondió dentro del deadline".to_string())
+            })?;
+        Ok(!Self::is_missing_project_response(&response))
+    }
+
+    /// Codebase Memory responde `isError: true` con un JSON de error que llega
+    /// truncado (arrastra la lista de proyectos disponibles), así que se
+    /// reconoce por su mensaje en vez de parsearlo.
+    fn is_missing_project_response(response: &Value) -> bool {
+        let Some(result) = response.get("result") else {
+            return false;
+        };
+        let is_error = result.get("isError").and_then(Value::as_bool) == Some(true);
+        let text = result
+            .get("content")
+            .and_then(Value::as_array)
+            .and_then(|content| content.first())
+            .and_then(|item| item.get("text"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        is_error && text.contains("project not found")
     }
 
     fn tool_json(&mut self, name: &str, arguments: Value) -> Result<Value, CallFailure> {
@@ -1330,5 +1437,185 @@ mod tests {
             .key("rationale"),
             "la clave no depende del nombre de proyecto del proveedor"
         );
+    }
+
+    const MOCK_PRELUDE: &str = r##"#!/usr/bin/env bash
+set -euo pipefail
+read_message() {
+  local content_length=0
+  local line
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    [ -z "$line" ] && break
+    if [[ "$line" =~ ^Content-Length:\ *([0-9]+)$ ]]; then
+      content_length="${BASH_REMATCH[1]}"
+    fi
+  done
+  if [ "$content_length" -gt 0 ]; then
+    dd bs=1 count="$content_length" 2>/dev/null
+  fi
+}
+write_message() {
+  local body="$1"
+  printf 'Content-Length: %d\r\n\r\n%s' "${#body}" "$body"
+}
+message_id() {
+  echo "$1" | grep -o '"id"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$'
+}
+not_found() {
+  write_message '{"jsonrpc":"2.0","id":'"$1"',"result":{"content":[{"type":"text","text":"{\"error\":\"project not found or not indexed\",\"available_projects\":[\"a\",\"b"}],"isError":true}}'
+}
+tool_text() {
+  write_message '{"jsonrpc":"2.0","id":'"$1"',"result":{"content":[{"type":"text","text":"'"$2"'"}]}}'
+}
+id="$(message_id "$(read_message)")"
+write_message '{"jsonrpc":"2.0","id":'"$id"',"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"mock","version":"0.0.0"}}}'
+read_message >/dev/null
+"##;
+
+    /// index_status(recordado) → not found; list_projects → el repo con otro
+    /// nombre; index_status(nuevo) → ready.
+    const STALE_PROJECT_BODY: &str = r##"id="$(message_id "$(read_message)")"; not_found "$id"
+id="$(message_id "$(read_message)")"; tool_text "$id" '{\"projects\":[{\"name\":\"renamed-project\",\"root_path\":\"__ROOT__\"}]}'
+id="$(message_id "$(read_message)")"; tool_text "$id" '{\"status\":\"ready\"}'
+"##;
+
+    /// index_status(recordado) → not found; list_projects → vacío;
+    /// index_repository → `root` solo si llegó una ruta absoluta;
+    /// index_status(root) → not found (la identidad no es consultable).
+    const UNCONFIRMED_INDEX_BODY: &str = r##"id="$(message_id "$(read_message)")"; not_found "$id"
+id="$(message_id "$(read_message)")"; tool_text "$id" '{\"projects\":[]}'
+msg="$(read_message)"; id="$(message_id "$msg")"
+case "$msg" in
+  *'"repo_path":"/'*) project=root ;;
+  *) project=relative-path-sent ;;
+esac
+tool_text "$id" "{\\\"project\\\":\\\"$project\\\"}"
+id="$(message_id "$(read_message)")"; not_found "$id"
+"##;
+
+    #[cfg(unix)]
+    fn mock_repo(label: &str) -> std::path::PathBuf {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!(
+                "rationale-mock-repo-{label}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+        std::fs::create_dir_all(repo.join(".rationale")).unwrap();
+        repo
+    }
+
+    #[cfg(unix)]
+    fn spawn_mock(dir: &Path, body: &str) -> CodebaseMemoryClient {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("mock-cbm.sh");
+        std::fs::write(&script, format!("{MOCK_PRELUDE}{body}")).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        CodebaseMemoryClient::spawn_with(
+            &script.to_string_lossy(),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+        )
+        .expect("el mock debe inicializar")
+    }
+
+    /// Defecto real (dogfood de vNext): Codebase Memory perdió el proyecto de
+    /// este repo y el vínculo guardado seguía nombrándolo, así que cada
+    /// consulta quedaba degradada para siempre. El vínculo se valida una vez
+    /// por sesión, se olvida ante un «not found» explícito (cuyo JSON llega
+    /// truncado) y la identidad se resuelve de nuevo por `list_projects`.
+    #[cfg(unix)]
+    #[test]
+    fn a_stale_project_mapping_is_forgotten_and_resolved_again() {
+        let repo = mock_repo("stale");
+        let repo_path = repo.to_string_lossy().to_string();
+        CodebaseMemoryClient::save_project_mapping(&repo_path, "gone-project").unwrap();
+        let root = canonical_or_original(&repo).to_string_lossy().to_string();
+        let mut client = spawn_mock(&repo, &STALE_PROJECT_BODY.replace("__ROOT__", &root));
+        let result = client.health(&repo_path);
+        assert!(
+            matches!(result.status, ProviderStatus::Successful),
+            "{:?}",
+            result.warnings
+        );
+        assert_eq!(
+            CodebaseMemoryClient::load_project_mapping(&repo_path).as_deref(),
+            Some("renamed-project"),
+            "el vínculo nuevo reemplaza al obsoleto"
+        );
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    /// Defecto real del mismo dogfood: con `--project-root .` la indexación de
+    /// primer uso envió `.` a `index_repository`; Codebase Memory devolvió el
+    /// proyecto `root`, que nunca pudo consultarse, y quedó recordado.
+    #[cfg(unix)]
+    #[test]
+    fn indexing_sends_an_absolute_path_and_never_remembers_an_unqueryable_project() {
+        let repo = mock_repo("unconfirmed");
+        let relative = repo
+            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        CodebaseMemoryClient::save_project_mapping(&relative, "gone-project").unwrap();
+        let mut client = spawn_mock(&repo, UNCONFIRMED_INDEX_BODY);
+        let result = client.health(&relative);
+        assert!(
+            matches!(result.status, ProviderStatus::Degraded),
+            "{:?}",
+            result.warnings
+        );
+        assert!(
+            result.warnings.iter().any(|w| w.contains("'root'")),
+            "index_repository debe recibir una ruta absoluta: {:?}",
+            result.warnings
+        );
+        assert_eq!(
+            CodebaseMemoryClient::load_project_mapping(&relative),
+            None,
+            "nunca se recuerda un proyecto que no se puede consultar"
+        );
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn relative_provider_root_paths_never_identify_a_repo() {
+        let here = env!("CARGO_MANIFEST_DIR");
+        let absolute = canonical_or_original(Path::new(here));
+        let mixed = json!({"projects": [
+            {"name": "root", "root_path": "."},
+            {"name": "real", "root_path": absolute}
+        ]});
+        assert_eq!(
+            CodebaseMemoryClient::project_from_list(&mixed, here).as_deref(),
+            Some("real")
+        );
+        let only_relative = json!({"projects": [{"name": "root", "root_path": "."}]});
+        assert_eq!(
+            CodebaseMemoryClient::project_from_list(&only_relative, here),
+            None
+        );
+        assert!(Path::new(&provider_repo_path(".")).is_absolute());
+    }
+
+    #[test]
+    fn only_an_explicit_not_found_marks_a_project_missing() {
+        let truncated = json!({"result": {"isError": true, "content": [{"type": "text",
+            "text": "{\"error\":\"project not found or not indexed\",\"available_projects\":[\"a\",\"b"}]}});
+        assert!(CodebaseMemoryClient::is_missing_project_response(
+            &truncated
+        ));
+        let locked = json!({"result": {"isError": true, "content": [{"type": "text",
+            "text": "{\"error\":\"database is locked\"}"}]}});
+        assert!(!CodebaseMemoryClient::is_missing_project_response(&locked));
+        let ready =
+            json!({"result": {"content": [{"type": "text", "text": "{\"status\":\"ready\"}"}]}});
+        assert!(!CodebaseMemoryClient::is_missing_project_response(&ready));
     }
 }

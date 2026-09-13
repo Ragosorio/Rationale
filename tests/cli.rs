@@ -19,6 +19,8 @@ fn run(project: &std::path::Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_rationale"))
         .current_dir(project)
         .env("HOME", test_home)
+        // Nunca el Codebase Memory real del usuario sobre un repo temporal.
+        .env("RATIONALE_PROVIDER", "none")
         .args(args)
         .output()
         .unwrap()
@@ -37,6 +39,7 @@ fn run_with_path(
         // host podría ejecutar `codex mcp add` y mutar configuración global.
         .env("PATH", extra_path)
         .env("HOME", test_home)
+        .env("RATIONALE_PROVIDER", "none")
         .args(args)
         .output()
         .unwrap()

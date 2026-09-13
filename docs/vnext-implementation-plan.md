@@ -88,6 +88,22 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
 15. **vNext writers under `.rationale-local/` skipped the Git exclusion** that
     only `init`/`install-agent` installed (ADR-0014 §Decision 3). Activity,
     operation snapshots and conflicts now ensure it first.
+16. **Dogfood: Codebase Memory lost this repo's project while
+    `.rationale-local/codebase-memory-project.json` still named it**, so every
+    structural query degraded. The provider's `not found` error arrives with
+    `isError: true` and a truncated JSON body (it drags the list of 467
+    projects, 436 of them temp repos indexed by Rationale's own integration
+    tests). The adapter now validates a remembered project once per session,
+    forgets it only on an explicit `not found`, re-resolves through
+    `list_projects` (indexing only when the provider confirms absence, with
+    its own deadline) and never reindexes on an unreadable listing. The
+    live recovery exposed one more defect: `index_repository` received the
+    relative path `.` and returned a project named `root` that could never be
+    queried. The provider now always receives an absolute path, relative
+    provider root paths never identify a repo, and an indexed identity is
+    confirmed before it is remembered. The
+    integration tests run with `RATIONALE_PROVIDER=none` unless they pass a
+    fixture.
 
 ## Governing Records and how vNext honors them
 
