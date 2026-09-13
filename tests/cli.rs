@@ -38,7 +38,10 @@ fn run_with_path(
         // El test debe detectar solo el `claude` falso. Heredar el PATH del
         // host podría ejecutar `codex mcp add` y mutar configuración global.
         .env("PATH", extra_path)
-        .env("HOME", test_home)
+        // `install-agent` registra en el home del usuario: `HOME` en Unix,
+        // `USERPROFILE` en Windows. Los dos apuntan al home aislado del test.
+        .env("HOME", &test_home)
+        .env("USERPROFILE", &test_home)
         .env("RATIONALE_PROVIDER", "none")
         .args(args)
         .output()

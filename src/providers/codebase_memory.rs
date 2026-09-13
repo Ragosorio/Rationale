@@ -1253,15 +1253,20 @@ mod tests {
 
     #[test]
     fn project_identity_comes_from_public_root_path_not_reimplemented_name() {
+        // Absoluta en la plataforma que corre el test: `/private/tmp/...` no es
+        // `is_absolute()` en Windows, y un `root_path` relativo nunca
+        // identifica un repo (`project_from_list`).
+        let root = std::env::temp_dir().join("-owner").join("project");
+        let root = root.to_string_lossy().to_string();
         let payload = json!({
             "projects": [{
                 "name": "private-tmp-owner-project",
-                "root_path": "/private/tmp/-owner/project"
+                "root_path": root
             }]
         });
 
         assert_eq!(
-            CodebaseMemoryClient::project_from_list(&payload, "/private/tmp/-owner/project"),
+            CodebaseMemoryClient::project_from_list(&payload, &root),
             Some("private-tmp-owner-project".to_string())
         );
     }
