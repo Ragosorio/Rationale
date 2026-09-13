@@ -1439,6 +1439,9 @@ mod tests {
         );
     }
 
+    // Mocks de Codebase Memory en bash: solo los usan los tests `cfg(unix)`, y
+    // sin la misma guarda Windows los ve como código muerto (clippy -D warnings).
+    #[cfg(unix)]
     const MOCK_PRELUDE: &str = r##"#!/usr/bin/env bash
 set -euo pipefail
 read_message() {
@@ -1475,6 +1478,7 @@ read_message >/dev/null
 
     /// index_status(recordado) → not found; list_projects → el repo con otro
     /// nombre; index_status(nuevo) → ready.
+    #[cfg(unix)]
     const STALE_PROJECT_BODY: &str = r##"id="$(message_id "$(read_message)")"; not_found "$id"
 id="$(message_id "$(read_message)")"; tool_text "$id" '{\"projects\":[{\"name\":\"renamed-project\",\"root_path\":\"__ROOT__\"}]}'
 id="$(message_id "$(read_message)")"; tool_text "$id" '{\"status\":\"ready\"}'
@@ -1483,6 +1487,7 @@ id="$(message_id "$(read_message)")"; tool_text "$id" '{\"status\":\"ready\"}'
     /// index_status(recordado) → not found; list_projects → vacío;
     /// index_repository → `root` solo si llegó una ruta absoluta;
     /// index_status(root) → not found (la identidad no es consultable).
+    #[cfg(unix)]
     const UNCONFIRMED_INDEX_BODY: &str = r##"id="$(message_id "$(read_message)")"; not_found "$id"
 id="$(message_id "$(read_message)")"; tool_text "$id" '{\"projects\":[]}'
 msg="$(read_message)"; id="$(message_id "$msg")"
