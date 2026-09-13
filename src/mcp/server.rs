@@ -313,7 +313,7 @@ fn tool_definitions() -> Value {
                     "operation_id": {"type": "string", "description": "El operation_id que devolvió prepare_change, si existe"},
                     "summary": {"type": "string", "description": "Qué cambió, en una o dos frases — informa, no se convierte en memoria"},
                     "target": {"type": "string", "description": "path::symbol del target principal (diagnóstico)"},
-                    "base_revision": {"type": "string", "description": "Revisión Git desde la que capturar el diff; por defecto HEAD"},
+                    "base_revision": {"type": "string", "description": "Revisión Git desde la que capturar el diff; por defecto, el HEAD que vio prepare_change en esa operación, y sin operación, HEAD"},
                     "candidates": {
                         "type": "array",
                         "description": "Conocimiento durable. Un Record por decisión: divide cuando las partes podrían reemplazarse o revocarse por separado.",

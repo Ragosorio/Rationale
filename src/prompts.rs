@@ -32,10 +32,11 @@ pub const ACTIONS: &[Action] = &[
 `$intent`
 
 1. Si Codebase Memory está disponible, úsalo primero para localizar el símbolo, sus callers y los archivos relevantes. Declara su cobertura y warnings; no lo trates como autoridad sobre el porqué.
-2. Llama `prepare_change(target: "$target", intent: "$intent")`.
-3. Antes de tocar código, resume constraints, autoridad, evidencia, linkage, cobertura del proveedor e intent conflicts.
-4. Si hay un Record gobernante o un conflicto, pronúnciate explícitamente sobre si la intención lo respeta, lo contradice o sigue indeterminada. No procedas en silencio ni conviertas solapamiento léxico en contradicción semántica probada.
-5. Si falta autoridad para decidir, detente y pide la decisión humana concreta."#,
+2. Llama `prepare_change(target: "$target", intent: "$intent")` y guarda el `operation_id` que devuelve: `finalize_change` lo usa para cerrar la misma operación.
+3. Antes de tocar código, resume lo que gobierna el target: `critical_constraints` y `decisions` con su autoridad (`pinned` o `normal`) y procedencia, las `relationships` explicadas con su estado estructural (`observed`, `indirect`, `orphaned`, `unknown`) y su porqué, `intent_conflicts`, riesgos, `known_unknowns`, cobertura del proveedor y `budget_overflow` si aparece.
+4. Si hay un Record gobernante o un conflicto con la intención, pronúnciate explícitamente sobre si la intención lo respeta, lo contradice o sigue indeterminada. No procedas en silencio ni conviertas solapamiento léxico en contradicción semántica probada. Un Record `pinned` lo fijó el proyecto: no lo esquives.
+5. Una relación `orphaned` o `unknown` no prueba que la explicación sea falsa ni que la relación haya desaparecido; repórtala como incertidumbre.
+6. Si falta autoridad para decidir, detente y pide la decisión humana concreta."#,
     },
     Action {
         name: "explain",
@@ -47,13 +48,13 @@ pub const ACTIONS: &[Action] = &[
         body: r#"Aplica la valla de Chesterton a `$target`.
 
 1. Llama `explain_target(target: "$target")`.
-2. Explica los Records gobernantes, su autoridad, evidencia, linkage y cobertura.
+2. Explica los Records gobernantes, su autoridad (`pinned` o `normal`), su procedencia (afirmado por un agente, declarado por un humano o migrado), evidencia, linkage y cobertura.
 3. Distingue hechos recuperados, inferencias y desconocidos.
 4. No simplifiques ni borres el target hasta explicar por qué existe y qué restricción podría romperse."#,
     },
     Action {
         name: "capture",
-        description: "Captura hechos y una propuesta pendiente después de un cambio.",
+        description: "Cierra un cambio y escribe en el canon solo el conocimiento durable.",
         argument_hint: "[statement]",
         arguments: &["statement"],
         user_only: false,
@@ -72,26 +73,37 @@ Si esas líneas todavía aparecen como literales `!`comando`` (por ejemplo,
 porque recibiste esta acción mediante un prompt MCP), obtiene los mismos datos
 con las herramientas Git disponibles antes de continuar.
 
-1. Usa el `base_revision` real reportado por el preflight; si no existe, determina y declara la revisión base correcta en vez de inventarla.
-2. Revisa el diff y las pruebas ejecutadas. Separa hechos observados de intención o inferencia.
-3. Cuenta cuántas decisiones independientes contiene el cambio. **Una decisión por Record.** Divide cuando las partes podrían aprobarse, rechazarse, revocarse o reemplazarse por separado; cuando responden preguntas distintas; cuando tienen autoridad o vida distinta; o cuando un lector futuro solo necesitaría una de ellas. No fragmentes una sola decisión en trozos que por separado no dicen nada.
-4. Llama `finalize_change(...)` con target, base_revision, intent, statement, severity y metadatos de Subject/Record reales. Usa el statement de arriba solo si no está vacío y refleja la decisión.
-5. Si hay más de una decisión en el árbol de trabajo, haz una llamada por decisión y declara `governs_paths` en cada una con las rutas que esa decisión gobierna. Sin eso, cada Record ata todos los archivos del diff y el canon ya no puede decir qué decisión gobierna qué código.
-6. Reporta si se escribió una propuesta pendiente o si el cambio fue mecánico. Nunca llames aprobada a una propuesta: solo `rationale review` humano puede aprobarla."#,
+1. Revisa el diff y las pruebas ejecutadas. Separa hechos observados de intención o inferencia.
+2. Decide qué conocimiento seguirá siendo cierto después de este cambio: por qué el código es como es y qué debe mantenerse. Lo que solo describe este cambio (qué se editó, pasos, estado temporal) no es memoria: va en `summary`, no en `candidates`.
+3. **Una decisión por Record.** Divide en varios candidatos cuando las partes podrían reemplazarse o revocarse por separado, responden preguntas distintas o tienen vida distinta. No fragmentes una sola decisión en trozos que por separado no dicen nada.
+4. Llama `finalize_change` con el `operation_id` del preflight (si existe), un `summary` breve y los `candidates`. Cada candidato lleva `kind`, `statement`, un `rationale` que dé la causa (no repita el statement), `durability: "durable"` y `bindings` con el código que gobierna (`src/x.rs` o `src/x.rs::symbol`). Nombra en `supersedes` los Records que reemplaza. Usa el statement de arriba solo si no está vacío y refleja una decisión real.
+5. Si no se aprendió nada durable, llama `finalize_change` sin candidatos: no se escribe memoria y está bien.
+6. Rationale escribe los candidatos válidos como Records canónicos en esa misma llamada, con procedencia de agente; no hay cola de aprobación. Reporta qué quedó escrito, qué se descartó y por qué, y qué Records quedaron reemplazados.
+7. Si la respuesta trae `conflicts`, un candidato intentó reemplazar una regla fijada. Detente: muestra al humano las dos afirmaciones y la pregunta, y solo con su respuesta explícita llama `resolve_conflict(conflict_id, decision, human_answer)` transcribiendo esa respuesta. Nunca decidas por él."#,
     },
     Action {
-        name: "review",
-        description: "Muestra propuestas pendientes y entrega la aprobación al humano.",
+        name: "conflicts",
+        description: "Muestra conflictos con reglas fijadas y entrega la decisión al humano.",
         argument_hint: "",
         arguments: &[],
         user_only: true,
-        allowed_tools: None,
-        body: r#"Prepara la revisión humana de Rationale.
+        // Mismo criterio que `health`: `rationale conflicts` imprime y sale 0
+        // haya o no conflictos, así que la inyección es un comando simple.
+        allowed_tools: Some("Bash(rationale conflicts:*)"),
+        body: r#"Prepara la decisión humana sobre conflictos de Rationale.
 
-1. Lista los archivos YAML pendientes bajo `.rationale/proposals/` sin alterar su estado.
-2. Resume qué propone cada uno y cualquier diagnóstico de YAML corrupto.
-3. Indica al humano que ejecute `rationale review` en un terminal interactivo para aprobar, rechazar o saltar.
-4. No ejecutes la revisión en nombre del humano, no elijas una respuesta interactiva y no afirmes aprobación antes de que exista evidencia canónica."#,
+Conflictos pendientes inyectados por el skill:
+
+!`rationale conflicts`
+
+Si la línea anterior todavía aparece como un literal `!`comando`` (por
+ejemplo, mediante un prompt MCP), obtén la misma lista antes de responder.
+
+1. Un conflicto aparece cuando un agente intentó reemplazar (`supersedes`) un Record fijado (`pinned`). Esa afirmación no se escribió en el canon: espera esta decisión.
+2. Para cada conflicto, muestra la regla fijada, la afirmación nueva y la pregunta, sin inclinar la respuesta.
+3. La decisión es del humano: `keep_pinned` conserva la regla fijada; `adopt_new` la reemplaza y exige autoridad declarada en `.rationale/config.yaml`.
+4. Indica que puede decidir en un terminal con `rationale resolve <conflict-id> <keep-pinned|adopt-new>`. Si prefiere decidir en esta conversación, llama `resolve_conflict` solo después de su respuesta explícita y transcríbela en `human_answer`.
+5. No elijas una opción en su nombre, no fijes ni desfijes Records y no afirmes una resolución antes de que la herramienta la confirme."#,
     },
     Action {
         name: "health",
@@ -140,6 +152,19 @@ responder.
         body: include_str!("../docs/prompt-master.md"),
     },
 ];
+
+/// Acciones que Rationale instaló en versiones anteriores y ya no ofrece.
+///
+/// Siguen siendo destinos reconocidos: un manifest existente todavía las
+/// registra, y sin reconocerlas `uninstall-agent` rechazaría la entrada como
+/// ruta no administrada. `install-agent` retira el skill si conserva el hash
+/// que Rationale escribió, y lo deja en paz si alguien lo editó.
+///
+/// `review` era la cola de aprobación pre-vNext; en vNext el único punto de
+/// decisión humana del flujo normal es un conflicto con una regla fijada
+/// (`conflicts`). `rationale review` sigue existiendo para propuestas
+/// heredadas.
+pub const RETIRED_ACTIONS: &[&str] = &["review"];
 
 pub fn action(name: &str) -> Option<&'static Action> {
     ACTIONS.iter().find(|action| action.name == name)
@@ -190,6 +215,16 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), ACTIONS.len());
+    }
+
+    #[test]
+    fn retired_actions_are_never_offered_again() {
+        for retired in RETIRED_ACTIONS {
+            assert!(
+                action(retired).is_none(),
+                "'{retired}' está retirada: reofrecerla reinstalaría un skill que install-agent borra"
+            );
+        }
     }
 
     #[test]

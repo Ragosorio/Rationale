@@ -111,6 +111,20 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
     after `npm run build` until `build.rs` changes or is touched. Once `ui/`
     is versioned a fresh checkout watches it, so the trade-off stays; the
     symptom is `aviso: este binario no incluye la interfaz web` at startup.
+18. **`scripts/check-docs.sh` failed on this branch since the plan existed.**
+    Its release-version guard exempts history (`docs/adr/`,
+    `docs/work-items/`) but not `docs/`, and the baseline above records the
+    installed `v0.1.0-beta.3` while `docs/RELEASE_VERSION` says `beta.2`. The
+    plan is a work record, so it moved to `docs/work-items/`; the version
+    mismatch itself belongs to the release/docs pass.
+19. **Retiring a skill would have broken uninstall.** `expected_managed_entry`
+    only recognized current actions, so any manifest from a previous install
+    that recorded `rationale-review` would make `uninstall-agent` reject the
+    whole manifest as an unmanaged path. Retired actions stay recognized.
+20. **This repo still tracks a pre-beta.3 `.mcp.json` entry** (`rationale
+    serve`, logical command) next to the global registration. `install-agent`
+    retires it per ADR-0016; the dogfood regeneration restored it because
+    removing it changes how this repo's sessions reach MCP — an owner call.
 
 ## Governing Records and how vNext honors them
 
@@ -225,4 +239,14 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
   without reload; Host allow-list (421) and read-only method guard (405)
   confirmed. Fixed in verification: ticker items shrank below their content
   and overlapped; Spanish singular counts.
-- [ ] Phase 9 … Phase 10 (updated as each lands)
+- [x] Phase 9 — agent workflow: master prompt and pre-made actions rewritten
+  for the vNext contract (`operation_id`, durable candidates committed in the
+  same call, conflicts over pinned Records decided only by a human through
+  `resolve_conflict` or `rationale resolve`); the approval-queue `review`
+  action retired for a user-only `conflicts` action; global registration as
+  `serve --client <claude-code|codex|cursor>` with convergent migration of
+  pre-vNext `serve` entries, uninstall recognizing both forms of this binary
+  only; retired skills removed only when Rationale still owns them. This
+  repo's instructions and skills regenerated with an isolated HOME and PATH
+  (no global agent configuration touched). Verified over real MCP stdio.
+- [ ] Phase 10 — dogfood

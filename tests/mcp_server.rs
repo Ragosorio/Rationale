@@ -171,7 +171,7 @@ fn prompts_list_and_get_expose_the_six_actions_from_one_source() {
             "preflight",
             "explain",
             "capture",
-            "review",
+            "conflicts",
             "health",
             "protocol"
         ]

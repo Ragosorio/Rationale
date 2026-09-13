@@ -90,13 +90,36 @@ fn init_on_an_existing_project_configures_a_newly_available_claude_code() {
         "preflight",
         "explain",
         "capture",
-        "review",
+        "conflicts",
         "health",
         "protocol",
     ] {
         let skill = project.join(format!(".claude/skills/rationale-{name}/SKILL.md"));
         assert!(skill.is_file(), "falta el skill {}", skill.display());
     }
+    assert!(
+        !project.join(".claude/skills/rationale-review").exists(),
+        "vNext no instala la cola de aprobación como skill"
+    );
+    // `init` solo configura el proyecto; el registro global es de
+    // `install-agent`. En el HOME aislado del test: ruta absoluta del binario
+    // y `--client`, para que la sesión MCP sepa qué agente la abrió.
+    let install = run_with_path(&project, &["install-agent", "--no-mascot"], &fake_bin);
+    assert!(install.status.success(), "install-agent: {install:?}");
+    let global: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(project.join(".test-home/.claude.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        global["mcpServers"]["rationale"]["args"],
+        serde_json::json!(["serve", "--client", "claude-code"])
+    );
+    assert!(std::path::Path::new(
+        global["mcpServers"]["rationale"]["command"]
+            .as_str()
+            .unwrap()
+    )
+    .is_absolute());
     assert!(
         !project.join(".cursor/skills").exists(),
         "los skills no deben escribirse para Cursor"

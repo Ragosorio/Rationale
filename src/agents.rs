@@ -228,10 +228,10 @@ pub fn install(
         // instrucciones o MCP. Así un `.claude` enlazado fuera del proyecto
         // falla sin dejar una instalación parcial.
         if let Some(skills_dir) = target.skills_dir {
-            for action in crate::prompts::ACTIONS {
+            for name in skill_names() {
                 let path = project_root
                     .join(skills_dir)
-                    .join(format!("rationale-{}", action.name))
+                    .join(format!("rationale-{name}"))
                     .join("SKILL.md");
                 validate_no_symlink_components(project_root, &path)?;
             }
@@ -353,6 +353,17 @@ pub fn install(
                     );
                 }
             }
+            for retired in crate::prompts::RETIRED_ACTIONS {
+                retire_skill(
+                    &mut manifest,
+                    &mut report,
+                    project_root,
+                    target.name,
+                    &format!("{skills_dir}/rationale-{retired}/SKILL.md"),
+                    refresh_skills,
+                    dry_run,
+                )?;
+            }
         }
     }
 
@@ -443,11 +454,11 @@ fn expected_managed_entry(
             return Some((target.name, ReversalStrategy::ManagedPart));
         }
         if let Some(skills_dir) = target.skills_dir {
-            if crate::prompts::ACTIONS.iter().any(|action| {
+            if skill_names().any(|name| {
                 candidate
                     == project_root
                         .join(skills_dir)
-                        .join(format!("rationale-{}", action.name))
+                        .join(format!("rationale-{name}"))
                         .join("SKILL.md")
             }) {
                 return Some((target.name, ReversalStrategy::OwnedFile));
@@ -593,6 +604,92 @@ Este proyecto usa Rationale (servidor MCP `rationale`) para preservar el
 {MARKER_END}\n",
         prompt = MASTER_PROMPT.trim()
     )
+}
+
+/// Nombres de skill que Rationale administra: los que ofrece y los que
+/// ofreció. Un manifest de una versión anterior puede registrar cualquiera.
+fn skill_names() -> impl Iterator<Item = &'static str> {
+    crate::prompts::ACTIONS
+        .iter()
+        .map(|action| action.name)
+        .chain(crate::prompts::RETIRED_ACTIONS.iter().copied())
+}
+
+/// Retira un skill que Rationale ya no ofrece, con las mismas pruebas de
+/// propiedad que al actualizar uno vigente: se borra si conserva el hash que
+/// Rationale registró; una edición probada se conserva (y su entrada sigue en
+/// el manifest para que `uninstall-agent` la trate igual); sin registro, solo
+/// `--refresh-skills` resuelve la duda.
+fn retire_skill(
+    manifest: &mut Manifest,
+    report: &mut InstallReport,
+    project_root: &Path,
+    agent: &str,
+    relative: &str,
+    refresh_skills: bool,
+    dry_run: bool,
+) -> Result<(), String> {
+    let path = project_root.join(relative);
+    let index = existing_entry_index(manifest, project_root, &path);
+    let recorded_hash = index.and_then(|i| manifest.entries[i].content_hash.clone());
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if let (Some(i), false) = (index, dry_run) {
+                manifest.entries.remove(i);
+            }
+            return Ok(());
+        }
+        Err(error) => {
+            return Err(format!(
+                "no se pudo leer {} antes de retirarlo: {error}",
+                path.display()
+            ))
+        }
+    };
+
+    let expected = match (&recorded_hash, refresh_skills) {
+        (Some(hash), _) => hash.clone(),
+        (None, true) => content_hash(&bytes),
+        (None, false) => {
+            report.actions.push(format!(
+                "{agent}: conservado {relative} — skill retirado de procedencia desconocida (sin \
+                 registro en el manifest local). Si Rationale lo escribió, \
+                 `install-agent --refresh-skills` lo retira"
+            ));
+            return Ok(());
+        }
+    };
+
+    if dry_run {
+        report.actions.push(if content_hash(&bytes) == expected {
+            format!("{agent}: se retiraría el skill {relative}, que Rationale ya no ofrece")
+        } else {
+            format!("{agent}: se conservaría {relative} — skill retirado con cambios del usuario")
+        });
+        return Ok(());
+    }
+
+    match remove_owned_file_if_unchanged(&path, &expected)? {
+        OwnedRemoval::Removed => {
+            if let Some(i) = existing_entry_index(manifest, project_root, &path) {
+                manifest.entries.remove(i);
+            }
+            report.actions.push(format!(
+                "{agent}: retirado el skill {relative}, que Rationale ya no ofrece"
+            ));
+        }
+        OwnedRemoval::Preserved => report.actions.push(format!(
+            "{agent}: conservado {relative} — skill retirado con cambios del usuario; bórralo \
+             cuando ya no lo uses"
+        )),
+        OwnedRemoval::Missing => {
+            if let Some(i) = existing_entry_index(manifest, project_root, &path) {
+                manifest.entries.remove(i);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn skill_content(action: &crate::prompts::Action) -> String {
@@ -1115,9 +1212,42 @@ fn remove_instructions_block(path: &Path, preamble: Option<&str>) -> Result<(), 
 /// absoluta del binario instalado para funcionar desde aplicaciones GUI.
 const MCP_COMMAND: &str = "rationale";
 
+/// Argumentos con los que se registra el servidor para un cliente. `--client`
+/// le dice a la sesión MCP quién la abrió —la actividad local y `rationale ui`
+/// lo muestran— sin depender de `initialize.clientInfo`, que un cliente puede
+/// omitir o nombrar a su manera.
+fn serve_args(client: &str) -> [&str; 3] {
+    ["serve", "--client", client]
+}
+
+/// Formas de registro que Rationale reconoce como propias: la vigente
+/// (`serve --client <cliente soportado>`) y la anterior a vNext (`serve`).
+/// Instalar compara contra la vigente y migra la anterior; desinstalar retira
+/// las dos. Cualquier otro argumento es configuración del usuario y se
+/// conserva (ADR-0016 §Decision 3-4).
+fn is_rationale_serve_args(args: &[&str]) -> bool {
+    match args {
+        ["serve"] => true,
+        ["serve", "--client", client] => TARGETS.iter().any(|target| target.name == *client),
+        _ => false,
+    }
+}
+
+/// Los `args` de una entrada `mcpServers.rationale` como texto, o `None` si
+/// alguno no es texto (una forma que Rationale nunca escribió).
+fn json_entry_args(entry: &serde_json::Value) -> Option<Vec<&str>> {
+    entry
+        .get("args")?
+        .as_array()?
+        .iter()
+        .map(serde_json::Value::as_str)
+        .collect()
+}
+
 fn upsert_mcp_json_with_command(
     path: &Path,
     command: &Path,
+    client: &str,
     dry_run: bool,
 ) -> Result<(FileAction, bool), String> {
     let existing = std::fs::read_to_string(path).ok();
@@ -1135,7 +1265,7 @@ fn upsert_mcp_json_with_command(
 
     let desired = serde_json::json!({
         "command": command.to_string_lossy(),
-        "args": ["serve"]
+        "args": serve_args(client)
     });
     // No basta con que la clave "rationale" exista: una entrada escrita por una
     // versión anterior lleva la ruta absoluta del binario de quien instaló, y
@@ -1169,7 +1299,7 @@ fn upsert_mcp_json_with_command(
 
 #[cfg(test)]
 fn upsert_mcp_json(path: &Path, dry_run: bool) -> Result<(FileAction, bool), String> {
-    upsert_mcp_json_with_command(path, Path::new(MCP_COMMAND), dry_run)
+    upsert_mcp_json_with_command(path, Path::new(MCP_COMMAND), "claude-code", dry_run)
 }
 
 fn is_known_project_mcp_entry(path: &Path) -> bool {
@@ -1186,10 +1316,7 @@ fn is_known_project_mcp_entry(path: &Path) -> bool {
         return false;
     };
     let command = entry.get("command").and_then(|value| value.as_str());
-    let args = entry.get("args").and_then(|value| value.as_array());
-    let serves = args.is_some_and(|args| {
-        args.len() == 1 && args.first().and_then(|value| value.as_str()) == Some("serve")
-    });
+    let serves = json_entry_args(entry).is_some_and(|args| is_rationale_serve_args(&args));
     serves
         && command.is_some_and(|command| {
             command == MCP_COMMAND
@@ -1261,7 +1388,7 @@ fn install_global_at(
             actions.push(format!("{name}: no detectado, se omite el registro global"));
             continue;
         }
-        let (_, changed) = upsert_mcp_json_with_command(&config, binary_path, dry_run)?;
+        let (_, changed) = upsert_mcp_json_with_command(&config, binary_path, name, dry_run)?;
         actions.push(format!(
             "{name}: {} en {}",
             if changed {
@@ -1327,7 +1454,7 @@ fn register_codex_mcp(binary_path: &Path, dry_run: bool) -> Result<bool, String>
     let status = std::process::Command::new("codex")
         .args(["mcp", "add", "rationale", "--"])
         .arg(binary_path)
-        .arg("serve")
+        .args(serve_args(CODEX_CLIENT))
         .status()
         .map_err(|e| format!("no se pudo ejecutar codex mcp add: {e}"))?;
     if !status.success() {
@@ -1336,15 +1463,34 @@ fn register_codex_mcp(binary_path: &Path, dry_run: bool) -> Result<bool, String>
     Ok(true)
 }
 
-fn codex_registration_matches(output: &str, binary_path: &Path) -> bool {
+const CODEX_CLIENT: &str = "codex";
+
+/// Comando y argumentos de `codex mcp get rationale`. Codex imprime los
+/// argumentos separados por espacios (`args: serve --client codex`).
+fn codex_registration(output: &str) -> (Option<&Path>, Vec<&str>) {
     let command = output
         .lines()
         .find_map(|line| line.trim().strip_prefix("command: "))
         .map(Path::new);
     let args = output
         .lines()
-        .find_map(|line| line.trim().strip_prefix("args: "));
-    command == Some(binary_path) && args == Some("serve")
+        .find_map(|line| line.trim().strip_prefix("args: "))
+        .map(|args| args.split_whitespace().collect())
+        .unwrap_or_default();
+    (command, args)
+}
+
+/// Al día: este binario con la forma vigente. Una forma anterior se migra.
+fn codex_registration_matches(output: &str, binary_path: &Path) -> bool {
+    let (command, args) = codex_registration(output);
+    command == Some(binary_path) && args == serve_args(CODEX_CLIENT)
+}
+
+/// De esta instalación: este binario con cualquier forma propia, vigente o
+/// anterior. Es lo que la desinstalación puede retirar.
+fn codex_registration_is_ours(output: &str, binary_path: &Path) -> bool {
+    let (command, args) = codex_registration(output);
+    command == Some(binary_path) && is_rationale_serve_args(&args)
 }
 
 /// Revierte únicamente registros globales que todavía apuntan al binario que
@@ -1374,7 +1520,7 @@ pub fn uninstall_global_only(binary_path: &Path) -> Result<Vec<String>, String> 
             .output()
             .map_err(|error| format!("no se pudo ejecutar codex: {error}"))?;
         if existing.status.success()
-            && codex_registration_matches(&String::from_utf8_lossy(&existing.stdout), binary_path)
+            && codex_registration_is_ours(&String::from_utf8_lossy(&existing.stdout), binary_path)
         {
             let status = Command::new("codex")
                 .args(["mcp", "remove", "rationale"])
@@ -1408,12 +1554,7 @@ fn mcp_entry_matches_command(path: &Path, binary_path: &Path) -> bool {
     };
     entry.get("command").and_then(|value| value.as_str())
         == Some(binary_path.to_string_lossy().as_ref())
-        && entry
-            .get("args")
-            .and_then(|value| value.as_array())
-            .is_some_and(|args| {
-                args.len() == 1 && args.first().and_then(|value| value.as_str()) == Some("serve")
-            })
+        && json_entry_args(entry).is_some_and(|args| is_rationale_serve_args(&args))
 }
 
 /// Ruta local-only que Rationale nunca debe dejar versionada en el proyecto
@@ -1607,8 +1748,9 @@ fn portable_components(path: &Path) -> Vec<String> {
 }
 
 /// Todos los destinos que `install-agent` administra, como rutas relativas.
-/// Fuente única: `TARGETS` + `prompts::ACTIONS`, para que un agente o una
-/// acción nuevos queden cubiertos sin tocar esta lista.
+/// Fuente única: `TARGETS` + las acciones vigentes y retiradas de `prompts`,
+/// para que un agente o una acción nuevos queden cubiertos sin tocar esta
+/// lista.
 fn managed_destinations() -> Vec<String> {
     let mut destinations = Vec::new();
     for target in TARGETS {
@@ -1617,8 +1759,8 @@ fn managed_destinations() -> Vec<String> {
             destinations.push(config.to_string());
         }
         if let Some(skills_dir) = target.skills_dir {
-            for action in crate::prompts::ACTIONS {
-                destinations.push(format!("{skills_dir}/rationale-{}/SKILL.md", action.name));
+            for name in skill_names() {
+                destinations.push(format!("{skills_dir}/rationale-{name}/SKILL.md"));
             }
         }
     }
@@ -1829,7 +1971,15 @@ mod tests {
         let block = instructions_block();
         assert!(block.contains(MASTER_PROMPT.trim()));
         assert!(block.contains("prepare_change(target, intent)"));
-        assert!(block.contains("finalize_change(...)"));
+        assert!(block.contains("`operation_id`"));
+        assert!(block.contains("finalize_change"));
+        assert!(block.contains("resolve_conflict("));
+        // vNext retiró la cola de aprobación del flujo normal: instrucciones
+        // que la sigan pidiendo mandarían al agente a esperar una revisión
+        // que ya no existe.
+        for stale in ["pending proposal", "rationale review", "/rationale-review"] {
+            assert!(!block.contains(stale), "instrucción pre-vNext: {stale}");
+        }
     }
 
     #[test]
@@ -1985,7 +2135,7 @@ mod tests {
         )
         .unwrap();
 
-        let (_, changed) = upsert_mcp_json_with_command(&config, &binary, false).unwrap();
+        let (_, changed) = upsert_mcp_json_with_command(&config, &binary, "cursor", false).unwrap();
         assert!(changed);
         let value: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -1993,20 +2143,94 @@ mod tests {
             value["mcpServers"]["rationale"]["command"],
             binary.to_string_lossy().as_ref()
         );
+        assert_eq!(
+            value["mcpServers"]["rationale"]["args"],
+            serde_json::json!(["serve", "--client", "cursor"])
+        );
         assert!(value["mcpServers"]["other-tool"].is_object());
 
-        let (_, changed_again) = upsert_mcp_json_with_command(&config, &binary, false).unwrap();
+        let (_, changed_again) =
+            upsert_mcp_json_with_command(&config, &binary, "cursor", false).unwrap();
         assert!(!changed_again);
+        std::fs::remove_dir_all(project).ok();
+    }
+
+    /// vNext añade `--client` al registro. Una instalación anterior dejó
+    /// `serve` a secas con el mismo binario: instalar debe migrarla (la
+    /// comparación es de comando Y argumentos, ADR-0016 §Decision 3), y
+    /// desinstalar debe seguir reconociendo ambas formas como propias — o un
+    /// usuario que desinstala antes de reinstalar se quedaría con una entrada
+    /// huérfana apuntando a un binario borrado.
+    #[test]
+    fn global_registration_migrates_pre_vnext_serve_and_uninstall_recognizes_both_forms() {
+        let project = temp_dir("global-mcp-client-migration");
+        let config = project.join(".claude.json");
+        let binary = project.join("bin/rationale");
+        let legacy = serde_json::json!({
+            "mcpServers": {
+                "rationale": {"command": binary.to_string_lossy(), "args": ["serve"]},
+                "other-tool": {"command": "other", "args": []}
+            }
+        });
+        std::fs::write(&config, legacy.to_string()).unwrap();
+        assert!(
+            mcp_entry_matches_command(&config, &binary),
+            "la forma anterior a vNext sigue siendo de esta instalación"
+        );
+
+        let (_, changed) =
+            upsert_mcp_json_with_command(&config, &binary, "claude-code", false).unwrap();
+        assert!(changed, "serve a secas debe migrarse a serve --client");
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(
+            value["mcpServers"]["rationale"]["args"],
+            serde_json::json!(["serve", "--client", "claude-code"])
+        );
+        assert!(value["mcpServers"]["other-tool"].is_object());
+        assert!(mcp_entry_matches_command(&config, &binary));
+
+        for (args, ours) in [
+            (serde_json::json!(["serve", "--client", "codex"]), true),
+            (
+                serde_json::json!(["serve", "--client", "mi-wrapper"]),
+                false,
+            ),
+            (serde_json::json!(["serve", "--verbose"]), false),
+            (serde_json::json!(["serve", 7]), false),
+        ] {
+            let entry = serde_json::json!({
+                "mcpServers": {"rationale": {"command": binary.to_string_lossy(), "args": args}}
+            });
+            std::fs::write(&config, entry.to_string()).unwrap();
+            assert_eq!(
+                mcp_entry_matches_command(&config, &binary),
+                ours,
+                "args {args} — solo las formas que Rationale escribe son suyas"
+            );
+        }
         std::fs::remove_dir_all(project).ok();
     }
 
     #[test]
     fn codex_registration_compares_command_and_args_not_only_name() {
         let desired = Path::new("/Users/test/.local/bin/rationale");
-        let current = "rationale\n  enabled: true\n  transport: stdio\n  command: /Users/test/.local/bin/rationale\n  args: serve\n";
-        let stale = "rationale\n  enabled: true\n  transport: stdio\n  command: /old/build/target/release/rationale\n  args: serve\n";
+        // Formato real de `codex mcp get`: los argumentos separados por espacios.
+        let current = "rationale\n  enabled: true\n  transport: stdio\n  command: /Users/test/.local/bin/rationale\n  args: serve --client codex\n";
+        let pre_vnext = "rationale\n  enabled: true\n  transport: stdio\n  command: /Users/test/.local/bin/rationale\n  args: serve\n";
+        let stale = "rationale\n  enabled: true\n  transport: stdio\n  command: /old/build/target/release/rationale\n  args: serve --client codex\n";
+        let foreign_args = "rationale\n  enabled: true\n  transport: stdio\n  command: /Users/test/.local/bin/rationale\n  args: serve --profile mio\n";
         assert!(codex_registration_matches(current, desired));
+        assert!(
+            !codex_registration_matches(pre_vnext, desired),
+            "serve a secas no está al día: debe migrarse a serve --client codex"
+        );
         assert!(!codex_registration_matches(stale, desired));
+
+        assert!(codex_registration_is_ours(current, desired));
+        assert!(codex_registration_is_ours(pre_vnext, desired));
+        assert!(!codex_registration_is_ours(stale, desired));
+        assert!(!codex_registration_is_ours(foreign_args, desired));
     }
 
     #[test]
@@ -2017,6 +2241,13 @@ mod tests {
         std::fs::write(
             &config,
             r#"{"mcpServers":{"rationale":{"command":"rationale","args":["serve"]}}}"#,
+        )
+        .unwrap();
+        assert!(is_known_project_mcp_entry(&config));
+
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{"rationale":{"command":"rationale","args":["serve","--client","cursor"]}}}"#,
         )
         .unwrap();
         assert!(is_known_project_mcp_entry(&config));
@@ -2464,8 +2695,11 @@ mod tests {
             "preflight no ejecuta ningún comando Bash — no debe declarar un permiso sin uso"
         );
 
-        let review = skill_content(crate::prompts::action("review").unwrap());
-        assert!(review.contains("disable-model-invocation: true"));
+        let conflicts = skill_content(crate::prompts::action("conflicts").unwrap());
+        assert!(
+            conflicts.contains("disable-model-invocation: true"),
+            "decidir un conflicto es del humano: el agente no invoca este skill solo"
+        );
     }
 
     /// Sin esto, Claude Code pedía aprobación interactiva la primera vez que
@@ -2480,7 +2714,13 @@ mod tests {
             "el skill de health debe declarar el permiso exacto de su propia inyección:\n{health}"
         );
 
-        for other in ["preflight", "explain", "capture", "review", "protocol"] {
+        let conflicts = skill_content(crate::prompts::action("conflicts").unwrap());
+        assert!(
+            conflicts.contains("allowed-tools: Bash(rationale conflicts:*)"),
+            "el skill de conflictos inyecta `rationale conflicts` y declara ese permiso:\n{conflicts}"
+        );
+
+        for other in ["preflight", "explain", "capture", "protocol"] {
             let content = skill_content(crate::prompts::action(other).unwrap());
             assert!(
                 !content.contains("allowed-tools:"),
@@ -2494,9 +2734,9 @@ mod tests {
         let project = temp_dir("owned-skill-uninstall");
         let rationale_local = project.join(".rationale-local");
         let intact = project.join(".claude/skills/rationale-health/SKILL.md");
-        let edited = project.join(".claude/skills/rationale-review/SKILL.md");
+        let edited = project.join(".claude/skills/rationale-conflicts/SKILL.md");
         let intact_content = skill_content(crate::prompts::action("health").unwrap());
-        let edited_content = skill_content(crate::prompts::action("review").unwrap());
+        let edited_content = skill_content(crate::prompts::action("conflicts").unwrap());
         crate::storage::atomic_write_bytes(&intact, intact_content.as_bytes()).unwrap();
         crate::storage::atomic_write_bytes(&edited, edited_content.as_bytes()).unwrap();
 
@@ -2529,9 +2769,110 @@ mod tests {
         assert!(edited.exists(), "el skill editado debe conservarse");
         assert!(actions
             .iter()
-            .any(|action| action.contains("conservado") && action.contains("rationale-review")));
+            .any(|action| action.contains("conservado") && action.contains("rationale-conflicts")));
 
         std::fs::remove_dir_all(project).ok();
+    }
+
+    /// Un skill retirado (`review`, la cola de aprobación pre-vNext) sale de la
+    /// instalación con las mismas pruebas de propiedad que uno vigente: se
+    /// borra intacto, se conserva editado, y su entrada del manifest sigue
+    /// siendo una ruta administrada — sin eso `uninstall-agent` rechazaría el
+    /// manifest entero de cualquier instalación anterior.
+    #[test]
+    fn install_retires_the_review_skill_only_when_rationale_still_owns_it() {
+        let written_by_old_version =
+            "---\ndescription: \"cola de aprobación\"\n---\n\nrationale review\n";
+
+        // Intacto y registrado: se retira, junto con su entrada y su directorio.
+        let repo = git_repo("retire-review-intact");
+        let local = repo.join(".rationale-local");
+        let review = repo.join(".claude/skills/rationale-review/SKILL.md");
+        crate::storage::atomic_write_bytes(&review, written_by_old_version.as_bytes()).unwrap();
+        let mut manifest = Manifest::default();
+        record_owned_entry(
+            &mut manifest,
+            &repo,
+            "claude-code",
+            &review,
+            FileAction::Created,
+            &content_hash(written_by_old_version.as_bytes()),
+        );
+        save_manifest(&local, &manifest).unwrap();
+
+        let dry = install(&repo, &local, &fake_binary(), false, true).unwrap();
+        assert!(review.exists(), "dry-run no borra nada");
+        assert!(dry.actions.iter().any(|a| a.contains("se retiraría")));
+
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
+        assert!(!review.exists(), "{:?}", report.actions);
+        assert!(!review.parent().unwrap().exists());
+        assert!(report
+            .actions
+            .iter()
+            .any(|a| a.contains("retirado") && a.contains("rationale-review")));
+        assert!(
+            existing_entry_index(&load_manifest(&local), &repo, &review).is_none(),
+            "la entrada del skill retirado sale del manifest"
+        );
+        assert!(repo
+            .join(".claude/skills/rationale-conflicts/SKILL.md")
+            .exists());
+        std::fs::remove_dir_all(repo).ok();
+
+        // Editado: se conserva, y uninstall sigue aceptando su entrada.
+        let repo = git_repo("retire-review-edited");
+        let local = repo.join(".rationale-local");
+        let review = repo.join(".claude/skills/rationale-review/SKILL.md");
+        crate::storage::atomic_write_bytes(&review, written_by_old_version.as_bytes()).unwrap();
+        let mut manifest = Manifest::default();
+        record_owned_entry(
+            &mut manifest,
+            &repo,
+            "claude-code",
+            &review,
+            FileAction::Created,
+            &content_hash(written_by_old_version.as_bytes()),
+        );
+        save_manifest(&local, &manifest).unwrap();
+        std::fs::write(&review, format!("{written_by_old_version}# mío\n")).unwrap();
+
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
+        assert!(review.exists());
+        assert!(report
+            .actions
+            .iter()
+            .any(|a| a.contains("conservado") && a.contains("cambios del usuario")));
+        let actions =
+            uninstall(&repo, &local).expect("un skill retirado sigue siendo administrado");
+        assert!(
+            review.exists(),
+            "uninstall tampoco borra una edición probada"
+        );
+        assert!(actions
+            .iter()
+            .any(|a| a.contains("conservado") && a.contains("rationale-review")));
+        std::fs::remove_dir_all(repo).ok();
+
+        // Sin registro (un clon con los skills versionados): solo
+        // --refresh-skills lo retira.
+        let repo = git_repo("retire-review-unknown");
+        let local = repo.join(".rationale-local");
+        let review = repo.join(".claude/skills/rationale-review/SKILL.md");
+        crate::storage::atomic_write_bytes(&review, written_by_old_version.as_bytes()).unwrap();
+
+        let report = install(&repo, &local, &fake_binary(), false, false).unwrap();
+        assert!(review.exists());
+        assert!(report
+            .actions
+            .iter()
+            .any(|a| a.contains("procedencia desconocida") && a.contains("--refresh-skills")));
+        install(&repo, &local, &fake_binary(), true, false).unwrap();
+        assert!(
+            !review.exists(),
+            "--refresh-skills resuelve la duda y lo retira"
+        );
+        std::fs::remove_dir_all(repo).ok();
     }
 
     #[test]
