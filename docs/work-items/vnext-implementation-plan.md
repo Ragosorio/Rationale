@@ -121,10 +121,12 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
     only recognized current actions, so any manifest from a previous install
     that recorded `rationale-review` would make `uninstall-agent` reject the
     whole manifest as an unmanaged path. Retired actions stay recognized.
-20. **This repo still tracks a pre-beta.3 `.mcp.json` entry** (`rationale
-    serve`, logical command) next to the global registration. `install-agent`
-    retires it per ADR-0016; the dogfood regeneration restored it because
-    removing it changes how this repo's sessions reach MCP — an owner call.
+20. **This repo tracked an inert pre-beta.3 `.mcp.json` entry** (`rationale
+    serve`, logical command). Verified before retiring it: Claude Code never
+    approved it (`enabledMcpjsonServers: []`) and `claude mcp get rationale`
+    reports `Scope: User config` inside the repo, so sessions already used the
+    global registration. With the owner's approval, `install-agent` retired it
+    per ADR-0016.
 
 ## Governing Records and how vNext honors them
 
@@ -267,4 +269,3 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
   while beta.3 is installed.
 - Release workflow: build `ui/dist` before `cargo build --release` so the
   published binary embeds the Control Room instead of the fallback page.
-- Owner decision: retire this repo's tracked legacy `.mcp.json` entry.
