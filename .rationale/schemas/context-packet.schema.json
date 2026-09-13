@@ -29,7 +29,7 @@
     },
     "critical_constraints": {
       "type": "array",
-      "description": "Nivel 1 de v0.5 §18.1 — TODA constraint entra (severidad y gobernancia son señales de orden, nunca de visibilidad; Fase 1.2). Las que gobiernan el target (`governs_target: true`) nunca se truncan por presupuesto (v0.5 §30.1.7).",
+      "description": "Nivel 1 de v0.5 §18.1 — las constraints activas que gobiernan el target (nunca truncadas, v0.5 §30.1.7) y, con intención declarada, las relacionadas por solapamiento léxico hasta max_critical_constraints. El presupuesto es un techo, nunca una cuota: sin señal de relevancia no hay constraint.",
       "items": {
         "type": "object",
         "required": ["id", "statement", "authority", "severity", "governs_target"],
@@ -40,6 +40,10 @@
             "type": "string",
             "enum": ["normal", "pinned", "revoked"],
             "description": "Autoridad vNext. 'pinned' solo aparece si una persona fijó el Record; nunca se infiere de su contenido ni de aprobaciones heredadas."
+          },
+          "provenance": {
+            "type": "string",
+            "enum": ["agent_asserted", "human_stated", "migrated"]
           },
           "severity": {
             "type": "string",
@@ -87,6 +91,83 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Advertencias normalizadas del proveedor — nunca un string crudo de error interno (docs/research/codebase-memory/10-failure-modes.md)."
+    },
+    "operation_id": {
+      "type": "string",
+      "description": "vNext: operación abierta por prepare_change (op_…). Enlaza contexto, trabajo del agente, finalize_change y actividad."
+    },
+    "target": {
+      "type": "object",
+      "required": ["spec"],
+      "properties": {
+        "spec": { "type": "string" },
+        "file_path": { "type": "string" },
+        "symbol": { "type": "string" },
+        "qualified_name": { "type": "string" }
+      }
+    },
+    "intent": { "type": "string" },
+    "decisions": {
+      "type": "array",
+      "description": "Records no-constraint (decision, exception, risk) activos que gobiernan el target. Nunca se truncan.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "statement", "authority", "provenance", "match_kind"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["decision", "exception", "risk"] },
+          "statement": { "type": "string" },
+          "rationale": { "type": "string" },
+          "authority": { "type": "string", "enum": ["normal", "pinned"] },
+          "provenance": { "type": "string", "enum": ["agent_asserted", "human_stated", "migrated"] },
+          "match_kind": { "type": "string" }
+        }
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "description": "Relaciones que el canon explica y tocan el target, con estado estructural derivado en esta consulta (nunca persistido) y el porqué. Nunca se truncan.",
+      "items": {
+        "type": "object",
+        "required": ["source", "kind", "target", "state", "detail", "record_id", "statement", "authority", "provenance"],
+        "properties": {
+          "source": { "type": "string" },
+          "kind": { "type": "string" },
+          "target": { "type": "string" },
+          "state": { "type": "string", "enum": ["observed", "indirect", "orphaned", "unknown"] },
+          "detail": { "type": "string" },
+          "path": { "type": "array", "items": { "type": "string" } },
+          "record_id": { "type": "string" },
+          "statement": { "type": "string" },
+          "rationale": { "type": "string" },
+          "authority": { "type": "string" },
+          "provenance": { "type": "string" }
+        }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "description": "Subgrafo mínimo seleccionado — evidencia regenerable, nunca autoridad.",
+      "required": ["nodes", "edges", "considered_nodes", "considered_relationships", "truncated"],
+      "properties": {
+        "provider": { "type": "string" },
+        "index_state": { "type": "string" },
+        "nodes": { "type": "array", "items": { "type": "object", "required": ["name", "label", "file_path", "qualified_name", "role"] } },
+        "edges": { "type": "array", "items": { "type": "object", "required": ["source", "kind", "target", "state"] } },
+        "considered_nodes": { "type": "integer" },
+        "considered_relationships": { "type": "integer" },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "relevant_code": {
+      "type": "object",
+      "required": ["file_path", "qualified_name", "source", "truncated"]
+    },
+    "known_unknowns": { "type": "array", "items": { "type": "string" } },
+    "budget_overflow": {
+      "type": "string",
+      "enum": ["authoritative_context", "protected_context"],
+      "description": "Presente solo si el contenido protegido por sí solo excede max_tokens; se sirve completo igual."
     }
   }
 }

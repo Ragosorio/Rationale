@@ -35,7 +35,6 @@ pub enum RelationshipState {
 }
 
 impl RelationshipState {
-    #[allow(dead_code)] // temporal: lo consume el Context Compiler (fase 5)
     pub fn as_str(self) -> &'static str {
         match self {
             RelationshipState::Observed => "observed",

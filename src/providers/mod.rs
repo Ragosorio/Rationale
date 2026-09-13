@@ -12,10 +12,6 @@
 //! nombres de etiquetas — cruza hacia el núcleo. Mañana un proveedor nativo
 //! produce exactamente las mismas estructuras.
 
-// Temporal: el Context Compiler (fase 5, commit siguiente) consume el modelo
-// completo; hasta entonces parte del contrato no tiene caller.
-#![allow(dead_code)]
-
 pub mod codebase_memory;
 pub mod fixture;
 
@@ -343,6 +339,7 @@ pub struct IndexStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(dead_code)] // consumido por la UI (fase 7)
 pub struct ArchitectureCluster {
     pub label: String,
     pub members: u64,
@@ -350,6 +347,7 @@ pub struct ArchitectureCluster {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(dead_code)] // consumido por la UI (fase 7)
 pub struct ArchitectureSummary {
     pub total_nodes: Option<u64>,
     pub total_edges: Option<u64>,
@@ -453,6 +451,7 @@ pub trait CodeIntelligenceProvider {
     }
 
     /// Unión de vecindarios de varias semillas, deduplicada.
+    #[allow(dead_code)] // consumido por la UI (fase 7)
     fn get_subgraph(
         &mut self,
         repo_path: &str,
@@ -506,6 +505,7 @@ pub trait CodeIntelligenceProvider {
     }
 
     /// Quién depende de `node` (entrante), acotado por profundidad.
+    #[allow(dead_code)] // parte del contrato vNext; aún sin caller en el núcleo
     fn impact(
         &mut self,
         repo_path: &str,
@@ -539,10 +539,12 @@ pub trait CodeIntelligenceProvider {
         ProviderResult::unsupported(&self.capabilities().name, "get_file_outline")
     }
 
+    #[allow(dead_code)] // consumido por la UI (fase 7)
     fn get_architecture(&mut self, _repo_path: &str) -> ProviderResult<ArchitectureSummary> {
         ProviderResult::unsupported(&self.capabilities().name, "get_architecture")
     }
 
+    #[allow(dead_code)] // consumido por la actividad de finalize (fase 6)
     fn changed_nodes(
         &mut self,
         _repo_path: &str,

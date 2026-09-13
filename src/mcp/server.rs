@@ -15,7 +15,7 @@
 
 use crate::mcp::framing;
 use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
-use crate::{canon, configuration, pipeline, retrieval};
+use crate::{canon, configuration, context, pipeline, retrieval};
 use serde_json::{json, Value};
 use std::io::{self, BufReader};
 use std::path::PathBuf;
@@ -244,7 +244,7 @@ fn tool_definitions() -> Value {
     Value::Array(vec![
         json!({
             "name": "prepare_change",
-            "description": "Snapshot de consistencia, constraints críticas aprobadas, conflictos con la intención, riesgos y cobertura para un target antes de cambiarlo.",
+            "description": "Antes de un cambio no trivial: abre una operación y devuelve el contexto mínimo suficiente — constraints y decisiones que gobiernan el target, relaciones explicadas con su estado estructural (observed/indirect/orphaned/unknown) y su porqué, el subgrafo relevante, el código del target, riesgos, desconocidos y cobertura. Guarda el operation_id y pásalo a finalize_change.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -255,7 +255,9 @@ fn tool_definitions() -> Value {
                     "repo_path": {"type": "string"},
                     "max_tokens": {"type": "integer"},
                     "max_critical_constraints": {"type": "integer"},
-                    "max_risks": {"type": "integer"}
+                    "max_risks": {"type": "integer"},
+                    "max_nodes": {"type": "integer", "description": "Techo de nodos estructurales del packet (default 12)"},
+                    "max_relationships": {"type": "integer", "description": "Techo de relaciones estructurales del packet (default 16); las explicadas por el canon nunca se recortan"}
                 },
                 "required": ["target"]
             }
@@ -359,7 +361,7 @@ fn handle_tools_call(
     // normaliza a `isError` y el servidor sigue vivo para la llamada
     // siguiente (regla no negociable de E5).
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match name.as_str() {
-        "prepare_change" => call_prepare_change(&arguments, provider_mut(provider)),
+        "prepare_change" => call_prepare_change(&arguments, provider_mut(provider), session),
         "explain_target" => call_explain_target(&arguments),
         "health" => call_health(&arguments, provider_mut(provider)),
         "finalize_change" => call_finalize_change(&arguments, provider_mut(provider), session),
@@ -433,7 +435,11 @@ fn coverage_label(coverage: &Coverage) -> &'static str {
     }
 }
 
-fn call_prepare_change(args: &Value, provider: &mut ProviderHandle) -> Result<Value, String> {
+fn call_prepare_change(
+    args: &Value,
+    provider: &mut ProviderHandle,
+    session: &Session,
+) -> Result<Value, String> {
     let target = args
         .get("target")
         .and_then(|v| v.as_str())
@@ -480,6 +486,15 @@ fn call_prepare_change(args: &Value, provider: &mut ProviderHandle) -> Result<Va
             .unwrap_or(default_budget.max_risks),
     };
 
+    let structural_default = context::StructuralBudget::default();
+    let arg_usize = |field: &str| args.get(field).and_then(Value::as_u64).map(|n| n as usize);
+    let structural_budget = context::StructuralBudget {
+        max_nodes: arg_usize("max_nodes").unwrap_or(structural_default.max_nodes),
+        max_relationships: arg_usize("max_relationships")
+            .unwrap_or(structural_default.max_relationships),
+        snippet_chars: structural_default.snippet_chars,
+    };
+
     let outcome = pipeline::prepare(
         &pipeline::PrepareRequest {
             target_spec: target,
@@ -487,11 +502,14 @@ fn call_prepare_change(args: &Value, provider: &mut ProviderHandle) -> Result<Va
             project_root,
             repo_path,
             budget,
+            structural_budget,
+            actor: session.actor.clone(),
         },
         provider,
     )?;
 
     Ok(json!({
+        "operation_id": outcome.operation.operation_id,
         "packet": outcome.packet,
         "assessment": outcome.assessment,
         "diagnostics": outcome.diagnostics,

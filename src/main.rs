@@ -14,10 +14,12 @@ mod cache;
 mod canon;
 mod capture;
 mod configuration;
+mod context;
 mod doctor;
 mod evaluation;
 mod mascot;
 mod mcp;
+mod operations;
 mod pipeline;
 mod project;
 mod prompts;
@@ -477,6 +479,13 @@ fn cmd_prepare(args: &[String]) {
             project_root: project_root.clone(),
             repo_path,
             budget: retrieval::Budget::default(),
+            structural_budget: context::StructuralBudget::default(),
+            actor: canon::ActorContext {
+                client: "cli".to_string(),
+                client_source: "cli".to_string(),
+                session_id: None,
+                operation_id: None,
+            },
         },
         &mut provider,
     )

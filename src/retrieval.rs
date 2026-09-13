@@ -7,11 +7,12 @@
 //! paquete operativo (Arquitectura §11.11).
 
 use crate::binding_match::MatchKind;
+use crate::context::StructuralContext;
 use crate::providers::{Coverage, ProviderStatus};
 use crate::revision::Consistency;
 use crate::storage::Record;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Budget explícito de la consulta (Rationale_v0.5.md §18).
 #[derive(Debug, Clone)]
@@ -22,11 +23,13 @@ pub struct Budget {
 }
 
 impl Default for Budget {
-    /// Objetivos iniciales del piloto (v0.5 §30): mediana <600 tokens,
-    /// p95 <1000. Se usa 600 como default conservador de max_tokens.
+    /// El piloto v0.5 (§30) medía packets de solo constraints (mediana <600
+    /// tokens). vNext suma estructura y código relevante, así que el techo
+    /// sube — sigue siendo un techo: un target sin contexto produce un
+    /// packet pequeño, nunca uno rellenado hasta el límite.
     fn default() -> Self {
         Budget {
-            max_tokens: 600,
+            max_tokens: 2400,
             max_critical_constraints: 5,
             max_risks: 3,
         }
@@ -46,6 +49,8 @@ pub struct CriticalConstraint {
     pub id: String,
     pub statement: String,
     pub authority: String,
+    /// `agent_asserted | human_stated | migrated` — quién afirmó esto.
+    pub provenance: String,
     /// Verbatim del Record — antes la severidad decidía si el Record era
     /// siquiera visible (solo `"critical"` entraba); ahora es únicamente
     /// una señal de orden, nunca de visibilidad (defecto real: un Record
@@ -107,6 +112,14 @@ pub struct IntentConflict {
 #[derive(Debug, Serialize)]
 pub struct ContextPacket {
     pub snapshot: Snapshot,
+    /// Operación que `prepare_change` abrió: enlaza este contexto con el
+    /// trabajo del agente, `finalize_change` y la actividad de la UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<PacketTarget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
     /// Nivel 1 (v0.5 §18.1): restricciones críticas aprobadas.
     pub critical_constraints: Vec<CriticalConstraint>,
     /// Nivel 2: conflictos con la intención declarada. Nunca un veredicto
@@ -120,17 +133,39 @@ pub struct ContextPacket {
     /// le exige al agente pronunciarse explícitamente en vez de ignorar
     /// silenciosamente la constraint gobernante.
     pub governance_verdict_required: bool,
+    /// Records no-constraint (decision, exception, risk) que gobiernan el
+    /// target. Nunca se truncan: antes una decisión gobernante era invisible
+    /// en el packet (solo aparecía en el assessment).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<GoverningDecision>,
+    /// Relaciones que el canon explica y tocan el target, con su estado
+    /// estructural derivado ahora y el porqué. Nunca se truncan.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relationships: Vec<ExplainedRelationship>,
     /// Nivel 3: razón principal (el `rationale` del primer Record incluido).
     pub primary_reason: Option<String>,
     /// Nivel 4: riesgos conocidos directamente relevantes.
     pub known_risks: Vec<String>,
+    /// Subgrafo mínimo seleccionado (regenerable, nunca autoridad).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structure: Option<PacketStructure>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relevant_code: Option<RelevantCode>,
     /// Nivel 5: estructura afectada (target resuelto + bindings conocidos).
     pub affected_targets: Vec<String>,
+    /// Lo que Rationale no pudo verificar — nunca convertido en ausencia.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub known_unknowns: Vec<String>,
     /// Nivel 6: historia expandible — solo el conteo, no el contenido
     /// (progressive disclosure, v0.5 §18.2).
     pub additional_history_available: usize,
     pub resolved_target: Option<String>,
     pub warnings: Vec<String>,
+    /// `authoritative_context` cuando el conocimiento que gobierna el target
+    /// por sí solo excede el presupuesto (se sirve completo igual);
+    /// `protected_context` cuando lo que excede es otro contenido protegido.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget_overflow: Option<String>,
     /// Proxy de tokens (chars/4) del contenido de texto incluido —
     /// instrumentación, no una medición exacta de tokenizer real
     /// (Arquitectura §20.3: "si los tokens no están disponibles, se
@@ -138,8 +173,108 @@ pub struct ContextPacket {
     pub token_estimate: usize,
 }
 
-fn token_estimate(text: &str) -> usize {
-    (text.chars().count() / 4).max(1)
+#[derive(Debug, Serialize, Clone)]
+pub struct PacketTarget {
+    pub spec: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qualified_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct GoverningDecision {
+    pub id: String,
+    pub kind: String,
+    pub statement: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+    pub authority: String,
+    pub provenance: String,
+    pub match_kind: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ExplainedRelationship {
+    pub source: String,
+    pub kind: String,
+    pub target: String,
+    /// `observed | indirect | orphaned | unknown`, derivado en esta consulta.
+    pub state: String,
+    pub detail: String,
+    /// Camino que la mantiene cuando es `indirect`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<String>,
+    pub record_id: String,
+    pub statement: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+    pub authority: String,
+    pub provenance: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PacketNode {
+    pub name: String,
+    pub label: String,
+    pub file_path: String,
+    pub qualified_name: String,
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub record_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PacketEdge {
+    pub source: String,
+    pub kind: String,
+    pub target: String,
+    pub state: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub record_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PacketStructure {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index_state: Option<String>,
+    pub nodes: Vec<PacketNode>,
+    pub edges: Vec<PacketEdge>,
+    pub considered_nodes: usize,
+    pub considered_relationships: usize,
+    /// El proveedor tenía más vecinos que el límite de la consulta.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct RelevantCode {
+    pub file_path: String,
+    pub qualified_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<u32>,
+    pub source: String,
+    pub truncated: bool,
+}
+
+/// Tokens estimados del packet tal como lo recibe el agente: bytes del JSON
+/// serializado / 4. Un proxy (Arquitectura §20.3), no un tokenizer real,
+/// pero cuenta también la estructura JSON que el agente sí paga.
+fn estimate_tokens(packet: &ContextPacket) -> usize {
+    serde_json::to_vec(packet)
+        .map(|bytes| bytes.len().div_ceil(4))
+        .unwrap_or(0)
+}
+
+fn provenance_label(record: &Record) -> String {
+    crate::storage::provenance_kind(record).as_str().to_string()
 }
 
 fn authority_label(record: &Record) -> &'static str {
@@ -336,19 +471,163 @@ pub(crate) fn polarity_of(intent: &str, statement: &str) -> Polarity {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn compile_packet(
-    git_head: Option<String>,
-    consistency: Consistency,
-    provider_status: ProviderStatus,
-    provider_coverage: Coverage,
-    records: &[Record],
-    intent: Option<&str>,
-    resolved_target: Option<String>,
-    provider_warnings: Vec<String>,
-    budget: &Budget,
+/// Records no-constraint activos que gobiernan el target, por especificidad
+/// del binding y precedencia; y cuántos gobernantes inactivos son historia.
+fn select_decisions<'a>(
+    records: &'a [Record],
     governing: &HashMap<String, MatchKind>,
-) -> ContextPacket {
+) -> (Vec<&'a Record>, usize) {
+    let governing_other = || {
+        records
+            .iter()
+            .filter(|r| r.kind != "constraint" && governing.contains_key(&r.id))
+    };
+    let mut active: Vec<&Record> = governing_other().filter(|r| is_active(r)).collect();
+    active.sort_by(|a, b| {
+        governing
+            .get(&b.id)
+            .cmp(&governing.get(&a.id))
+            .then_with(|| pinned_first(a, b))
+            .then_with(|| crate::storage::severity_of(b).cmp(&crate::storage::severity_of(a)))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let inactive = governing_other().filter(|r| !is_active(r)).count();
+    (active, inactive)
+}
+
+fn packet_structure(context: &StructuralContext) -> PacketStructure {
+    let name_of = |key: &str| {
+        context
+            .nodes
+            .iter()
+            .find(|node| node.key == key)
+            .map_or_else(|| key.to_string(), |node| node.qualified_name.clone())
+    };
+    PacketStructure {
+        provider: context.provider_name.clone(),
+        index_state: context.index_state.clone(),
+        nodes: context
+            .selected_nodes()
+            .into_iter()
+            .map(|node| PacketNode {
+                name: node.name.clone(),
+                label: node.label.clone(),
+                file_path: node.file_path.clone(),
+                qualified_name: node.qualified_name.clone(),
+                role: node.role.as_str().to_string(),
+                start_line: node.start_line,
+                record_ids: node.record_ids.clone(),
+            })
+            .collect(),
+        edges: context
+            .selected_edges()
+            .into_iter()
+            .map(|edge| PacketEdge {
+                source: name_of(&edge.source),
+                kind: edge.kind.clone(),
+                target: name_of(&edge.target),
+                state: edge.state.clone(),
+                record_ids: edge.record_ids.clone(),
+            })
+            .collect(),
+        considered_nodes: context.nodes.len(),
+        considered_relationships: context.edges.len(),
+        truncated: context.truncated,
+    }
+}
+
+fn explained_relationships(
+    context: &StructuralContext,
+    records: &[Record],
+) -> Vec<ExplainedRelationship> {
+    context
+        .relationships
+        .iter()
+        .filter_map(|assessment| {
+            let record = records.iter().find(|r| r.id == assessment.record_id)?;
+            Some(ExplainedRelationship {
+                source: assessment.source.qualified_name.clone(),
+                kind: assessment.kind.clone(),
+                target: assessment.target.qualified_name.clone(),
+                state: assessment.state.as_str().to_string(),
+                detail: assessment.detail.clone(),
+                path: assessment
+                    .path
+                    .as_ref()
+                    .map(|path| {
+                        path.nodes
+                            .iter()
+                            .map(|n| n.qualified_name.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                record_id: record.id.clone(),
+                statement: record.statement.clone(),
+                rationale: record.rationale.clone(),
+                authority: authority_label(record).to_string(),
+                provenance: provenance_label(record),
+            })
+        })
+        .collect()
+}
+
+/// Recorta un elemento regenerable o de menor prioridad, en este orden:
+/// targets afectados, nodos estructurales de menor rol (nunca el target ni
+/// los extremos explicados), el código relevante (el agente puede leer el
+/// archivo) y, al final, riesgos. Devuelve `false` cuando solo queda
+/// contenido protegido.
+fn trim_one(packet: &mut ContextPacket, structure: Option<&mut StructuralContext>) -> bool {
+    if packet.affected_targets.pop().is_some() {
+        return true;
+    }
+    if let Some(context) = structure {
+        if context.drop_lowest_priority_node() {
+            packet.structure = Some(packet_structure(context));
+            return true;
+        }
+    }
+    if packet.relevant_code.take().is_some() {
+        return true;
+    }
+    packet.known_risks.pop().is_some()
+}
+
+/// Entrada del Context Compiler. `operation_id` y `target` enlazan el packet
+/// con la operación que `prepare_change` abrió.
+pub struct PacketInput<'a> {
+    pub git_head: Option<String>,
+    pub consistency: Consistency,
+    pub provider_status: ProviderStatus,
+    pub provider_coverage: Coverage,
+    pub records: &'a [Record],
+    pub intent: Option<&'a str>,
+    pub resolved_target: Option<String>,
+    pub provider_warnings: Vec<String>,
+    pub budget: &'a Budget,
+    pub governing: &'a HashMap<String, MatchKind>,
+    pub operation_id: Option<String>,
+    pub target: Option<PacketTarget>,
+}
+
+/// Compila el packet. Con `structure`, superpone el subgrafo seleccionado y
+/// las relaciones explicadas; el recorte por tokens reduce esa selección en
+/// el propio contexto, así que el snapshot de la operación refleja
+/// exactamente lo que recibió el agente.
+pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>) -> ContextPacket {
+    let PacketInput {
+        git_head,
+        consistency,
+        provider_status,
+        provider_coverage,
+        records,
+        intent,
+        resolved_target,
+        provider_warnings,
+        budget,
+        governing,
+        operation_id,
+        target,
+    } = input;
     let provider_status_str = match provider_status {
         ProviderStatus::Successful => "successful",
         ProviderStatus::Degraded => "degraded",
@@ -362,6 +641,7 @@ pub fn compile_packet(
 
     let selection = select_constraints(records, governing, intent, budget);
     let selected = selection.constraints;
+    let (decision_records, inactive_decisions) = select_decisions(records, governing);
 
     let critical_constraints: Vec<CriticalConstraint> = selected
         .iter()
@@ -369,21 +649,37 @@ pub fn compile_packet(
             id: r.id.clone(),
             statement: r.statement.clone(),
             authority: authority_label(r).to_string(),
+            provenance: provenance_label(r),
             severity: r.severity.clone(),
             governs_target: governing.contains_key(&r.id),
             match_kind: governing.get(&r.id).map(|k| k.as_str().to_string()),
         })
         .collect();
 
+    let decisions: Vec<GoverningDecision> = decision_records
+        .iter()
+        .map(|r| GoverningDecision {
+            id: r.id.clone(),
+            kind: r.kind.clone(),
+            statement: r.statement.clone(),
+            rationale: r.rationale.clone(),
+            authority: authority_label(r).to_string(),
+            provenance: provenance_label(r),
+            match_kind: governing
+                .get(&r.id)
+                .map(|k| k.as_str().to_string())
+                .unwrap_or_default(),
+        })
+        .collect();
+
     // `detection: governs-target` es un hecho verificable (el Record
     // declara un binding hacia el target), no una inferencia semántica —
-    // se emite para TODO Record gobernante con intención declarada, sin
-    // importar solapamiento léxico. Es lo único que hace falta para
-    // arreglar el caso real del dogfood: un Record de severidad `medium`
-    // que gobernaba el target y no aparecía en absoluto.
+    // se emite para TODO Record gobernante con intención declarada (también
+    // decisiones), sin importar solapamiento léxico.
     let intent_conflicts: Vec<IntentConflict> = match intent {
         Some(text) => selected
             .iter()
+            .chain(decision_records.iter())
             .filter_map(|r| {
                 let governs = governing.contains_key(&r.id);
                 let shared = shared_terms(text, &r.statement);
@@ -423,10 +719,20 @@ pub fn compile_packet(
 
     let governance_verdict_required = intent.is_some() && !governing.is_empty();
 
-    let primary_reason = selected.first().and_then(|r| r.rationale.clone());
+    let relationships = structure
+        .as_deref()
+        .map(|context| explained_relationships(context, records))
+        .unwrap_or_default();
+
+    let primary_reason = selected
+        .first()
+        .and_then(|r| r.rationale.clone())
+        .or_else(|| decision_records.first().and_then(|r| r.rationale.clone()))
+        .or_else(|| relationships.first().and_then(|r| r.rationale.clone()));
 
     let mut known_risks: Vec<String> = selected
         .iter()
+        .chain(decision_records.iter())
         .flat_map(|r| r.risks.iter().map(|risk| risk.statement.clone()))
         .collect();
     let risks_after_selection = known_risks.len();
@@ -437,7 +743,7 @@ pub fn compile_packet(
     if let Some(t) = &resolved_target {
         affected_targets.push(t.clone());
     }
-    for r in &selected {
+    for r in selected.iter().chain(decision_records.iter()) {
         for binding in &r.binding_declarations {
             if let Some(path) = &binding.path_hint {
                 if !affected_targets.contains(path) {
@@ -448,95 +754,142 @@ pub fn compile_packet(
     }
     let affected_targets_before_budget = affected_targets.len();
 
-    // Historia expandible = lo relevante que no se sirvió: relacionadas que
-    // no cupieron bajo el techo y Records inactivos atados al target. Antes
-    // contaba "todas las constraints del canon menos las servidas", como si
-    // cada regla ajena al target fuera historia de este cambio.
-    let critical_constraints_dropped =
-        selection.related_dropped_by_budget + selection.inactive_governing;
-
-    // Nivel 0-3 (salud, constraints críticas, conflictos, razón principal)
-    // nunca se recortan por presupuesto — v0.5 §30.1.7: omitir una
-    // constraint crítica invalida el paquete aunque parezca "eficiente".
-    // Solo los niveles 4-6 se recortan progresivamente si el estimado de
-    // tokens excede el budget.
-    let protected_text: String = critical_constraints
-        .iter()
-        .map(|c| c.statement.as_str())
-        .chain(intent_conflicts.iter().map(|c| c.statement.as_str()))
-        .chain(primary_reason.iter().map(|s| s.as_str()))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let protected_tokens = token_estimate(&protected_text);
-
-    while protected_tokens
-        + token_estimate(&known_risks.join(" "))
-        + token_estimate(&affected_targets.join(" "))
-        > budget.max_tokens
-    {
-        if !affected_targets.is_empty() {
-            affected_targets.pop();
-        } else if !known_risks.is_empty() {
-            known_risks.pop();
-        } else {
-            break;
-        }
-    }
-
-    // E7 hallazgo D: contar realmente cuántos elementos se recortaron por
-    // presupuesto (antes: un flag fijo `+1` para risks, y `affected_targets`
-    // recortados no se contaban en absoluto — un agente podía ver
-    // `additional_history_available == 0` con targets reales omitidos).
-    let risks_dropped_by_token_budget =
-        (risks_after_selection - risks_dropped_by_max_risks).saturating_sub(known_risks.len());
-    let targets_dropped_by_token_budget =
-        affected_targets_before_budget.saturating_sub(affected_targets.len());
-    let additional_history_available = critical_constraints_dropped
-        + risks_dropped_by_max_risks
-        + risks_dropped_by_token_budget
-        + targets_dropped_by_token_budget;
-
-    let token_estimate_total = protected_tokens
-        + token_estimate(&known_risks.join(" "))
-        + token_estimate(&affected_targets.join(" "));
-
-    // E7 hallazgo C: si aun recortando todo lo recortable (niveles 4-6) el
-    // packet sigue excediendo el budget, decirlo explícitamente — nunca
-    // servir un packet sobre-presupuesto en silencio. Los niveles 0-3
-    // (protegidos) nunca se recortan por diseño (v0.5 §30.1.7); cuando ellos
-    // solos exceden el budget, no hay nada más que recortar.
     let mut warnings = provider_warnings;
-    if token_estimate_total > budget.max_tokens {
-        warnings.push(format!(
-            "budget de tokens excedido: {token_estimate_total} > {} — el contenido protegido (niveles 0-3: constraints críticas, conflictos, razón principal) nunca se recorta",
-            budget.max_tokens
-        ));
-    }
+    let mut known_unknowns = Vec::new();
+    let (structure_section, relevant_code) = match structure.as_deref() {
+        Some(context) => {
+            warnings.extend(context.warnings.iter().cloned());
+            known_unknowns.extend(context.known_unknowns.iter().cloned());
+            let code = context.snippet.as_ref().map(|snippet| RelevantCode {
+                file_path: snippet.binding.file_path.clone(),
+                qualified_name: snippet.binding.qualified_name.clone(),
+                start_line: snippet.start_line,
+                end_line: snippet.end_line,
+                source: snippet.source.clone(),
+                truncated: snippet.truncated,
+            });
+            let section = context
+                .provider_name
+                .is_some()
+                .then(|| packet_structure(context));
+            (section, code)
+        }
+        None => (None, None),
+    };
+    let mut seen = HashSet::new();
+    warnings.retain(|warning| seen.insert(warning.clone()));
 
-    ContextPacket {
+    let mut packet = ContextPacket {
         snapshot: Snapshot {
             git_revision: git_head,
             consistency: consistency.to_string(),
             provider_status: provider_status_str.to_string(),
             provider_coverage: coverage_str.to_string(),
         },
+        operation_id,
+        target,
+        intent: intent.map(str::to_string),
         critical_constraints,
         intent_conflicts,
         governance_verdict_required,
+        decisions,
+        relationships,
         primary_reason,
         known_risks,
+        structure: structure_section,
+        relevant_code,
         affected_targets,
-        additional_history_available,
+        known_unknowns,
+        additional_history_available: 0,
         resolved_target,
         warnings,
-        token_estimate: token_estimate_total,
+        budget_overflow: None,
+        token_estimate: 0,
+    };
+
+    // El contenido protegido (salud, target, constraints, conflictos,
+    // decisiones y relaciones que gobiernan, razón principal, desconocidos)
+    // nunca se recorta — v0.5 §30.1.7: omitir conocimiento gobernante
+    // invalida el paquete aunque parezca "eficiente".
+    while estimate_tokens(&packet) > budget.max_tokens
+        && trim_one(&mut packet, structure.as_deref_mut())
+    {}
+
+    // Historia expandible = lo relevante que no se sirvió: relacionadas que
+    // no cupieron bajo el techo, Records gobernantes inactivos y riesgos o
+    // targets recortados. Nunca "todo el canon menos lo servido".
+    let risks_dropped_by_token_budget = (risks_after_selection - risks_dropped_by_max_risks)
+        .saturating_sub(packet.known_risks.len());
+    let targets_dropped_by_token_budget =
+        affected_targets_before_budget.saturating_sub(packet.affected_targets.len());
+    packet.additional_history_available = selection.related_dropped_by_budget
+        + selection.inactive_governing
+        + inactive_decisions
+        + risks_dropped_by_max_risks
+        + risks_dropped_by_token_budget
+        + targets_dropped_by_token_budget;
+
+    // E7 hallazgo C: nunca servir un packet sobre-presupuesto en silencio.
+    let estimate = estimate_tokens(&packet);
+    if estimate > budget.max_tokens {
+        let authoritative = packet.critical_constraints.iter().any(|c| c.governs_target)
+            || !packet.decisions.is_empty()
+            || !packet.relationships.is_empty();
+        packet.budget_overflow = Some(
+            if authoritative {
+                "authoritative_context"
+            } else {
+                "protected_context"
+            }
+            .to_string(),
+        );
+        packet.warnings.push(format!(
+            "budget de tokens excedido: {estimate} > {} — el contenido protegido (salud, constraints, conflictos, decisiones y relaciones que gobiernan el target, razón principal) nunca se recorta",
+            budget.max_tokens
+        ));
     }
+    packet.token_estimate = estimate_tokens(&packet);
+    packet
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::{Approval, BindingDeclaration, EpistemicStatus, Record, Risk};
+
+    /// Firma posicional histórica, conservada para los tests: sin estructura
+    /// ni operación, el compilador vNext produce el packet de siempre.
+    #[allow(clippy::too_many_arguments)]
+    fn compile_packet(
+        git_head: Option<String>,
+        consistency: Consistency,
+        provider_status: ProviderStatus,
+        provider_coverage: Coverage,
+        records: &[Record],
+        intent: Option<&str>,
+        resolved_target: Option<String>,
+        provider_warnings: Vec<String>,
+        budget: &Budget,
+        governing: &HashMap<String, MatchKind>,
+    ) -> ContextPacket {
+        compile(
+            PacketInput {
+                git_head,
+                consistency,
+                provider_status,
+                provider_coverage,
+                records,
+                intent,
+                resolved_target,
+                provider_warnings,
+                budget,
+                governing,
+                operation_id: None,
+                target: None,
+            },
+            None,
+        )
+    }
 
     fn fixed_record(id: &str, approved: bool) -> Record {
         Record {
@@ -608,7 +961,7 @@ mod tests {
         );
 
         let json = serde_json::to_string(&packet).unwrap();
-        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","authority":"normal","severity":"critical","governs_target":true,"match_kind":"structural"}],"intent_conflicts":[],"governance_verdict_required":false,"primary_reason":"Because golden reasons.","known_risks":["Golden risk statement."],"affected_targets":["golden.qualifiedName","src/golden.ts"],"additional_history_available":0,"resolved_target":"golden.qualifiedName","warnings":[],"token_estimate":25}"#;
+        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","authority":"normal","provenance":"migrated","severity":"critical","governs_target":true,"match_kind":"structural"}],"intent_conflicts":[],"governance_verdict_required":false,"primary_reason":"Because golden reasons.","known_risks":["Golden risk statement."],"affected_targets":["golden.qualifiedName","src/golden.ts"],"additional_history_available":0,"resolved_target":"golden.qualifiedName","warnings":[],"token_estimate":162}"#;
         assert_eq!(json, expected);
     }
 
@@ -1246,6 +1599,190 @@ mod tests {
             polarity_of("update the button label", "the button shows a status"),
             Polarity::Undetermined,
             "ningún lado tiene marcador — no hay señal en absoluto"
+        );
+    }
+
+    fn decision_record(id: &str) -> Record {
+        Record {
+            id: id.to_string(),
+            kind: "decision".to_string(),
+            severity: "high".to_string(),
+            statement: "Payment expiration belongs to entity configuration.".to_string(),
+            rationale: Some("Each tenant defines its own payment policy.".to_string()),
+            ..Default::default()
+        }
+    }
+
+    fn explained_decision() -> Record {
+        let node = |file: &str, qn: &str| crate::providers::NodeBinding {
+            file_path: file.to_string(),
+            qualified_name: qn.to_string(),
+            symbol_kind: None,
+        };
+        Record {
+            relationship_bindings: vec![crate::storage::RelationshipBinding {
+                id: "rel.0".to_string(),
+                source: node("src/payments.rs", "src.payments.create_link"),
+                kind: "uses".to_string(),
+                target: node(
+                    "src/config.rs",
+                    "src.config.EntityConfig.payment_expiration",
+                ),
+                extra: yaml_serde::Mapping::new(),
+            }],
+            ..decision_record("decision.payment-expiration-per-entity")
+        }
+    }
+
+    fn fixture_context(records: &[&Record]) -> StructuralContext {
+        let mut handle = crate::providers::ProviderHandle::Custom(Box::new(
+            crate::providers::fixture::payments_fixture(),
+        ));
+        crate::context::gather(
+            &mut handle,
+            crate::context::GatherInput {
+                repo_path: "",
+                project_key: "fixture",
+                target_file: Some("src/payments.rs"),
+                target_symbol: Some("create_link"),
+                records,
+                budget: &crate::context::StructuralBudget::default(),
+            },
+        )
+    }
+
+    fn compile_with(
+        records: &[Record],
+        governing: &HashMap<String, MatchKind>,
+        budget: &Budget,
+        context: &mut StructuralContext,
+    ) -> ContextPacket {
+        compile(
+            PacketInput {
+                git_head: None,
+                consistency: Consistency::Unresolved,
+                provider_status: ProviderStatus::Successful,
+                provider_coverage: Coverage::Complete,
+                records,
+                intent: None,
+                resolved_target: None,
+                provider_warnings: vec![],
+                budget,
+                governing,
+                operation_id: Some("op_test".to_string()),
+                target: Some(PacketTarget {
+                    spec: "src/payments.rs::create_link".to_string(),
+                    file_path: Some("src/payments.rs".to_string()),
+                    symbol: Some("create_link".to_string()),
+                    qualified_name: Some("src.payments.create_link".to_string()),
+                }),
+            },
+            Some(context),
+        )
+    }
+
+    /// Defecto real (preflight de `pipeline::prepare`): una decisión que
+    /// gobernaba el target solo aparecía en el assessment, nunca en el packet.
+    #[test]
+    fn governing_decisions_are_served_with_their_why_and_ask_for_a_verdict() {
+        let records = vec![
+            decision_record("decision.expiry-per-entity"),
+            decision_record("decision.unrelated"),
+        ];
+        let packet = compile_packet(
+            None,
+            Consistency::Unresolved,
+            ProviderStatus::Unavailable,
+            Coverage::Unknown,
+            &records,
+            Some("make payment expiration a single global setting"),
+            None,
+            vec![],
+            &Budget::default(),
+            &governing_all(
+                &["decision.expiry-per-entity"],
+                MatchKind::RelationshipEndpoint,
+            ),
+        );
+        assert!(packet.critical_constraints.is_empty());
+        let ids: Vec<&str> = packet.decisions.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, vec!["decision.expiry-per-entity"]);
+        assert_eq!(packet.decisions[0].provenance, "migrated");
+        assert_eq!(
+            packet.primary_reason.as_deref(),
+            Some("Each tenant defines its own payment policy.")
+        );
+        assert_eq!(
+            packet.intent_conflicts[0].detection,
+            ConflictDetection::GovernsTarget
+        );
+        assert!(packet.governance_verdict_required);
+    }
+
+    #[test]
+    fn structure_and_relationship_why_are_compiled_and_linked_to_the_operation() {
+        let records = vec![explained_decision()];
+        let mut context = fixture_context(&[&records[0]]);
+        let governing = governing_all(&[records[0].id.as_str()], MatchKind::RelationshipEndpoint);
+        let packet = compile_with(&records, &governing, &Budget::default(), &mut context);
+
+        assert_eq!(packet.operation_id.as_deref(), Some("op_test"));
+        let why = &packet.relationships[0];
+        assert_eq!(
+            (why.kind.as_str(), why.state.as_str()),
+            ("uses", "observed")
+        );
+        assert_eq!(
+            why.rationale.as_deref(),
+            Some("Each tenant defines its own payment policy.")
+        );
+        let structure = packet.structure.as_ref().expect("hay proveedor");
+        assert!(structure
+            .nodes
+            .iter()
+            .any(|n| n.name == "create_link" && n.role == "target"));
+        assert!(structure
+            .edges
+            .iter()
+            .any(|e| e.source == "src.api.post_link" && e.kind == "calls"));
+        assert!(packet.relevant_code.is_some());
+        assert!(packet.budget_overflow.is_none());
+        assert!(packet.token_estimate <= Budget::default().max_tokens);
+    }
+
+    /// Bajo presión de tokens cede lo regenerable (estructura, código) y
+    /// nunca el porqué gobernante; si aun así no cabe, se declara.
+    #[test]
+    fn token_pressure_trims_structure_and_code_but_never_the_governing_why() {
+        let records = vec![explained_decision()];
+        let mut context = fixture_context(&[&records[0]]);
+        let governing = governing_all(&[records[0].id.as_str()], MatchKind::RelationshipEndpoint);
+        let budget = Budget {
+            max_tokens: 50,
+            ..Budget::default()
+        };
+        let packet = compile_with(&records, &governing, &budget, &mut context);
+
+        assert_eq!(packet.decisions.len(), 1);
+        assert_eq!(packet.relationships.len(), 1);
+        assert!(packet.relevant_code.is_none());
+        let names: Vec<&str> = packet
+            .structure
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .map(|n| n.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["create_link", "payment_expiration"]);
+        assert_eq!(
+            packet.budget_overflow.as_deref(),
+            Some("authoritative_context")
+        );
+        assert_eq!(
+            context.selected_nodes.len(),
+            2,
+            "el snapshot de la operación refleja lo que recibió el agente"
         );
     }
 }

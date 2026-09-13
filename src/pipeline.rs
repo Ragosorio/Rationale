@@ -11,8 +11,8 @@
 use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
 use crate::storage::Record;
 use crate::{
-    assessment, binding_match, cache, canon, capture, configuration, project, relationships,
-    retrieval, revision, signals, storage, subjects,
+    assessment, binding_match, cache, canon, capture, configuration, context, evaluation,
+    operations, project, relationships, retrieval, revision, signals, storage, subjects,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -28,6 +28,10 @@ pub struct PrepareRequest {
     pub project_root: PathBuf,
     pub repo_path: PathBuf,
     pub budget: retrieval::Budget,
+    /// Techo del subgrafo estructural que entra al packet.
+    pub structural_budget: context::StructuralBudget,
+    /// Quién pide el contexto — queda registrado en la operación.
+    pub actor: canon::ActorContext,
 }
 
 pub struct PrepareOutcome {
@@ -39,6 +43,9 @@ pub struct PrepareOutcome {
     /// Lo que antes eran `eprintln!` sueltos — cada caller decide destino.
     pub diagnostics: Vec<String>,
     pub latency_ms: u128,
+    /// La operación abierta (persistida en `.rationale-local/operations/` si
+    /// se pudo): la actividad y la UI la leen; el agente recibe su id.
+    pub operation: operations::Operation,
 }
 
 /// Compila el packet completo para un target — el cuerpo de `prepare_change`.
@@ -118,39 +125,56 @@ pub fn prepare(
         }
     }
 
+    // Ruta repo-relativa del target, calculada una sola vez con el mismo
+    // helper que el matcher: antes un `strip_prefix` literal fallaba con un
+    // `repo_path` relativo (`--project-root .`) y el proveedor recibía un
+    // archivo vacío, que la búsqueda por patrón ocultaba devolviendo
+    // cualquier nodo.
+    let rel_file = target
+        .as_ref()
+        .ok()
+        .and_then(|t| binding_match::target_rel_path(&req.repo_path, t));
+
     // 3. Consultar Codebase Memory — sesión MCP persistente real (ADR-0002).
     // La sesión (`provider`) ya fue spawneada por el caller: la CLI una vez
     // por invocación, el servidor MCP una sola vez para toda su vida.
     let unavailable_reason = provider.unavailable_reason().map(str::to_string);
-    let (provider_status, provider_coverage, resolved_target, provider_warnings) = match provider
-        .as_provider()
-    {
-        Some(client) => {
-            let sym = symbol.clone().unwrap_or_default();
-            let file = target
-                .as_ref()
-                .ok()
-                .and_then(|target| target.path.strip_prefix(&req.repo_path).ok())
-                .and_then(|path| path.to_str())
-                .unwrap_or("");
-            let result = client.resolve_target(req.repo_path.to_str().unwrap_or(""), file, &sym);
-            (
-                result.status,
-                result.coverage,
-                result.data.map(|t| t.qualified_name),
-                result.warnings,
-            )
-        }
-        None => (
-            ProviderStatus::Unavailable,
-            Coverage::Unknown,
-            None,
-            vec![format!(
-                "no se pudo iniciar el proveedor estructural: {}",
-                unavailable_reason.unwrap_or_default()
-            )],
-        ),
-    };
+    let (provider_status, provider_coverage, resolved_target, provider_warnings) =
+        match provider.as_provider() {
+            Some(client) => {
+                let repo = req.repo_path.to_str().unwrap_or("");
+                match (
+                    rel_file.as_deref(),
+                    symbol.as_deref().filter(|s| !s.is_empty()),
+                ) {
+                    (Some(file), Some(sym)) => {
+                        let result = client.resolve_target(repo, file, sym);
+                        (
+                            result.status,
+                            result.coverage,
+                            result.data.map(|t| t.qualified_name),
+                            result.warnings,
+                        )
+                    }
+                    // Sin símbolo o sin archivo del proyecto no hay nada que
+                    // resolver: el snapshot informa la salud del proveedor, nunca
+                    // un nodo arbitrario de una búsqueda por patrón.
+                    _ => {
+                        let result = client.health(repo);
+                        (result.status, result.coverage, None, result.warnings)
+                    }
+                }
+            }
+            None => (
+                ProviderStatus::Unavailable,
+                Coverage::Unknown,
+                None,
+                vec![format!(
+                    "no se pudo iniciar el proveedor estructural: {}",
+                    unavailable_reason.unwrap_or_default()
+                )],
+            ),
+        };
 
     match &target {
         Ok(t) => diagnostics.push(format!("target resuelto: {}", t.path.display())),
@@ -249,35 +273,99 @@ pub fn prepare(
         }
     }
 
-    // 5. + 6. Compilar el packet compacto — niveles de prioridad y budget
-    // reales (Fase E4), no una sola constraint fija. `governing_by_kind`
-    // le dice a retrieval qué Records gobiernan el target (y con qué
-    // especificidad) para que nunca los trunque ni los oculte por
-    // severidad — el mismo conjunto que ya calculamos arriba para elegir
-    // `record`/`assessment`.
+    // 5. Context Compiler vNext: la operación enlaza prepare → trabajo →
+    // finalize → UI; el vecindario estructural y las relaciones explicadas
+    // se superponen a la memoria causal; el presupuesto es un techo.
     let governing_by_kind: std::collections::HashMap<String, binding_match::MatchKind> =
         governing_matches
             .iter()
             .map(|m| (m.record.id.clone(), m.kind))
             .collect();
-    let packet = retrieval::compile_packet(
-        snap.head.clone(),
-        consistency,
-        provider_status,
-        provider_coverage,
-        &records,
-        req.intent.as_deref(),
-        resolved_target,
-        provider_warnings,
-        &req.budget,
-        &governing_by_kind,
+    let superseded = canon::superseded_ids(&records);
+    let active: Vec<&Record> = records
+        .iter()
+        .filter(|record| canon::is_active(record, &superseded))
+        .collect();
+    let mut structural = context::gather(
+        provider,
+        context::GatherInput {
+            repo_path: req.repo_path.to_str().unwrap_or(""),
+            project_key: &config.project_id,
+            target_file: rel_file.as_deref(),
+            target_symbol: symbol.as_deref(),
+            records: &active,
+            budget: &req.structural_budget,
+        },
     );
+    let target_node = structural.target_node.as_ref();
+    let mut operation = operations::Operation::new(
+        &req.actor,
+        operations::OperationTarget {
+            spec: req.target_spec.clone(),
+            file_path: rel_file.clone(),
+            symbol: symbol.clone(),
+            node_key: target_node.map(|node| node.key.clone()),
+            qualified_name: target_node.map(|node| node.binding.qualified_name.clone()),
+        },
+        req.intent.clone(),
+        snap.head.clone(),
+    );
+    let packet = retrieval::compile(
+        retrieval::PacketInput {
+            git_head: snap.head.clone(),
+            consistency,
+            provider_status,
+            provider_coverage,
+            records: &records,
+            intent: req.intent.as_deref(),
+            resolved_target,
+            provider_warnings,
+            budget: &req.budget,
+            governing: &governing_by_kind,
+            operation_id: Some(operation.operation_id.clone()),
+            target: Some(retrieval::PacketTarget {
+                spec: req.target_spec.clone(),
+                file_path: rel_file,
+                symbol,
+                qualified_name: operation.target.qualified_name.clone(),
+            }),
+        },
+        Some(&mut structural),
+    );
+
+    let mut selected_records: Vec<String> = packet
+        .critical_constraints
+        .iter()
+        .map(|c| c.id.clone())
+        .chain(packet.decisions.iter().map(|d| d.id.clone()))
+        .chain(packet.relationships.iter().map(|r| r.record_id.clone()))
+        .collect();
+    selected_records.sort();
+    selected_records.dedup();
+    operation.graph = structural.to_graph();
+    operation.selection = operations::Selection {
+        considered_nodes: structural.nodes.len(),
+        selected_nodes: structural.selected_nodes.len(),
+        considered_relationships: structural.edges.len(),
+        selected_relationships: structural.selected_edges.len(),
+        considered_records: active.len(),
+        selected_records,
+        packet_bytes: serde_json::to_vec(&packet).map_or(0, |bytes| bytes.len()),
+        estimated_tokens: packet.token_estimate,
+    };
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    if let Err(e) = operations::save(&local_dir, &operation) {
+        diagnostics.push(format!(
+            "advertencia: no se pudo guardar el snapshot de la operación: {e}"
+        ));
+    }
 
     Ok(PrepareOutcome {
         packet,
         assessment: computed_assessment,
         diagnostics,
         latency_ms: t0.elapsed().as_millis(),
+        operation,
     })
 }
 
@@ -534,9 +622,24 @@ pub fn finalize(
     }
 
     let snap = revision::snapshot(&req.repo_path);
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    // Un id desconocido (otra máquina, snapshot podado) no invalida el
+    // cierre: solo no se enlaza con la operación.
+    let operation = req.operation_id.as_deref().and_then(|id| {
+        let found = operations::load(&local_dir, id);
+        if found.is_none() {
+            diagnostics.push(format!(
+                "advertencia: operación '{id}' desconocida; el cierre no se enlaza con ella"
+            ));
+        }
+        found
+    });
+    // Base honesta del diff: la declarada, o el HEAD que vio prepare_change
+    // (cubre commits del agente entre prepare y finalize), o HEAD.
     let base_revision = req
         .base_revision
         .clone()
+        .or_else(|| operation.as_ref().and_then(|op| op.base_revision.clone()))
         .or_else(|| snap.head.clone())
         .unwrap_or_default();
 
@@ -567,7 +670,6 @@ pub fn finalize(
         .filter(|file| file.origin != capture::ChangeOrigin::Committed)
         .map(|file| file.path.clone())
         .collect();
-    let local_dir = configuration::find_rationale_local(&config.project_root);
     let ctx = canon::CanonContext {
         rationale_dir: &config.rationale_dir,
         project_id: &config.project_id,
@@ -611,6 +713,22 @@ pub fn finalize(
             duplicate_of: None,
             statement: canon::sanitize_control_chars(&statement),
         });
+    }
+
+    if let Some(operation) = &operation {
+        let summary = operations::FinalizeSummary {
+            finalized_at: evaluation::now_rfc3339_millis(),
+            committed: outcome.committed.iter().map(|c| c.id.clone()).collect(),
+            discarded: outcome.discarded.len(),
+            conflicts: outcome
+                .conflicts
+                .iter()
+                .map(|c| c.conflict_id.clone())
+                .collect(),
+        };
+        if let Err(e) = operations::record_finalize(&local_dir, &operation.operation_id, summary) {
+            diagnostics.push(format!("advertencia: {e}"));
+        }
     }
 
     Ok(FinalizeOutcome {

@@ -1514,3 +1514,157 @@ fn client_identity_comes_from_the_flag_or_the_client_report() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// vNext — ciclo de vida de una operación por MCP con un proveedor de
+/// fixtures (determinista, sin tocar el Codebase Memory del usuario):
+/// `prepare_change` abre la operación y devuelve el vecindario acotado;
+/// `finalize_change` la cierra capturando una relación explicada; un
+/// `prepare_change` posterior sirve el porqué con su estado derivado.
+#[test]
+fn operation_lifecycle_links_prepare_structure_finalize_and_relationship_why() {
+    let dir = make_test_project();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("src/payments.rs"),
+        "pub fn create_link() {}\npub fn sign_link() {}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src/config.rs"),
+        "pub struct EntityConfig { pub payment_expiration: u64 }\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("src/api.rs"), "pub fn post_link() {}\n").unwrap();
+    run_git(&dir, &["add", "-A"]);
+    run_git(&dir, &["commit", "-q", "-m", "payments"]);
+
+    let fixture = std::env::temp_dir().join(format!("rationale-fixture-{}.json", unique_suffix()));
+    let graph = json!({
+        "nodes": [
+            {"file_path": "src/payments.rs", "qualified_name": "src.payments.create_link",
+             "start_line": 1, "end_line": 1, "source": "pub fn create_link() {}"},
+            {"file_path": "src/payments.rs", "qualified_name": "src.payments.sign_link"},
+            {"file_path": "src/config.rs", "qualified_name": "src.config.EntityConfig.payment_expiration",
+             "label": "field"},
+            {"file_path": "src/api.rs", "qualified_name": "src.api.post_link"}
+        ],
+        "relationships": [
+            {"source": "src.api.post_link", "kind": "calls", "target": "src.payments.create_link"},
+            {"source": "src.payments.create_link", "kind": "calls", "target": "src.payments.sign_link"},
+            {"source": "src.payments.create_link", "kind": "uses",
+             "target": "src.config.EntityConfig.payment_expiration"}
+        ]
+    });
+    std::fs::write(&fixture, graph.to_string()).unwrap();
+    let provider = format!("fixture:{}", fixture.display());
+    let mut client = TestClient::spawn_with(&[], &[("RATIONALE_PROVIDER", provider.as_str())]);
+    client.initialize();
+    let project_root = dir.to_str().unwrap();
+
+    // 1. prepare abre la operación y trae estructura + código del target.
+    let prepared = client.call_ok(
+        1,
+        "prepare_change",
+        json!({
+            "target": "src/payments.rs::create_link",
+            "intent": "make payment link expiration configurable per entity",
+            "project_root": project_root,
+        }),
+    );
+    let operation_id = prepared["operation_id"].as_str().unwrap().to_string();
+    assert!(operation_id.starts_with("op_"), "{prepared}");
+    let packet = &prepared["packet"];
+    assert_eq!(packet["operation_id"], operation_id.as_str());
+    assert_eq!(packet["structure"]["provider"], "fixture");
+    let nodes = packet["structure"]["nodes"].as_array().unwrap();
+    let role_of = |name: &str| {
+        nodes
+            .iter()
+            .find(|n| n["name"] == name)
+            .and_then(|n| n["role"].as_str())
+            .map(str::to_string)
+    };
+    assert_eq!(
+        role_of("create_link").as_deref(),
+        Some("target"),
+        "{packet}"
+    );
+    assert_eq!(role_of("post_link").as_deref(), Some("caller"));
+    assert_eq!(packet["relevant_code"]["source"], "pub fn create_link() {}");
+    assert!(packet["relationships"].is_null(), "todavía no hay porqué");
+
+    let snapshot_path = dir
+        .join(".rationale-local/operations")
+        .join(format!("{operation_id}.json"));
+    let read_snapshot = || -> Value {
+        serde_json::from_str(&std::fs::read_to_string(&snapshot_path).unwrap()).unwrap()
+    };
+    let snapshot = read_snapshot();
+    assert_eq!(snapshot["actor"]["client"], "test");
+    assert_eq!(snapshot["selection"]["considered_nodes"], 4, "{snapshot}");
+    assert!(snapshot["graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|n| n["name"] == "create_link" && n["selected"] == true));
+
+    // 2. finalize con el operation_id captura la relación explicada.
+    let why = "Tenants define different payment policies, so a global expiration would break some of them.";
+    let finalized = client.call_ok(
+        2,
+        "finalize_change",
+        json!({
+            "operation_id": operation_id,
+            "summary": "Payment links read their expiration from entity configuration.",
+            "project_root": project_root,
+            "candidates": [{
+                "kind": "decision",
+                "statement": "Payment link expiration is read from each entity's configuration.",
+                "rationale": why,
+                "durability": "durable",
+                "bindings": [],
+                "relationships": [{
+                    "source": "src/payments.rs::create_link",
+                    "kind": "uses",
+                    "target": "src/config.rs::EntityConfig.payment_expiration"
+                }]
+            }]
+        }),
+    );
+    assert_eq!(finalized["summary"]["committed"], 1, "{finalized}");
+    let record_id = finalized["committed"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(finalized["relationships"][0]["state"], "observed");
+    assert_eq!(
+        read_snapshot()["finalized"]["committed"][0],
+        record_id.as_str()
+    );
+
+    // 3. Un prepare posterior sirve el porqué con su estado derivado.
+    let again = client.call_ok(
+        3,
+        "prepare_change",
+        json!({"target": "src/payments.rs::create_link", "project_root": project_root}),
+    );
+    assert_ne!(again["operation_id"], operation_id.as_str());
+    let packet = &again["packet"];
+    let explained = &packet["relationships"][0];
+    assert_eq!(explained["record_id"], record_id.as_str(), "{packet}");
+    assert_eq!(explained["state"], "observed");
+    assert_eq!(explained["rationale"], why);
+    assert!(packet["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|d| d["id"] == record_id.as_str()));
+    assert!(packet["structure"]["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["kind"] == "uses" && e["record_ids"][0] == record_id.as_str()));
+
+    std::fs::remove_file(&fixture).ok();
+    std::fs::remove_dir_all(&dir).ok();
+}

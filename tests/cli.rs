@@ -684,3 +684,65 @@ fn migrate_canonicalizes_valid_legacy_proposals_and_archives_noise() {
     );
     std::fs::remove_dir_all(project).ok();
 }
+
+/// Defecto real (dogfood de vNext, fase 5): con `--project-root .` el
+/// pipeline calculaba la ruta del target con un `strip_prefix` literal que
+/// fallaba contra una raíz relativa; el proveedor recibía un archivo vacío y
+/// la búsqueda por patrón heredada devolvía cualquier nodo con ese nombre
+/// (en el índice real, una sección Markdown del sitio).
+#[test]
+fn prepare_with_a_relative_project_root_resolves_the_exact_symbol() {
+    let project = unique_temp_project("relative-root");
+    std::fs::create_dir_all(project.join(".rationale/records")).unwrap();
+    std::fs::create_dir_all(project.join(".test-home")).unwrap();
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(project.join("src/payments.rs"), "pub fn create_link() {}\n").unwrap();
+    let fixture = project.join("graph.json");
+    std::fs::write(
+        &fixture,
+        serde_json::json!({
+            "nodes": [
+                {"file_path": "docs/workflow.md", "qualified_name": "docs.workflow.create_link",
+                 "label": "section"},
+                {"file_path": "src/payments.rs", "qualified_name": "src.payments.create_link"}
+            ],
+            "relationships": []
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let provider = format!("fixture:{}", fixture.display());
+    let prepare = |spec: &str| -> serde_json::Value {
+        let output = Command::new(env!("CARGO_BIN_EXE_rationale"))
+            .current_dir(&project)
+            .env("HOME", project.join(".test-home"))
+            .env("RATIONALE_PROVIDER", &provider)
+            .args(["prepare", spec, "--project-root", ".", "--no-mascot"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    };
+
+    let symbol = prepare("src/payments.rs::create_link");
+    assert_eq!(
+        symbol["resolved_target"], "src.payments.create_link",
+        "{symbol}"
+    );
+    assert_eq!(symbol["snapshot"]["provider_status"], "successful");
+    assert_eq!(symbol["structure"]["nodes"][0]["role"], "target");
+
+    let file = prepare("src/payments.rs");
+    assert!(file["resolved_target"].is_null(), "{file}");
+    assert_eq!(file["snapshot"]["provider_status"], "successful");
+    assert!(
+        file["warnings"].as_array().unwrap().is_empty(),
+        "un target de archivo no produce advertencias espurias: {file}"
+    );
+
+    std::fs::remove_dir_all(&project).ok();
+}

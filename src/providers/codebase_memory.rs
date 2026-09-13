@@ -653,93 +653,28 @@ impl CodeIntelligenceProvider for CodebaseMemoryClient {
         }
     }
 
+    /// Delegado en `resolve_node`: resolución exacta dentro del archivo
+    /// declarado (`decision.provider-owned-project-identity`). La versión
+    /// anterior buscaba por patrón y, sin coincidencia exacta entre los
+    /// primeros 20 resultados, devolvía el primero: en el índice real de este
+    /// repo, `src/pipeline.rs::prepare` resolvía a una sección Markdown del
+    /// sitio, con el prefijo de proyecto de la máquina incluido.
     fn resolve_target(
         &mut self,
         repo_path: &str,
         file_path: &str,
         symbol_name: &str,
     ) -> ProviderResult<ResolvedTarget> {
-        // Consultar primero. La implementación anterior reindexaba en cada
-        // prepare/finalize aunque el proyecto ya estuviera listo, reemplazando
-        // innecesariamente la generación derivada del proveedor. Solo se
-        // indexa cuando list_projects confirma que aún no existe.
-        let project = match self.project_or_failure(repo_path) {
-            Ok(project) => project,
-            Err(failure) => return failure.into_result(&self.binary),
-        };
-
-        let search = self.call_tool(
-            "search_graph",
-            json!({
-                "project": project,
-                "name_pattern": symbol_name,
-                "file_pattern": file_path,
-                "limit": 20
+        let result = self.resolve_node(repo_path, file_path, symbol_name);
+        ProviderResult {
+            data: result.data.map(|node| ResolvedTarget {
+                qualified_name: node.binding.qualified_name,
+                file_path: node.binding.file_path,
             }),
-        );
-
-        match search {
-            None => ProviderResult {
-                data: None,
-                provider_name: self.binary.clone(),
-                status: ProviderStatus::Unavailable,
-                coverage: Coverage::Unknown,
-                warnings: vec!["provider no respondió dentro del deadline".to_string()],
-            },
-            Some(resp) => {
-                let parsed = Self::extract_tool_json(&resp);
-                let results = parsed
-                    .as_ref()
-                    .and_then(|v| v.get("results"))
-                    .and_then(|r| r.as_array());
-
-                let selected = results.and_then(|results| {
-                    results
-                        .iter()
-                        .find(|node| {
-                            node.get("name").and_then(Value::as_str) == Some(symbol_name)
-                                && node.get("file_path").and_then(Value::as_str) == Some(file_path)
-                        })
-                        .or_else(|| results.first())
-                });
-
-                match selected {
-                    Some(node) => {
-                        let qualified_name = node
-                            .get("qualified_name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(symbol_name)
-                            .to_string();
-                        let file_path = node
-                            .get("file_path")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        ProviderResult {
-                            data: Some(ResolvedTarget {
-                                qualified_name,
-                                file_path,
-                            }),
-                            provider_name: self.binary.clone(),
-                            status: ProviderStatus::Successful,
-                            coverage: Coverage::Complete,
-                            warnings: vec![],
-                        }
-                    }
-                    // Ausencia de resultado != "el símbolo no existe"
-                    // (Rationale_v0.5.md §19.2, confirmado empíricamente en
-                    // docs/research/codebase-memory/08-workspaces-and-monorepos.md).
-                    None => ProviderResult {
-                        data: None,
-                        provider_name: self.binary.clone(),
-                        status: ProviderStatus::Successful,
-                        coverage: Coverage::Unknown,
-                        warnings: vec![
-                            "no se encontró el símbolo dentro de la cobertura disponible; no implica que no exista".to_string(),
-                        ],
-                    },
-                }
-            }
+            provider_name: result.provider_name,
+            status: result.status,
+            coverage: result.coverage,
+            warnings: result.warnings,
         }
     }
 

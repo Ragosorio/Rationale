@@ -71,6 +71,15 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
 11. **MCP `initialize.clientInfo` is ignored today.** Client identity:
     `--client` flag first, then the client's self-reported `clientInfo.name`
     (recorded with its source), else `unknown`.
+12. **The legacy `resolve_target` fell back to the first pattern-search hit.**
+    Live on this repo, `src/pipeline.rs::prepare` resolved to a site Markdown
+    section (with the machine-specific project prefix). It now delegates to
+    the exact in-file `resolve_node`, as
+    `decision.provider-owned-project-identity` requires.
+13. **Governing decisions were invisible in the packet.** `select_constraints`
+    only serves `kind: constraint`; the preflight of `pipeline::prepare` showed
+    its governing decision only inside `assessment`. The vNext packet adds
+    `decisions` (decision, exception and risk Records that govern the target).
 
 ## Governing Records and how vNext honors them
 
@@ -163,4 +172,8 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
 - [x] Phase 3 + 4 — normalized structural provider and relationship rationale
   (one commit: relationship bindings extend the same Record/candidate/matcher
   code the provider model feeds)
-- [ ] Phase 5 … Phase 10 (updated as each lands)
+- [x] Phase 5 — context compiler vNext: `operation_id` + local operation
+  snapshots, bounded structural neighborhood (keys derived by the core),
+  relationship why with derived state, governing decisions, token budget as a
+  ceiling measured on the serialized packet, explicit `budget_overflow`
+- [ ] Phase 6 … Phase 10 (updated as each lands)
