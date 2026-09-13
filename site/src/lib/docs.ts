@@ -9,7 +9,7 @@ export const DOC_GROUPS = [
     key: "operate",
     en: "Operate",
     es: "Operar",
-    slugs: ["cli-reference", "mcp-reference", "workflow"],
+    slugs: ["workflow", "control-room", "agents-and-mcp", "cli-reference", "mcp-reference"],
   },
   {
     key: "verify",
@@ -18,10 +18,10 @@ export const DOC_GROUPS = [
     slugs: ["versioning", "troubleshooting", "limits"],
   },
   {
-    key: "evidence",
+    key: "project",
     en: "Project",
     es: "Proyecto",
-    slugs: ["architecture", "agents-and-mcp", "evidence"],
+    slugs: ["architecture", "evidence"],
   },
 ];
 

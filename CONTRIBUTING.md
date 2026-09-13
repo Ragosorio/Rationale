@@ -79,9 +79,11 @@ stdout exclusivamente para el protocolo.
 
 ## Revisión de decisiones
 
-Las propuestas humanas se revisan con `rationale review`; el lifecycle de un
-Record aprobado se revisa con `rationale review-record`. MCP consulta y prepara,
-pero nunca sustituye la confirmación humana.
+Los agentes capturan Records con `finalize_change`; revisa lo que escribieron en
+`.rationale/records/` como parte del pull request. Fijar y desfijar reglas
+(`rationale pin` / `unpin`), decidir conflictos (`rationale resolve`) y el
+lifecycle de un Record (`rationale review-record`) son actos humanos
+interactivos: MCP prepara y captura, pero nunca sustituye esa autoridad.
 
 Para dudas de seguridad, sigue [`SECURITY.md`](SECURITY.md). Para preguntas de
 uso, sigue [`SUPPORT.md`](SUPPORT.md).

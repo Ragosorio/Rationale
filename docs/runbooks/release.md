@@ -1,10 +1,10 @@
 # Release runbook
 
-La Release pública vigente es `v0.1.0-beta.2`, construida directamente desde
-`main`. La rama `release/v0.1.0-alpha.1` contuvo el desarrollo hasta alpha.6 y
-ya se fusionó a `main`; el trabajo activo no vive ahí. Los tags `dogfood.*`
-quedan como iteraciones históricas de hardening y no deben usarse para validar
-el flujo actual.
+Las Releases se construyen directamente desde `main` a partir de un tag
+`vMAJOR.MINOR.PATCH`; la versión del binario sale del tag. `docs/RELEASE_VERSION`
+es la única fuente de la versión pública en la documentación y
+`scripts/check-docs.sh` falla si alguna mención se desvía. Los tags `alpha`,
+`beta` y `dogfood.*` son historia de antes de 1.0.
 
 ## Antes del tag
 
@@ -13,6 +13,9 @@ el flujo actual.
 - `cargo clippy --all-targets -- -D warnings`.
 - `cargo test --release`.
 - `cargo audit`.
+- `npm --prefix ui ci && npm --prefix ui run typecheck && npm --prefix ui test && npm --prefix ui run build`.
+- `npm --prefix site ci && npm --prefix site run check`.
+- `./scripts/check-docs.sh`.
 - security baseline sin P0/P1 abiertos.
 - dogfood interno y sus casos registrados.
 - matriz de instaladores y smoke de máquina limpia.
@@ -34,8 +37,8 @@ git rev-parse origin/main          # ...con este
 Solo entonces:
 
 ```bash
-git tag -a v0.1.0-beta.2 -m "Rationale beta 2"
-git push origin v0.1.0-beta.2
+git tag -a v1.0.0 -m "Rationale 1.0.0"
+git push origin v1.0.0
 ```
 
 `release.yml` marca `--prerelease` únicamente para `-alpha.`, `-rc.` y
@@ -47,11 +50,12 @@ instaladores (ADR-0010). Después de publicar, comprobarlo:
 gh api repos/Ragosorio/Rationale/releases/latest --jq .tag_name
 ```
 
-La workflow [`release.yml`](../../.github/workflows/release.yml) construye los
-targets, crea archives y ZIP, calcula SHA-256, publica instaladores y genera
-attestation. También publica `rationale-update.sh` y `rationale-update.ps1`,
-que quedan junto al binario para que `rationale update` pueda actualizar una
-instalación existente. Nunca se suben `.rationale-local/`, caches ni secretos.
+La workflow [`release.yml`](../../.github/workflows/release.yml) construye el
+Control Room (`ui/dist`) y falla si no existe — un binario sin él serviría la
+página de fallback de `rationale ui` —, construye los targets, crea archives y
+ZIP, calcula SHA-256, publica instaladores y genera attestation. También publica
+`rationale-update.sh` y `rationale-update.ps1`, que quedan junto al binario para
+que `rationale update` pueda actualizar una instalación existente. Nunca se suben `.rationale-local/`, caches ni secretos.
 
 ## Rollback
 

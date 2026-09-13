@@ -30,9 +30,8 @@ rm -rf "$HOME/.cache/rationale"
 
 | Se pierde (se recalcula solo) | Nunca se pierde (vive en `.rationale/`, versionado en Git) |
 |---|---|
-| Assessments cacheados | Records, Subjects, Approvals, Bindings |
-| Índice FTS5 de statements/títulos | Propuestas pendientes (`.rationale/proposals/`) |
-| — | Propuestas rechazadas (`.rationale/proposals/.rejected/`) |
+| Assessments cacheados | Records, Subjects y configuración |
+| Índice FTS5 de statements/títulos | Propuestas archivadas y anteriores a 1.0 |
 
 Verificado con test (`cache::tests::cache_rebuild_from_scratch_never_loses_canonical_data`): borrar el cache y reconstruirlo produce resultados idénticos a partir de los mismos Records reales.
 

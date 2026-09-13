@@ -2,58 +2,79 @@
 lang: en
 slug: troubleshooting
 title: Troubleshooting
-description: Diagnose provider coverage, MCP silence, stale links, and review state without guessing.
+description: Diagnose provider coverage, MCP registration, missing memory, conflicts, and the Control Room without guessing.
 section: Verify
-order: 8
+order: 10
 ---
 
 ## `health` says the provider is unavailable
 
-Check that `codebase-memory-mcp` is installed and on `PATH`. Rationale still
-works, but symbol resolution and automatic bindings have lower coverage. Read
-the warning in the packet instead of treating unavailable as complete.
+Check that `codebase-memory-mcp` is installed and on `PATH`. Rationale keeps
+working, but symbol bindings and the structural neighborhood lose coverage.
+The packet says so in `snapshot` and `warnings`; treat `unavailable` as
+unknown, never as complete.
+
+If Codebase Memory lost the project it had indexed, Rationale detects the stale
+mapping, forgets it, and re-resolves it through the provider's public tools on
+the next call.
+
+## The agent does not see Rationale's tools
+
+Run `rationale install-agent` again and restart the client. Registration is
+per user and uses the absolute path of the installed binary, so GUI apps work
+without your shell `PATH`. If you moved the binary, the next `install-agent`
+migrates the registration to the new path. In Claude Code, `/rationale-health`
+combines the MCP `health` tool with `rationale doctor` to show what works and
+what is degraded.
 
 ## `serve` looks silent
 
-That is expected when started manually: stdio waits for JSON-RPC traffic and
-keeps stdout clean. Send JSON messages per line. Do not add a banner, logging,
-or Chestie output to stdout.
+Expected when started by hand: it waits for JSON-RPC on stdin and keeps stdout
+clean. Send one JSON message per line.
 
-## A constraint is missing
+## A candidate was discarded
 
-Run `rationale health`, then inspect the Record’s severity, approval, bindings,
-and linkage. `medium` is visible; zero bindings is reported as unresolved. Use
-`rationale doctor --check` to find legacy Records with missing paths, invalid
-severity, dangling Subjects, or no approval.
+Read the reason in `finalize_change`'s `discarded` list. The common ones:
+
+- `transient` or `durability_not_declared` — it described this change, not
+  something that stays true;
+- `rationale_restates_statement` — the rationale must give the cause;
+- `no_meaningful_binding` — bind it to a file or symbol that exists;
+- `duplicate` — the same knowledge already exists under the id shown.
+
+## A Record does not appear in `prepare_change`
+
+Check its bindings with `rationale doctor --check`: a binding to a path that no
+longer exists makes the Record stale for that target, and a Record without
+bindings cannot govern anything. Revoked and superseded Records are history,
+not governance.
+
+## `finalize_change` returned a conflict
+
+A candidate tried to supersede a pinned Record, so it was not written. Run
+`rationale conflicts` to see both statements, then
+`rationale resolve <conflict-id> keep-pinned|adopt-new`. Only a declared actor
+can adopt the new assertion.
 
 ## The agent wants to simplify odd code
 
 Ask it to call `explain_target` first. A strange branch may be a Chesterton
-fence whose reason is stored in an approved Record.
+fence whose reason is stored in a Record.
 
-## A proposal was captured twice
+## The Control Room is empty
 
-Do not delete one by hand. Review the pending proposals, compare their evidence
-and bindings, and reject or correct the duplicate through the interactive
-review path.
+It shows operations and activity of this project. If `RATIONALE_ACTIVITY=off`
+was set when the agent worked, there is nothing to show. Otherwise, run a
+`prepare_change` and the graph appears within a second.
 
-## A GUI client reports the MCP server as unavailable
+## `rationale ui` serves an instructions page
 
-Cursor or a desktop app launched from the Dock reports `rationale` as
-unavailable, while Codex and a terminal Claude Code work fine.
+That binary was built without the embedded interface (a source build without
+`ui/dist`). Release binaries always include it. From source:
+`npm --prefix ui ci && npm --prefix ui run build`, then rebuild.
 
-The MCP configuration deliberately declares the logical command `rationale`
-rather than a personal absolute path, so the file can be committed and shared.
-That command only resolves if the client can see the directory holding the
-binary. On macOS, an application launched from the Dock inherits the `launchd`
-environment, not your shell's, so `~/.local/bin` — where the installer places
-the binary — is invisible to it.
+## Pre-1.0 proposals are still pending
 
-`install-agent` warns about this and prints the remedy. Either launch the client
-from a terminal, or expose the binary where GUI applications can see it:
-
-```bash
-sudo ln -sf ~/.local/bin/rationale /usr/local/bin/rationale
-```
-
-Nothing in the project configuration needs to change.
+Run `rationale migrate --dry-run`, then `rationale migrate`. Valid proposals
+become Records with `migrated` provenance; noisy ones are archived with their
+reason under `.rationale/archive/proposals/`.

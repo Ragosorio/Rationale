@@ -1,33 +1,34 @@
 # Agentes y MCP
 
-Rationale puede funcionar solo por CLI, pero su flujo principal está pensado
-para que un agente consulte contexto sin recibir autoridad.
+Rationale puede funcionar solo por CLI, pero su flujo principal es que un agente
+prepare contexto y capture conocimiento sin recibir autoridad sobre las reglas
+fijadas.
 
 ## Integración automática
 
-Después de instalar el binario:
+El instalador registra el servidor MCP para los agentes que detecta. Dentro de
+un proyecto:
 
 ```bash
-rationale init --skip-agent-config
 rationale install-agent --dry-run
 rationale install-agent
 ```
 
-`install-agent` detecta Claude Code, Codex o Cursor, escribe bloques delimitados
-e idempotentes en el proyecto y registra el servidor MCP una vez en la
-configuración global del usuario. El registro usa la ruta absoluta del binario
-instalado para no depender del `PATH` de una aplicación gráfica. Reinicia la
-sesión del agente después de instalar una configuración nueva.
+| Agente | Registro MCP (por usuario) | En el proyecto |
+|---|---|---|
+| Claude Code | `~/.claude.json` | bloque en `CLAUDE.md` + seis skills en `.claude/skills/` |
+| Codex | `codex mcp add` | bloque en `AGENTS.md` |
+| Cursor | `~/.cursor/mcp.json` | `.cursor/rules/rationale.mdc` |
 
-El texto que `install-agent` escribe por defecto es el [prompt maestro](../prompt-master.md);
-la [versión en español](../prompt-master.es.md) está disponible para equipos que
-trabajan en español. La landing cambia entre ambos al cambiar de idioma y cada
-uno tiene una fuente canónica, para que la instrucción instalada, la
-documentación y el bloque copiable no se separen.
+Cada registro ejecuta `rationale serve --client <agente>` con la ruta absoluta
+del binario instalado (ADR-0016): funciona desde aplicaciones gráficas sin
+depender de su `PATH` y atribuye cada sesión al agente correcto en el Control
+Room. La instalación es convergente — repetirla no cambia nada y un registro
+anterior del mismo binario se migra — y los archivos del proyecto nunca llevan
+una ruta personal. Reinicia el agente después de instalar.
 
-`rationale serve` es un servidor stdio: permanece abierto y no muestra un
-banner en stdout. El agente debe enviarle JSON-RPC por líneas; una ejecución
-manual que parece silenciosa está esperando tráfico, no bloqueada.
+El texto que se instala es el [prompt maestro](../prompt-master.md); la
+[versión en español](../prompt-master.es.md) mantiene los mismos pasos.
 
 Para revertir exactamente esos cambios:
 
@@ -36,33 +37,51 @@ rationale uninstall-agent
 rationale uninstall-agent --global-only
 ```
 
+Las skills que editaste se conservan.
+
+## Skills de Claude Code
+
+- `/rationale-preflight <target> <intent>`
+- `/rationale-explain <target>`
+- `/rationale-capture [statement]`
+- `/rationale-conflicts` — solo humana: presenta los conflictos y te entrega la decisión.
+- `/rationale-health`
+- `/rationale-protocol`
+
+La skill `rationale-review` de versiones anteriores se retira sola al
+reinstalar si nadie la editó.
+
 ## Herramientas MCP
 
-El servidor expone:
+El servidor expone cinco herramientas:
 
 - `health`
 - `prepare_change`
 - `explain_target`
 - `finalize_change`
+- `resolve_conflict` — solo con la respuesta literal de la persona (`human_answer`)
 
-MCP no expone aprobación, revocación, superseder ni cambio de autoridad. Esas
-operaciones requieren la CLI interactiva y una persona.
+Y seis prompts con las mismas acciones que las skills. `rationale serve` es un
+servidor stdio de JSON-RPC delimitado por líneas: permanece abierto y no muestra
+un banner en stdout; una ejecución manual silenciosa está esperando tráfico.
+
+MCP no puede fijar ni desfijar Records, y reemplazar una regla fijada exige un
+actor declarado en `.rationale/config.yaml`.
 
 ## Configuración manual
 
-El repositorio incluye `.mcp.json` como configuración de desarrollo. El
-instalador administra automáticamente `~/.claude.json`,
-`~/.cursor/mcp.json` y Codex. Para registrar Codex manualmente:
+Para registrar Codex a mano:
 
 ```bash
-codex mcp add rationale -- "$HOME/.local/bin/rationale" serve
+codex mcp add rationale -- "$HOME/.local/bin/rationale" serve --client codex
 ```
 
-Revisa el archivo de configuración de tu agente antes de versionarlo: nunca
+Sin `--client`, la sesión usa el nombre que el cliente declara en `initialize`,
+o `unknown`. Revisa la configuración de tu agente antes de versionarla: nunca
 incluyas tokens, claves privadas ni rutas sensibles.
 
 ## Proveedor estructural
 
-Codebase Memory es opcional. Si no está disponible, `health` reportará cobertura
-degradada y las respuestas incluirán advertencias honestas. Rationale nunca lee
-la SQLite interna del proveedor.
+Codebase Memory es opcional. Si no está disponible, `health` reporta cobertura
+degradada y los packets incluyen advertencias honestas. Rationale nunca lee la
+SQLite interna del proveedor.

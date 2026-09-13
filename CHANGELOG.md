@@ -3,6 +3,96 @@
 Los cambios importantes se registran aquí por Release. El detalle técnico de
 cada cambio vive en commits, ADRs y work items enlazados.
 
+## v1.0.0
+
+Primera Release estable. Rationale pasa de ser un sistema de propuestas que una
+persona aprobaba una a una a una **memoria causal autónoma con autoridad
+humana**: los agentes reciben el contexto que gobierna el código antes de
+cambiarlo y escriben el conocimiento durable después, y las personas conservan
+la autoridad sobre las reglas que fijan. La decisión es del owner del proyecto
+(`user:ragosorio`, `architecture-owner`); el razonamiento y la evidencia están
+en `docs/work-items/vnext-implementation-plan.md`.
+
+**Captura autónoma.** `finalize_change` recibe `candidates` y los escribe como
+Records canónicos en la misma llamada. Un gate descarta —siempre con motivo—
+candidatos mal formados, transitorios, sin rationale o con uno que repite el
+statement, ruido mecánico, duplicados y los que no tienen un binding
+significativo. Cada Record declara su procedencia (`agent_asserted`,
+`human_stated`, `migrated`) y su autoridad (`normal`, `pinned`). Sin candidatos
+no se escribe memoria.
+
+**Autoridad humana.** `rationale pin` / `unpin` fijan reglas; un candidato que
+intenta reemplazar un Record fijado no se escribe y se vuelve un conflicto que
+solo una persona decide con `rationale conflicts` / `resolve` o, transmitiendo su
+respuesta literal, con la nueva herramienta MCP `resolve_conflict`. Fijar y
+adoptar un reemplazo exigen un actor declarado en `.rationale/config.yaml`.
+
+**Compilador de contexto.** `prepare_change` abre una operación
+(`operation_id`) y devuelve constraints y decisiones gobernantes con autoridad y
+procedencia, las relaciones explicadas por el canon con su estado estructural
+(`observed`, `indirect`, `orphaned`, `unknown`), una vecindad estructural
+acotada y el código del target. El presupuesto de tokens es un techo: el
+conocimiento gobernante nunca se recorta, y cuando no cabe el packet lo declara
+en `budget_overflow`. Se corrigió el relleno de constraints que no gobernaban el
+target.
+
+**Control Room.** `rationale ui` sirve en `127.0.0.1` una interfaz de solo
+lectura embebida en el binario: el subgrafo de trabajo en 3D con overlay causal,
+la actividad de cada sesión en vivo por SSE, el navegador de memoria y el estado
+del sistema. La actividad local es un NDJSON por sesión con identificadores y
+una intención de una línea (ADR-0017); `RATIONALE_ACTIVITY=off` la desactiva.
+
+**Agentes.** El registro MCP de Claude Code, Codex y Cursor pasa a
+`serve --client <agente>` y migra el registro anterior del mismo binario. El
+protocolo maestro y las acciones enseñan el contrato nuevo; la acción `review`
+se retira por `conflicts` (solo humana), su skill se retira sola si nadie la
+editó y el prompt MCP `review` responde con su reemplazo.
+
+**Proveedor estructural.** Un modelo normalizado detrás de Codebase Memory,
+alcanzado solo por sus herramientas MCP públicas. El adaptador resuelve símbolos
+dentro del archivo declarado (antes caía en el primer resultado de búsqueda),
+recupera un mapeo de proyecto obsoleto sin reindexar a ciegas y siempre entrega
+rutas absolutas al proveedor.
+
+**Releases e instaladores.** El canal por defecto de los instaladores y de
+`rationale update` pasa a `stable`. La workflow de Release construye el Control
+Room antes de empaquetar y falla si no existe, y CI gana un job para su
+typecheck, tests y build.
+
+**Migrar desde beta.** Ejecuta `rationale install-agent` (actualiza registro,
+protocolo y skills) y `rationale migrate` si quedan propuestas pendientes: las
+válidas se vuelven Records `migrated` y las ruidosas se archivan con su motivo.
+`rationale review` sigue disponible como legado. Una llamada MCP con el contrato
+anterior (statement sin candidatos) se descarta de forma explícita en vez de
+crear una propuesta.
+
+**Documentación.** La landing y los docs del sitio se rediseñaron y se
+reescribieron para 1.0 en inglés y español, con una página nueva del Control
+Room; la documentación del repositorio y los runbooks describen el flujo nuevo.
+
+Límites conocidos: la polaridad léxica de los conflictos con la intención es una
+pista ruidosa; la resolución de llamadas de Codebase Memory en algunos lenguajes
+es por nombre; varios ADRs detrás de 1.0 siguen `proposed` a la espera de
+revisión independiente. Verificación completa en
+`docs/work-items/v1.0-release-verification.md`.
+
+## v0.1.0-beta.3
+
+**Registro de agentes por usuario y convergente (ADR-0016).** Cursor mostraba
+`rationale` desconectado porque una aplicación gráfica no resolvía el comando
+lógico declarado en `.cursor/mcp.json`. El servidor MCP se registra ahora una vez
+por usuario en Claude Code, Codex y Cursor con la ruta absoluta del binario
+instalado; los archivos del proyecto conservan solo instrucciones y skills, y
+`install-agent` retira las entradas por proyecto que conservan la forma conocida
+de Rationale. La instalación compara comando y argumentos, así que un registro
+de Codex que apuntaba a un build viejo se migra; la desinstalación retira solo
+lo que apunta al binario desinstalado.
+
+**Identidad del proyecto en Codebase Memory.** Cuando el proveedor no persiste
+`root_path` entre procesos, Rationale guarda en `.rationale-local/` el nombre
+público que devuelve `index_repository`, sin node IDs ni acceso a su
+almacenamiento.
+
 ## v0.1.0-beta.2
 
 **`rationale update` devolvía una versión anterior.** Defecto observado en la
@@ -32,7 +122,7 @@ y sobrescribirlos la invalidaría. Se publica beta.2 en su lugar.
 
 Primera beta. Rationale entra en beta porque el flujo completo —preparar,
 capturar, revisar y recuperar decisiones— funciona de forma repetible sobre un
-proyecto real en uso, no porque esté terminado. `docs/beta-readiness.md`
+proyecto real en uso, no porque esté terminado. `docs/work-items/beta-readiness.md`
 declara con precisión qué se probó y qué no.
 
 **El canal `stable` servía un build de dogfood.** GitHub solo marca «latest»

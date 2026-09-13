@@ -2,31 +2,54 @@
 lang: en
 slug: versioning
 title: What is versioned
-description: A practical boundary between canonical project knowledge, derived caches, and machine-local traces.
+description: Canonical knowledge in Git, local traces on your machine, and how releases and channels work from 1.0.
 section: Verify
-order: 7
+order: 9
 ---
 
 ## Commit these
 
-Version `.rationale/` with the project: Subjects, Records, evidence, proposals
-until reviewed, schemas, configuration, and lifecycle history. These files
-are the shareable explanation of why code must behave a certain way.
+`.rationale/` travels with the project: `config.yaml` (including declared
+authority), `records/`, `subjects/`, `schemas/`, `migrations/`, and the archive
+of migrated proposals. These files are the shareable explanation of why the code
+behaves as it does, and they are reviewed in the same pull request as the code.
+
+The agent instructions (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/`) and the
+Claude Code skills are ordinary project files too. They never contain a personal
+path.
 
 ## Keep these local
 
-`.rationale-local/` contains logs and local coordination state. SQLite/FTS is a
-derived cache and can be rebuilt. The installed binary and agent manifests are
-environment artifacts unless your team deliberately versions them.
+| Path | Contents |
+| --- | --- |
+| `.rationale-local/activity/` | One NDJSON file per agent session. |
+| `.rationale-local/operations/` | Context snapshots per operation. |
+| `.rationale-local/conflicts/` | Pending conflicts with pinned Records. |
+| `.rationale-local/installed-agent-files.json` | What `install-agent` wrote, for exact reversal. |
+| `~/.cache/rationale/projects/` | Derived SQLite search cache. |
 
-## Release truth
+Rationale adds `.rationale-local/` to `.git/info/exclude` before its first
+write, so none of it shows up in `git status`.
 
-The public preview currently documented here is `v0.1.0-beta.2`. Changes in
-the working tree remain Unreleased until a release is cut and its checksums,
-installers, tests, and human review gates are complete.
+## Releases and channels
+
+Releases are tagged `vMAJOR.MINOR.PATCH`, and the binary's version comes from
+that tag; pre-releases add a suffix such as `-rc.1`. Each Release ships
+checksummed archives for five targets, the installers, and build provenance
+attestations.
+
+| Channel | Resolves to |
+| --- | --- |
+| `stable` (default) | The latest full Release. |
+| `preview` | The newest Release, including pre-releases (`-rc`, `-alpha`). |
+
+Choose with `RATIONALE_CHANNEL`, both when installing and when running
+`rationale update` (which defaults to `stable` too). Updating or uninstalling
+never touches `.rationale/`.
 
 ## Safe recovery
 
-Deleting a derived cache does not delete authority. Deleting a canonical Record
-can remove historical context and must happen through Git review and the
-documented lifecycle, not a cleanup script.
+Deleting the cache, snapshots, or activity loses no decision. Deleting a
+canonical Record removes history and belongs in a reviewed commit — or better,
+revoke or supersede it with `rationale review-record` so the lifecycle keeps
+the reason.

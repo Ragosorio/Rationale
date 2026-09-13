@@ -8,11 +8,12 @@ página organiza el detalle sin duplicarlo.
 1. [Quickstart](quickstart.md)
 2. [Conceptos](user-guide/concepts.md)
 3. [Flujo diario](user-guide/daily-workflow.md)
-4. [Referencia CLI](user-guide/cli-reference.md)
-5. [Agentes y MCP](user-guide/agents-and-mcp.md)
-6. [Configuración, archivos y privacidad](user-guide/configuration.md)
-7. [Diagnóstico](runbooks/diagnostics.md)
-8. [Prompt maestro para agentes](prompt-master.md) · [versión en español](prompt-master.es.md)
+4. [Control Room](user-guide/control-room.md)
+5. [Referencia CLI](user-guide/cli-reference.md)
+6. [Agentes y MCP](user-guide/agents-and-mcp.md)
+7. [Configuración, archivos y privacidad](user-guide/configuration.md)
+8. [Diagnóstico](runbooks/diagnostics.md)
+9. [Prompt maestro para agentes](prompt-master.md) · [versión en español](prompt-master.es.md)
 
 ## Quiero contribuir
 
@@ -36,6 +37,8 @@ página organiza el detalle sin duplicarlo.
 
 ## Quiero entender el diseño
 
+- [Plan e historia del modelo 1.0](work-items/vnext-implementation-plan.md)
+- [Verificación de la Release 1.0](work-items/v1.0-release-verification.md)
 - [Contrato de producto](../Rationale_v0.5.md)
 - [Arquitectura conceptual](../Rationale_Arquitectura_Conceptual_v0.1.md)
 - [Mapa factual del código](architecture/code-map.md)

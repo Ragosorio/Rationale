@@ -2,68 +2,102 @@
 lang: en
 slug: quickstart
 title: Five-minute quickstart
-description: Install Rationale, initialize a project, connect the optional structural provider, and run the first health check.
+description: Install Rationale, connect your agent, make the first governed change, and watch it live in the Control Room.
 section: Start
 order: 1
 ---
 
 ## What you need
 
-Rationale runs locally on macOS, Linux, and the published preview targets. You
-need Git and a shell. Codebase Memory is recommended for structural lookup but
-optional: without it, Rationale reports degraded coverage and keeps working.
+Rationale is a single local binary for macOS (Apple Silicon and Intel), Linux
+(x86_64 and ARM64), and Windows x86_64. You need Git and a shell. Codebase
+Memory is recommended for structural context but optional: without it,
+Rationale reports degraded coverage and keeps working.
 
 ## Install
 
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v0.1.0-beta.2/rationale-installer.sh | sh
-rationale --version
-```
-
-To install the companion provider first:
+Install the structural companion first:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash
 ```
 
+Then install Rationale:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.sh | sh
+rationale --version
+```
+
+On Windows, in PowerShell:
+
+```powershell
+$installer = Join-Path $env:TEMP "rationale-installer.ps1"
+Invoke-WebRequest https://github.com/Ragosorio/Rationale/releases/latest/download/rationale-installer.ps1 -OutFile $installer
+& $installer
+rationale.exe --version
+```
+
+The installers verify SHA-256 checksums and use the `stable` channel. Set
+`RATIONALE_CHANNEL=preview` only if you want pre-releases.
+
 ## Initialize a project
 
-Run these commands from the repository you want to govern:
+From the repository you want to protect:
 
 ```bash
 rationale init
 rationale health
+```
+
+`init` creates the versioned canon in `.rationale/` and configures the coding
+agents it detects. `health` reports the Git revision, the working tree, and
+whether the structural provider is available.
+
+To connect agents later, or after an update:
+
+```bash
 rationale install-agent --dry-run
 rationale install-agent
 ```
 
-`init` creates `.rationale/`, preserves the canonical YAML files in Git, and
-offers agent integration. `install-agent` writes an idempotent instruction
-block and registers the MCP server where the detected agent supports it.
+It registers the MCP server once per user (`rationale serve --client <agent>`)
+and writes the invocation protocol into `CLAUDE.md`, `AGENTS.md`, or the Cursor
+rule. Restart the agent afterwards.
 
 ## Make the first governed change
 
-Ask the agent to locate the target with Codebase Memory, then call
-`prepare_change(target, intent)` before a non-trivial edit. After the edit it
-should call `finalize_change(...)`. That creates a pending proposal when the
-change contains a high-value signal; it does not approve anything.
+Ask your agent for a real change. With the protocol installed it will:
 
-Review the proposal yourself:
+1. locate the code with Codebase Memory;
+2. call `prepare_change(target, intent)` and read the rules, decisions, and
+   explained relationships that govern the target;
+3. make the change and run the tests;
+4. call `finalize_change` with only the knowledge that stays true — Rationale
+   writes it to `.rationale/records/` in the same call.
+
+In Claude Code you can drive it explicitly with
+`/rationale-preflight <target> <intent>` and `/rationale-capture`. In Codex, ask
+in plain language: “Prepare this change with Rationale for `<target>` with
+intent `<intent>`.”
+
+## Watch it live
 
 ```bash
-rationale review
+rationale ui
 ```
 
-Approval, correction, dispute, revocation, supersession, and authority changes
-remain interactive human actions.
+The Control Room opens on `127.0.0.1:9748`: the working subgraph the agent
+received, the memory that explains it, and every session's activity as it
+happens. It is read-only and never leaves your machine.
 
-## Verify the installation
+## Keep the rules that matter
+
+When a rule must not be replaced by any agent, pin it:
 
 ```bash
-rationale --help
-rationale --version
-rationale health
+rationale pin <record-id>
 ```
 
-The CLI emits the documented JSON contract on stdout. Diagnostics belong on
-stderr, and `rationale serve` keeps stdout reserved for MCP JSON-RPC messages.
+If an agent later tries to supersede it, nothing is written: you get a conflict
+to decide with `rationale conflicts` and `rationale resolve`.

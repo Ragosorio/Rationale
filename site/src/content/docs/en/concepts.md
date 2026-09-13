@@ -2,52 +2,72 @@
 lang: en
 slug: concepts
 title: Core concepts
-description: The small canonical model that separates identity, evidence, authority, and derived state.
+description: The small model behind Rationale — Records, bindings, provenance, authority, relationships, and operations.
 section: Start
 order: 2
 ---
 
-## Subject
-
-A Subject is the stable identity of a behavior, boundary, or concept. It keeps
-a decision from becoming accidentally tied to one filename. A Subject can have
-aliases, bindings, and extra fields preserved through round-trip serialization.
-
 ## Record
 
-A Record is a versioned assertion about a Subject. It carries a statement,
-severity, evidence, bindings, revision information, and lifecycle history. A
-proposal is a Record-shaped observation waiting for a human decision.
+A **Record** is one durable piece of knowledge about the code: a `constraint`
+(what must stay true), a `decision` (why it is this way), a `risk`, or an
+`exception`. It has a statement, a rationale that gives the cause, a severity,
+and its lifecycle. Records live as YAML in `.rationale/records/` and are
+versioned with the project.
+
+**One decision per Record.** If two parts could be replaced or revoked
+separately, they are two Records.
 
 ## Binding
 
-A Binding connects a Record to a file, symbol, route, table, migration, test,
-or commit. File bindings can govern every symbol contained in that file.
-Structural bindings are stronger when the provider resolves them; Rationale
-never invents a structural identifier from a target string.
+A binding ties a Record to the code it governs: a file (`src/retry.rs`) or a
+symbol (`src/retry.rs::backoff`). Symbol bindings are confirmed by the
+structural provider and stored with a portable id — no machine-specific path.
+Bindings created from uncommitted code are marked `provisional`.
 
-## Evidence and assessment
+## Provenance
 
-Evidence says what supports a statement and where to inspect it. Assessment is
-derived: it reports authority, applicability, revision consistency, provider
-coverage, and linkage. Derived SQLite/FTS data can be rebuilt; canonical YAML
-is the source of truth.
+Every Record says where it came from:
 
-## Approval and authority
+- `agent_asserted` — written by an agent through `finalize_change`, with the
+  client, session, and operation that asserted it;
+- `human_stated` — declared by a person;
+- `migrated` — carried over from the pre-1.0 approval workflow.
 
-MCP can prepare context and capture observed facts. It cannot approve a Record.
-The interactive CLI records the human approval compatible with the project’s
-declared authority. A pending proposal is never presented as approved merely
-because it has a binding or a confident-looking statement.
+Provenance is never upgraded silently: an agent's assertion is not presented as
+a human statement.
 
-## Lifecycle
+## Authority
 
-The normal path is:
+- `normal` — the default. A newer Record may supersede it explicitly.
+- `pinned` — a rule the project fixed. Agents use it, but any attempt to
+  supersede it becomes a **conflict** that only a person resolves.
 
-```text
-locate → prepare → change → finalize → review → approve
-```
+Pinning, unpinning, and adopting a replacement over a pinned Record require an
+actor declared under `authority:` in `.rationale/config.yaml`.
 
-An approved Record can later be corrected, disputed, revoked, superseded, or
-given additional evidence through `review-record`; each mutation leaves an
-auditable lifecycle event.
+## Relationship rationale
+
+A Record can also explain **why a relationship exists** — why `checkout` calls
+`reserve_stock`, for example. Each time context is compiled, Rationale derives
+the relationship's structural state from the provider:
+
+| State | Meaning |
+|---|---|
+| `observed` | The direct relationship exists in the current index. |
+| `indirect` | It is no longer direct, but a bounded path still connects both ends. |
+| `orphaned` | It cannot be located; the explanation may be stale. It is never deleted. |
+| `unknown` | The provider could not verify it. Absence is not proof. |
+
+## Operation
+
+`prepare_change` opens an **operation** with an `operation_id`. It records what
+was considered and selected (nodes, relationships, Records, packet size) as a
+local snapshot. `finalize_change` closes the same operation, so the Control Room
+can show the whole change from context to captured memory.
+
+## Canonical versus derived
+
+`.rationale/` is the only source of truth. The SQLite search cache under
+`~/.cache/rationale/`, operation snapshots, and activity in `.rationale-local/`
+are derived or local, and can be deleted without losing a decision.

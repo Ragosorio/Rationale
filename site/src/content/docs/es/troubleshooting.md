@@ -1,59 +1,81 @@
 ---
 lang: es
 slug: troubleshooting
-title: Diagnóstico
-description: Diagnostica cobertura del proveedor, silencio de MCP, enlaces viejos y estado de revisión sin adivinar.
+title: Solución de problemas
+description: Diagnostica cobertura del proveedor, registro MCP, memoria ausente, conflictos y el Control Room sin adivinar.
 section: Verificar
-order: 8
+order: 10
 ---
 
 ## `health` dice que el proveedor no está disponible
 
-Comprueba que `codebase-memory-mcp` esté instalado y en `PATH`. Rationale sigue
-funcionando, pero la resolución de símbolos y los bindings automáticos tienen
-menos cobertura. Lee la advertencia del packet en vez de tratar unavailable
-como complete.
+Comprueba que `codebase-memory-mcp` esté instalado y en el `PATH`. Rationale
+sigue funcionando, pero los bindings de símbolo y la vecindad estructural
+pierden cobertura. El packet lo dice en `snapshot` y `warnings`; trata
+`unavailable` como desconocido, nunca como completo.
 
-## `serve` parece silencioso
+Si Codebase Memory perdió el proyecto que tenía indexado, Rationale detecta el
+mapeo obsoleto, lo olvida y lo vuelve a resolver mediante las herramientas
+públicas del proveedor en la siguiente llamada.
 
-Es esperado al iniciarlo manualmente: stdio espera tráfico JSON-RPC y conserva
-stdout limpio. Envía mensajes JSON por línea. No añadas banners, logs ni
-Chestie a stdout.
+## El agente no ve las herramientas de Rationale
 
-## Falta una constraint
+Ejecuta `rationale install-agent` de nuevo y reinicia el cliente. El registro
+es por usuario y usa la ruta absoluta del binario instalado, así las
+aplicaciones gráficas funcionan sin el `PATH` de tu shell. Si moviste el
+binario, el siguiente `install-agent` migra el registro a la nueva ruta. En
+Claude Code, `/rationale-health` combina la herramienta MCP `health` con
+`rationale doctor` para mostrar qué funciona y qué está degradado.
 
-Ejecuta `rationale health` e inspecciona severidad, aprobación, bindings y
-linkage del Record. `medium` es visible; cero bindings se reporta como
-unresolved. Usa `rationale doctor --check` para encontrar Records legados con
-paths inexistentes, severidad inválida, Subjects colgantes o sin aprobación.
+## `serve` parece mudo
+
+Es lo esperado al lanzarlo a mano: espera JSON-RPC por stdin y mantiene stdout
+limpio. Envía un mensaje JSON por línea.
+
+## Se descartó un candidato
+
+Lee el motivo en la lista `discarded` de `finalize_change`. Los más comunes:
+
+- `transient` o `durability_not_declared` — describía este cambio, no algo que
+  sigue siendo cierto;
+- `rationale_restates_statement` — el rationale debe dar la causa;
+- `no_meaningful_binding` — átalo a un archivo o símbolo que exista;
+- `duplicate` — ese conocimiento ya existe bajo el id indicado.
+
+## Un Record no aparece en `prepare_change`
+
+Revisa sus bindings con `rationale doctor --check`: un binding a una ruta que
+ya no existe deja el Record obsoleto para ese target, y un Record sin bindings
+no puede gobernar nada. Los Records revocados y reemplazados son historia, no
+gobierno.
+
+## `finalize_change` devolvió un conflicto
+
+Un candidato intentó reemplazar un Record fijado, así que no se escribió.
+Ejecuta `rationale conflicts` para ver las dos afirmaciones y después
+`rationale resolve <conflict-id> keep-pinned|adopt-new`. Solo un actor
+declarado puede adoptar la afirmación nueva.
 
 ## El agente quiere simplificar código raro
 
-Pídele que llame a `explain_target` primero. Una rama extraña puede ser una
-valla de Chesterton cuyo motivo vive en un Record aprobado.
+Pídele que llame primero a `explain_target`. Una rama extraña puede ser una
+valla de Chesterton cuyo motivo está guardado en un Record.
 
-## Se capturó dos veces una propuesta
+## El Control Room está vacío
 
-No borres una a mano. Revisa las propuestas pendientes, compara evidencia y
-bindings y rechaza o corrige el duplicado mediante la revisión interactiva.
+Muestra las operaciones y la actividad de este proyecto. Si
+`RATIONALE_ACTIVITY=off` estaba activo mientras el agente trabajaba, no hay
+nada que mostrar. Si no, ejecuta un `prepare_change` y el grafo aparece en
+menos de un segundo.
 
-## Un cliente GUI reporta el servidor MCP como no disponible
+## `rationale ui` sirve una página de instrucciones
 
-Cursor o una app de escritorio abierta desde el Dock reporta `rationale` como
-no disponible, mientras Codex y Claude Code en terminal funcionan.
+Ese binario se compiló sin la interfaz embebida (un build desde el código sin
+`ui/dist`). Los binarios de release siempre la incluyen. Desde el código:
+`npm --prefix ui ci && npm --prefix ui run build`, y vuelve a compilar.
 
-La configuración MCP declara a propósito el comando lógico `rationale` en vez
-de una ruta absoluta personal, para que el archivo pueda versionarse y
-compartirse. Ese comando solo resuelve si el cliente ve el directorio donde
-está el binario. En macOS, una aplicación abierta desde el Dock hereda el
-entorno de `launchd`, no el de tu shell, así que `~/.local/bin` —donde el
-instalador coloca el binario— le resulta invisible.
+## Siguen pendientes propuestas anteriores a 1.0
 
-`install-agent` avisa de esto e imprime el remedio. Puedes abrir el cliente
-desde un terminal, o exponer el binario donde las apps GUI lo vean:
-
-```bash
-sudo ln -sf ~/.local/bin/rationale /usr/local/bin/rationale
-```
-
-No hace falta cambiar nada en la configuración del proyecto.
+Ejecuta `rationale migrate --dry-run` y después `rationale migrate`. Las
+propuestas válidas se vuelven Records con procedencia `migrated`; las ruidosas
+se archivan con su motivo en `.rationale/archive/proposals/`.

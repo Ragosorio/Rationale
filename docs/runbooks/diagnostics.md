@@ -16,12 +16,31 @@ rationale prepare "src/auth/authorization.ts::resolveEntityRole"
 
 `stderr` trae el diagnóstico paso a paso (Subject resuelto, target resuelto, cache HIT/MISS, applicability/linkage/authority calculados); `stdout` trae solo el `ContextPacket` JSON — nunca mezclados (`Arquitectura §11.1`).
 
-## Ver propuestas pendientes de revisión
+## Conflictos con reglas fijadas
 
 ```bash
-ls .rationale/proposals/*.yaml 2>/dev/null
-rationale review --project-root /ruta/al/proyecto
+rationale conflicts --project-root /ruta/al/proyecto
+rationale resolve <conflict-id> keep-pinned
 ```
+
+Un conflicto aparece cuando un agente intentó reemplazar un Record `pinned`; su
+afirmación no se escribió y espera la decisión humana.
+
+## Integridad del canon y propuestas anteriores a 1.0
+
+```bash
+rationale doctor --check
+rationale migrate --dry-run
+```
+
+## Ver el trabajo en vivo
+
+```bash
+rationale ui
+```
+
+El Control Room muestra operaciones, actividad y memoria sin escribir nada. Ver
+[`docs/user-guide/control-room.md`](../user-guide/control-room.md).
 
 ## Actividad local
 
@@ -31,7 +50,6 @@ Nunca se envía a ningún servicio (`Arquitectura §11.14`) y vive en `.rational
 ls -t .rationale-local/activity/                                    # una sesión por proceso: rationale serve o una invocación de la CLI
 tail -n 20 "$(ls -t .rationale-local/activity/*.ndjson | head -1)"  # eventos de la sesión más reciente
 ls -t .rationale-local/operations/ | head                           # snapshots de operación: subgrafo y selección de cada prepare_change
-cat .rationale-local/runs/review-decisions.ndjson                   # legado: decisiones de rationale review
 RATIONALE_ACTIVITY=off rationale serve                              # desactiva el flujo de actividad
 ```
 
@@ -39,25 +57,20 @@ El `RunLog` de Fase D (`runs/vertical-slice.ndjson`) se retiró en vNext: la act
 
 ## Probar el servidor MCP directamente
 
-Sin un agente de por medio, hablando el framing `Content-Length` a mano (mismo patrón que `docs/research/codebase-memory/11-performance-observations.md`):
+Sin un agente de por medio. El servidor de Rationale habla JSON-RPC delimitado
+por líneas sobre stdio (ADR-0007); `Content-Length` solo lo usa el cliente que
+Rationale abre hacia Codebase Memory.
 
 ```bash
 python3 - <<'PY'
 import json, subprocess
-proc = subprocess.Popen(["target/release/rationale", "serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-def send(o):
-    b = json.dumps(o).encode()
-    proc.stdin.write(f"Content-Length: {len(b)}\r\n\r\n".encode() + b); proc.stdin.flush()
-def recv():
-    h = b""
-    while not h.endswith(b"\r\n\r\n"): h += proc.stdout.read(1)
-    n = int([l for l in h.decode().split("\r\n") if l.lower().startswith("content-length")][0].split(":")[1])
-    return json.loads(proc.stdout.read(n))
-send({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"diag","version":"0"}}})
-print(recv())
-send({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"health","arguments":{}}})
-print(recv())
-proc.terminate()
+proc = subprocess.Popen(["rationale", "serve", "--client", "diag"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+def call(message):
+    proc.stdin.write(json.dumps(message) + "\n"); proc.stdin.flush()
+    return json.loads(proc.stdout.readline())
+print(call({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"diag","version":"0"}}}))
+print(call({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"health","arguments":{}}}))
+proc.stdin.close(); proc.wait()
 PY
 ```
 

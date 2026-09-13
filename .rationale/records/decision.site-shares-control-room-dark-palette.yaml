@@ -1,0 +1,47 @@
+id: decision.site-shares-control-room-dark-palette
+kind: decision
+severity: low
+statement: The landing page and the documentation site default to a dark theme built on the Control Room's palette (deep background, blue accent, amber for what the canon explains), with a light theme kept as an explicit user choice.
+rationale: 'The site shows the product: the landing''s graph and Control Room mock use the same role, state and causal colors as rationale ui, so a visitor learns one visual language for roles, structural states and explained knowledge instead of two. Shared tokens in global.css keep the docs consistent with the landing without duplicating styles.'
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a099a6d58c9df48c14
+  session_id: session_1a099a6abe515e042f9
+  asserted_at: 2026-09-13T07:24:23Z
+approvals: []
+binding_declarations:
+- id: binding.decision.site-shares-control-room-dark-palette.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/styles/global.css
+  provisional: true
+- id: binding.decision.site-shares-control-room-dark-palette.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/styles/landing.css
+  provisional: true
+- id: binding.decision.site-shares-control-room-dark-palette.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/scripts/site.js
+  provisional: true
+evidence: []
+risks: []
+bound_revision: 76f8317c26a60e355c86ab214a237120dcee3682
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T07:24:23Z
+    operation_id: op_1a099a6d58c9df48c14

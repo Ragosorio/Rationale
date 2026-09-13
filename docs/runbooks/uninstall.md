@@ -60,10 +60,10 @@ git commit -m "remove Rationale from this project"
 
 **Nunca `rm -rf .rationale/` seguido de un force-push** — eso sí sería destruir decisiones aprobadas sin posibilidad de recuperación. Usar `git rm` deja el historial intacto.
 
-## Propuestas pendientes o rechazadas
+## Propuestas anteriores a 1.0
 
-```bash
-rm -rf .rationale/proposals/          # nunca se auto-generan sin que finalize_change las haya escrito
-```
-
-Ninguna propuesta pendiente o rechazada tiene autoridad — son siempre seguras de borrar si de verdad no interesan; `git rm` es igualmente válido si quieres conservarlas en el historial.
+Desde 1.0 el trabajo normal no crea propuestas. Si un proyecto conserva
+`.rationale/proposals/` de una versión anterior, pásalas primero por
+`rationale migrate`: las válidas se vuelven Records y las ruidosas se archivan
+con su motivo. Una propuesta nunca tuvo autoridad, así que borrar las que no
+interesan es seguro; `git rm` las conserva en el historial.

@@ -15,13 +15,21 @@ function boot() {
         copyCommand: "Copy command",
       };
 
-  const savedTheme = window.localStorage.getItem("rationale-theme");
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  let savedTheme = null;
+  try {
+    savedTheme = window.localStorage.getItem("rationale-theme");
+  } catch {
+    // Sin almacenamiento, el tema por defecto sigue siendo válido.
+  }
 
   function setTheme(theme) {
     const selected = theme === "dark" ? "dark" : "light";
     root.dataset.theme = selected;
-    window.localStorage.setItem("rationale-theme", selected);
+    try {
+      window.localStorage.setItem("rationale-theme", selected);
+    } catch {
+      // El tema aplica igual aunque no se pueda recordar.
+    }
     if (themeToggle) {
       const label = selected === "dark"
         ? (root.lang === "es" ? "Modo claro" : "Light mode")
@@ -32,7 +40,8 @@ function boot() {
     }
   }
 
-  setTheme(savedTheme || (prefersDark ? "dark" : "light"));
+  // Oscuro por defecto, como el Control Room; el toggle recuerda la elección.
+  setTheme(savedTheme || "dark");
   themeToggle?.addEventListener("click", () => {
     setTheme(root.dataset.theme === "dark" ? "light" : "dark");
   });

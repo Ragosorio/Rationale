@@ -2,24 +2,32 @@
 lang: en
 slug: prompt-master
 title: Master prompt
-description: A reusable starting protocol for coding-agent conversations that combine Codebase Memory and Rationale.
+description: The invocation protocol that install-agent writes for your agents — prepare, change, capture, and hand conflicts to a person.
 section: Start
 order: 3
 ---
 
-## Use it at the start of a conversation
+## Installed for you
 
-Install Codebase Memory first, install Rationale, run `rationale init`, and
-paste the prompt below before asking for a non-trivial code change. It is kept
-in the repository at `docs/prompt-master.md` and is the source embedded by
-`install-agent`.
+`rationale install-agent` writes this protocol into `CLAUDE.md`, `AGENTS.md`,
+or the Cursor rule, inside a delimited block that `uninstall-agent` removes
+exactly. You only need to paste it by hand for a client Rationale does not
+configure.
 
-The landing page renders this same file. There is no second English copy hidden
-in the site.
+It is kept in the repository at `docs/prompt-master.md`, compiled into the
+binary, and injected into this page at build time — the installed instructions
+and the site cannot drift apart.
 
 The Spanish version is available at [prompt maestro en español](/es/docs/prompt-master).
 
+## What it asks of the agent
+
+Locate with Codebase Memory, call `prepare_change` before a non-trivial change,
+state any governing Record or conflict explicitly, make the smallest change,
+and close with `finalize_change` carrying only durable knowledge — one decision
+per Record. If a candidate collides with a pinned rule, the agent stops and
+asks the human, then calls `resolve_conflict` with their literal answer.
+
 ## Copy
 
-The block below is injected from the canonical source at build time so the
-installed instructions and the site cannot silently drift.
+The block below is the canonical source.

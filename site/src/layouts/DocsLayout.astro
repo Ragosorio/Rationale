@@ -33,12 +33,12 @@ const entryBySlug = new Map(entries.map((entry) => [entry.data.slug, entry]));
 ---
 
 <!doctype html>
-<html lang={lang} data-theme="light">
+<html lang={lang} data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <meta name="generator" content={Astro.generator} />
-    <meta name="theme-color" content="#f0f1ed" />
+    <meta name="theme-color" content="#04060a" />
     <meta name="description" content={description} />
     <meta property="og:title" content={`Rationale — ${title}`} />
     <meta property="og:description" content={description} />
@@ -51,8 +51,8 @@ const entryBySlug = new Map(entries.map((entry) => [entry.data.slug, entry]));
       <header class="docs-header">
         <div class="docs-header-inner">
           <a class="docs-brand" href={homeHref(lang)} aria-label={isSpanish ? "Inicio de Rationale" : "Rationale home"}>
-            <span class="docs-brand-mark">R/</span>
-            <span><strong>Rationale</strong><small>Local causal context</small></span>
+            <span class="docs-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="20" height="20"><circle cx="16" cy="16" r="11.5" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5"/><circle cx="16" cy="16" r="4.5" fill="currentColor"/><circle cx="26.5" cy="10" r="2.6" fill="#f2b544"/></svg></span>
+            <span><strong>Rationale</strong><small>{isSpanish ? "Memoria causal para agentes" : "Causal memory for agents"}</small></span>
           </a>
           <nav class="docs-header-actions" aria-label={isSpanish ? "Acciones del sitio" : "Site actions"}>
             <a href={docsRoot(lang)} class="docs-header-link">{isSpanish ? "Docs" : "Docs"}</a>
@@ -114,7 +114,8 @@ const entryBySlug = new Map(entries.map((entry) => [entry.data.slug, entry]));
       const toggle = document.querySelector("[data-docs-theme-toggle]");
       const icon = document.querySelector("[data-docs-theme-icon]");
       const saved = window.localStorage.getItem("rationale-theme");
-      const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      // Oscuro por defecto, como la landing y el Control Room; el toggle recuerda la elección.
+      const preferred = "dark";
       const setTheme = (theme) => {
         const selected = theme === "dark" ? "dark" : "light";
         root.dataset.theme = selected;

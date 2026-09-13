@@ -1,65 +1,89 @@
 ---
 lang: es
 slug: mcp-reference
-title: Referencia de MCP
-description: Comportamiento herramienta por herramienta en la frontera del agente, incluyendo lo que MCP nunca puede aprobar.
+title: Referencia MCP
+description: Las cinco herramientas y los seis prompts en la frontera con el agente — entradas, salidas y lo que MCP nunca decide.
 section: Operar
-order: 5
+order: 8
 ---
 
 ## `health`
 
-Devuelve identidad del proyecto, revisión Git, estado del proveedor y
-cobertura. La ausencia de Codebase Memory es un resultado degradado explícito,
-no una razón para inventar símbolos o bloquear el cambio.
+Identidad del proyecto, revisión de Git, working tree, estado y cobertura del
+proveedor. Si falta Codebase Memory, el resultado es explícitamente degradado;
+nunca se inventa cobertura.
 
 ## `prepare_change`
 
-Entrada: `target` y la `intent` real del agente; `severity` es explícita al
-capturar una afirmación nueva. La salida incluye restricciones, evidencia,
-autoridad, linkage, cobertura del proveedor, conflictos de intención y si se
-requiere un veredicto de gobernanza.
+Entrada: `target` (`path` o `path::symbol`) y la `intent` real del agente.
+Opcional: `max_tokens` (por defecto 2400), `max_nodes` (12),
+`max_relationships` (16), `mode: baseline` para omitir la detección de
+conflictos con la intención.
 
-Los Records gobernantes no desaparecen porque su severidad sea `medium`, y un
-match vacío es honesto: el servidor nunca cae al primer Record no relacionado.
+Salida: un `operation_id` y un packet con
+
+- `critical_constraints` y `decisions` que gobiernan el target, cada una con
+  `authority`, `provenance` y cómo coincidió;
+- `relationships` explicadas por Records, con su `state` derivado y el camino
+  cuando es `indirect`;
+- `structure`: los nodos y aristas seleccionados alrededor del target, cada uno
+  con su rol y los ids de Records que lo explican;
+- `relevant_code`, `intent_conflicts`, `known_risks`, `known_unknowns`,
+  `warnings`, el `snapshot` de consistencia y `budget_overflow` cuando el
+  contexto con autoridad excedió el techo.
+
+El presupuesto es un techo, nunca una meta: una vecindad vacía produce un
+packet pequeño, y el conocimiento gobernante nunca se recorta para caber.
 
 ## `explain_target`
 
-Devuelve el mismo conjunto de Records gobernantes para un target sin intent.
-Usa el mismo matcher que `prepare_change`, así que ambas herramientas coinciden
-en un binding de archivo o un sufijo estructural.
+Por qué existe un target: los Records que lo gobiernan por binding exacto, su
+Subject y qué es conocido frente a desconocido. Usa el mismo matcher que
+`prepare_change`, así las dos herramientas nunca discrepan.
 
 ## `finalize_change`
 
-Captura archivos observados mecánicamente, resolución del proveedor, intent,
-evidencia y un statement propuesto. Los archivos sin commit se marcan
-provisionales y siguen siendo capturables; la propuesta espera revisión humana.
+Entrada: `operation_id`, `summary` y `candidates`. Cada candidato exige `kind`,
+`statement`, `rationale`, `durability` y `bindings`; puede añadir `supersedes`,
+`severity`, `id`, `risks`, `evidence` y `subject`. La base del diff es el
+`base_revision` declarado, si no el HEAD que vio `prepare_change`, y si no HEAD.
+
+Salida: los Records `committed`, los candidatos `discarded` con su motivo, los
+`conflicts`, los Records `superseded`, el estado derivado de las relaciones que
+explican los Records nuevos, las `signals` observadas y la captura mecánica del
+cambio.
+
+Entre los motivos de descarte están `transient`, `duplicate`,
+`missing_rationale`, `rationale_restates_statement`, `mechanical_noise`,
+`no_meaningful_binding` y `legacy_contract` (una llamada anterior a 1.0 sin
+candidatos).
+
+## `resolve_conflict`
+
+Entrada: `conflict_id`, `decision` (`keep_pinned` o `adopt_new`) y
+`human_answer` — la respuesta literal de la persona, que se guarda para
+auditoría. Sin `human_answer` la herramienta se niega. `adopt_new` exige que el
+actor de Git esté declarado en `.rationale/config.yaml`.
 
 ## Prompts
 
-El servidor declara la capability MCP `prompts`. `prompts/list` devuelve seis
-acciones pre-hechas desde la misma fuente que genera los skills de Claude Code:
+`prompts/list` devuelve seis acciones desde la misma fuente que las skills de
+Claude Code:
 
 | Prompt | Propósito | Argumentos |
 | --- | --- | --- |
-| `preflight` | Prepara restricciones y conflictos de intención antes de editar. | `target`, `intent` |
-| `explain` | Explica una posible valla de Chesterton antes de simplificar. | `target` |
-| `capture` | Guía `finalize_change` después de un cambio. | `statement` opcional |
-| `review` | Lista propuestas pendientes y entrega la aprobación a la CLI humana. | ninguno |
-| `health` | Diagnostica MCP, proveedor, Git y canon. | ninguno |
-| `protocol` | Carga el protocolo maestro completo. | ninguno |
+| `preflight` | Preparar contexto y declarar los Records gobernantes antes de editar. | `target`, `intent` |
+| `explain` | Explicar una posible valla de Chesterton. | `target` |
+| `capture` | Cerrar un cambio con candidatos durables. | `statement` opcional |
+| `conflicts` | Presentar conflictos con Records fijados y entregar la decisión a una persona. | ninguno |
+| `health` | Diagnosticar MCP, proveedor, Git y la salud del canon. | ninguno |
+| `protocol` | Cargar el protocolo maestro. | ninguno |
 
-`prompts/get` sustituye argumentos por nombre y devuelve un mensaje de usuario.
-Un prompt desconocido produce un error JSON-RPC sin terminar la sesión
-persistente. El descubrimiento y la decoración del comando pertenecen a cada
-cliente MCP; no dependas de un slash command sin verificar ese cliente. En
-Codex, pídelo por escrito, por ejemplo: «Prepara este cambio con Rationale para
-`<target>` con intención `<intent>`». Claude Code recibe por separado el skill
-limpio `/rationale-preflight` dentro del proyecto.
+Un prompt retirado, como `review`, responde con la acción que lo reemplazó. Un
+prompt desconocido es un error JSON-RPC y nunca termina la sesión.
 
-## Frontera
+## Transporte
 
-MCP no expone aprobación, corrección, disputa, revocación, superseder ni cambio
-de autoridad. Esas acciones requieren la revisión interactiva de la CLI. El
-stdio usa JSON por línea; `Content-Length` solo aparece cuando el cliente habla
-con Codebase Memory.
+JSON-RPC delimitado por líneas sobre stdio, protocolo `2024-11-05`. Una sesión
+persistente con el proveedor por proceso del servidor. Los diagnósticos van a
+stderr; stdout solo lleva mensajes MCP.

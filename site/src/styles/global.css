@@ -10,43 +10,54 @@
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* Tokens compartidos por la landing y los docs. La paleta oscura es la del
+   Control Room (`ui/src/styles.css`): fondo profundo, acento azul, ámbar para
+   lo que el canon explica. El tema claro es su contraparte de laboratorio. */
 :root {
-  --canvas: #f0f1ed;
-  --surface: #fafbf8;
+  --canvas: #f3f6fa;
+  --surface: #ffffff;
   --surface-strong: #ffffff;
-  --surface-inset: #e7eae5;
-  --ink: #111617;
-  --muted: #5c6664;
-  --muted-strong: #3e4947;
-  --line: #cbd1cd;
-  --line-strong: #9ba6a1;
-  --signal: #2456d9;
-  --signal-strong: #103fbc;
-  --signal-soft: #e4ebff;
-  --warning: #b45b1d;
-  --warning-soft: #fff0df;
-  --shadow: 0 18px 45px rgba(17, 22, 23, 0.1), 0 2px 8px rgba(17, 22, 23, 0.08);
-  --display: "Arial", "Helvetica Neue", sans-serif;
-  --body: "Arial", "Helvetica Neue", sans-serif;
-  --mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  --surface-inset: #e8eef5;
+  --ink: #0a1220;
+  --muted: #566276;
+  --muted-strong: #343f4e;
+  --line: #d8dfe9;
+  --line-strong: #aebacb;
+  --signal: #0b6fc4;
+  --signal-strong: #07599f;
+  --signal-soft: #e2effa;
+  --warning: #a86200;
+  --warning-soft: #fcf0da;
+  --causal: #a86a12;
+  --ok: #0f8a55;
+  --danger: #c7323b;
+  --glow: rgba(11, 111, 196, 0.18);
+  --shadow: 0 24px 60px rgba(10, 18, 32, 0.12), 0 2px 8px rgba(10, 18, 32, 0.06);
+  --display: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --body: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
 [data-theme="dark"] {
-  --canvas: #101516;
-  --surface: #161d1e;
-  --surface-strong: #1c2425;
-  --surface-inset: #0d1213;
-  --ink: #eff3ed;
-  --muted: #aab6b0;
-  --muted-strong: #d0d8d3;
-  --line: #34403f;
-  --line-strong: #64716d;
-  --signal: #88a7ff;
-  --signal-strong: #b3c5ff;
-  --signal-soft: #1d2d57;
-  --warning: #ffb274;
-  --warning-soft: #3b291e;
-  --shadow: 0 20px 50px rgba(0, 0, 0, 0.36), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --canvas: #04060a;
+  --surface: #080b11;
+  --surface-strong: #0b1019;
+  --surface-inset: #060910;
+  --ink: #e4ebf5;
+  --muted: #8391a5;
+  --muted-strong: #b7c2d2;
+  --line: #161e2a;
+  --line-strong: #283447;
+  --signal: #7cc8ff;
+  --signal-strong: #a9dcff;
+  --signal-soft: #0c1d2d;
+  --warning: #f2b544;
+  --warning-soft: #251b0b;
+  --causal: #f2b544;
+  --ok: #57d69a;
+  --danger: #f0575f;
+  --glow: rgba(124, 200, 255, 0.22);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
 @layer base {
@@ -414,10 +425,10 @@
     justify-content: center;
     width: 2rem;
     height: 2rem;
-    border: 1px solid var(--ink);
-    font-family: var(--mono);
-    font-size: 0.7rem;
-    font-weight: 700;
+    border: 1px solid var(--line-strong);
+    border-radius: 0.55rem;
+    color: var(--signal);
+    background: var(--signal-soft);
   }
 
   .docs-brand span:last-child {
