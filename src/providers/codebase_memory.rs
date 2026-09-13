@@ -113,16 +113,7 @@ impl CodebaseMemoryClient {
 
     fn initialize(&mut self) -> std::io::Result<()> {
         let id = self.next_id();
-        self.send(json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "rationale", "version": env!("CARGO_PKG_VERSION")}
-            }
-        }))?;
+        self.send(initialize_request(id))?;
         if self.recv_response_for(id, self.init_deadline).is_none() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
@@ -1214,6 +1205,19 @@ impl CodeIntelligenceProvider for CodebaseMemoryClient {
     }
 }
 
+fn initialize_request(id: u64) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "rationale", "version": env!("RATIONALE_BUILD_VERSION")}
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1627,5 +1631,15 @@ id="$(message_id "$(read_message)")"; not_found "$id"
         let ready =
             json!({"result": {"content": [{"type": "text", "text": "{\"status\":\"ready\"}"}]}});
         assert!(!CodebaseMemoryClient::is_missing_project_response(&ready));
+    }
+
+    #[test]
+    fn initialize_advertises_the_artifact_version() {
+        let request = initialize_request(7);
+        assert_eq!(request["id"], 7);
+        assert_eq!(
+            request["params"]["clientInfo"]["version"],
+            env!("RATIONALE_BUILD_VERSION")
+        );
     }
 }

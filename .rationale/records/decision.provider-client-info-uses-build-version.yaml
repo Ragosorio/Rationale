@@ -1,0 +1,41 @@
+id: decision.provider-client-info-uses-build-version
+kind: decision
+severity: low
+statement: The MCP initialize request Rationale sends to Codebase Memory advertises clientInfo.version from RATIONALE_BUILD_VERSION (the artifact version set by build.rs), never CARGO_PKG_VERSION.
+rationale: Cargo.toml keeps version 0.0.0 as a placeholder because the release version comes from the tag through build.rs; using CARGO_PKG_VERSION made every installed 1.0 binary introduce itself to the provider as 0.0.0, which is false provenance in the provider's logs and in any capability negotiation keyed on the client version.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09b533baa633e8565
+  session_id: session_1a099e9d9d97a4eac88
+  asserted_at: 2026-09-13T15:14:18Z
+approvals: []
+binding_declarations:
+- id: binding.decision.provider-client-info-uses-build-version.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/providers/codebase_memory.rs
+  provisional: true
+- id: binding.decision.provider-client-info-uses-build-version.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: build.rs
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 4be2ecd30e3fbdd6882b3ada494af1a0157d8249
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T15:14:18Z
+    operation_id: op_1a09b533baa633e8565
