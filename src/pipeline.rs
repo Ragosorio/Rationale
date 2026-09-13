@@ -414,17 +414,20 @@ pub fn prepare(
         packet_bytes: serde_json::to_vec(&packet).map_or(0, |bytes| bytes.len()),
         estimated_tokens: packet.token_estimate,
     };
-    // ADR-0014 §Decision 3: la exclusión de Git antes del snapshot, también
-    // con la actividad desactivada.
-    if let Err(e) = activity::ensure_excluded(&config.project_root) {
-        diagnostics.push(format!(
-            "advertencia: no se pudo excluir .rationale-local/ de Git: {e}"
-        ));
-    }
-    if let Err(e) = operations::save(&local_dir, &operation) {
-        diagnostics.push(format!(
-            "advertencia: no se pudo guardar el snapshot de la operación: {e}"
-        ));
+    // El snapshot es observación local, como la actividad, y contiene la
+    // intención: `RATIONALE_ACTIVITY=off` también lo omite (ADR-0017).
+    if recorder.is_enabled() {
+        // ADR-0014 §Decision 3: la exclusión de Git antes del snapshot.
+        if let Err(e) = activity::ensure_excluded(&config.project_root) {
+            diagnostics.push(format!(
+                "advertencia: no se pudo excluir .rationale-local/ de Git: {e}"
+            ));
+        }
+        if let Err(e) = operations::save(&local_dir, &operation) {
+            diagnostics.push(format!(
+                "advertencia: no se pudo guardar el snapshot de la operación: {e}"
+            ));
+        }
     }
     recorder.emit(
         &scope,
@@ -708,13 +711,20 @@ pub fn finalize(
     // cierre: solo no se enlaza con la operación.
     let operation = req.operation_id.as_deref().and_then(|id| {
         let found = operations::load(&local_dir, id);
-        if found.is_none() {
+        if found.is_none() && recorder.is_enabled() {
             diagnostics.push(format!(
                 "advertencia: operación '{id}' desconocida; el cierre no se enlaza con ella"
             ));
         }
         found
     });
+    if req.operation_id.is_some() && !recorder.is_enabled() {
+        diagnostics.push(
+            "actividad local desactivada (RATIONALE_ACTIVITY=off): la operación no tiene \
+             snapshot; la base del diff es la declarada o HEAD"
+                .to_string(),
+        );
+    }
     // Base honesta del diff: la declarada, o el HEAD que vio prepare_change
     // (cubre commits del agente entre prepare y finalize), o HEAD.
     let base_revision = req

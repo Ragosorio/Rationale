@@ -30,6 +30,7 @@ impl TestClient {
         let mut child = Command::new(env!("CARGO_BIN_EXE_rationale"))
             .args(["serve", "--client", "codex"])
             .env("RATIONALE_PROVIDER", "none")
+            .env("RATIONALE_ACTIVITY", "off")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

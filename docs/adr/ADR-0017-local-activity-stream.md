@@ -56,8 +56,10 @@ intención declarada en `prepare_change` se parece a un prompt. Además:
    conflicto— instalan la exclusión de `.rationale-local/` (ADR-0014) antes
    de su primer contenido en cada proyecto, también con la actividad
    desactivada.
-5. **Opt-out:** `RATIONALE_ACTIVITY=off` desactiva el flujo por completo. Por
-   defecto está activo, porque la vista de actividad es parte del producto.
+5. **Opt-out:** `RATIONALE_ACTIVITY=off` desactiva el flujo y los snapshots de
+   operación, porque ambos guardan la intención. Por defecto están activos: la
+   vista de actividad es parte del producto. Sin snapshot, `finalize_change`
+   no puede enlazar la operación y usa la base declarada o HEAD.
 6. **Retención:** sesiones de más de 14 días se eliminan, y nunca quedan más de
    500 archivos. Se usa antigüedad y no solo conteo, para que una ráfaga de
    sesiones cortas (una suite de tests) no desaloje la historia real.

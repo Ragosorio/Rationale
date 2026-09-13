@@ -179,6 +179,12 @@ impl Recorder {
         }
     }
 
+    /// `false` con `RATIONALE_ACTIVITY=off`. El pipeline tampoco guarda
+    /// entonces snapshots de operación, que también contienen la intención.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
     pub fn emit(&self, scope: &Scope, kind: &str, payload: Value) {
         if !self.enabled {
             return;
