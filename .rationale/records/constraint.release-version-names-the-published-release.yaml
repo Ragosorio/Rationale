@@ -1,0 +1,47 @@
+id: constraint.release-version-names-the-published-release
+kind: constraint
+severity: medium
+statement: docs/RELEASE_VERSION names the Release that is published (or the tag about to be pushed), never a version that has not been tagged; changes merged to main after that Release are listed under an unreleased CHANGELOG section until their tag is cut.
+rationale: RELEASE_VERSION is the single source that scripts/check-docs.sh compares documentation against, and the release workflow's verify job refuses to package unless it equals the pushed tag. Bumping it ahead of a Release made main claim a v1.0.1 that did not exist while the site, installer channel and published binaries were v1.0.0.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a09b5343a26af3e8cb
+  session_id: session_1a099e9d9d97a4eac88
+  asserted_at: 2026-09-13T15:14:14Z
+approvals: []
+binding_declarations:
+- id: binding.constraint.release-version-names-the-published-release.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: docs/RELEASE_VERSION
+  provisional: false
+- id: binding.constraint.release-version-names-the-published-release.1
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: CHANGELOG.md
+  provisional: true
+- id: binding.constraint.release-version-names-the-published-release.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: .github/workflows/release.yml
+  provisional: true
+evidence: []
+risks: []
+bound_revision: 4be2ecd30e3fbdd6882b3ada494af1a0157d8249
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-09-13T15:14:14Z
+    operation_id: op_1a09b5343a26af3e8cb

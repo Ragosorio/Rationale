@@ -4,25 +4,20 @@ Instrucciones operativas para cualquier agente (Claude Code, Codex u otro) que t
 
 ## Qué es esto y en qué fase está
 
-Rationale completó Fase A (bootstrap), Fase B (análisis de Codebase Memory — ver `docs/work-items/EPIC-CBM-ANALYSIS.md`), Fase C (spike de lenguaje, propuso **Rust** en `docs/adr/ADR-0001-core-language.md`), Fase D (vertical slice: `init`/`health`/`prepare` reales contra Codebase Memory vía MCP persistente), Fase E (store canónico completo — `Subject`/`Evidence`/`Assessment`, capa derivada SQLite+FTS, Context Compiler con niveles de prioridad y budget, servidor MCP con `prepare_change`/`explain_target`/`health`) y **Fase F** (captura: escritura canónica atómica con fidelidad de round-trip, captura mecánica del diff, señales de alto valor y niveles 0-3, Subject Resolver completo, `finalize_change` como cuarta herramienta MCP, y `rationale review` en la CLI como única vía de aprobación humana). El núcleo real vive en `src/`; `spikes/language/` sigue siendo código de investigación desechable, no su punto de partida. Ver [`docs/architecture/code-map.md`](docs/architecture/code-map.md) para el mapa real de módulos y flujos.
+Rationale completó las fases A–G y publicó la serie estable 1.0: captura autónoma con autoridad humana sobre Records fijados, compilador de contexto vNext, proveedor estructural normalizado, actividad local, Control Room y cinco herramientas MCP (`prepare_change`, `explain_target`, `finalize_change`, `resolve_conflict`, `health`). El núcleo real vive en `src/`; `spikes/language/` sigue siendo investigación desechable. Ver [`docs/architecture/code-map.md`](docs/architecture/code-map.md) y [`docs/work-items/v1.0-release-verification.md`](docs/work-items/v1.0-release-verification.md).
 
 Los ADRs registrados incluyen doce propuestas y una decisión parcial abierta
 (ADR-0011); ninguno se autoaprueba (`evaluation.no-self-certification`). Antes
 de asumir que uno describe el comportamiento actual, revisa su estado en
 `docs/adr/index.md`.
 
-F8 cerró los hallazgos P1/P2 de la auditoría adversarial: autoridad declarada
-por proyecto, `novelty_reason` estructurada, claim atómico de propuestas,
-diagnóstico de YAML corrupto, drift documental y CI Linux/macOS. Fase G está en
-dogfood formal; las decisiones F8 ya tienen propuestas pendientes capturadas en
-`.rationale/proposals/`, pero ninguna aprobación automática. Ver
-`docs/work-items/fase-g-dogfood.md` para la evidencia y los límites conocidos.
+F8 cerró los hallazgos P1/P2 de la auditoría adversarial. El dogfood vNext y la
+Release estable están registrados en `docs/work-items/`; los ADRs conservan su
+estado individual y ninguno se autoaprueba.
 
-Siguiente: revisión humana de esas propuestas y de los nueve Subjects
-fundacionales; `review_record` ya tiene lifecycle completo (corregir,
-disputar, revocar, superseder, cambiar autoridad y añadir evidencia) por CLI
-interactiva. El siguiente gate es el dogfood instalable y el piloto H — ver
-`docs/work-items/` por el plan vigente.
+Siguiente: usar la 1.0 en proyectos reales, corregir con evidencia sus bindings
+obsoletos y ejecutar `doctor --check`; ver `docs/work-items/` por límites y
+planes vigentes.
 
 ## Ruta de lectura por tipo de tarea
 

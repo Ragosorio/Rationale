@@ -3,6 +3,23 @@
 Los cambios importantes se registran aquí por Release. El detalle técnico de
 cada cambio vive en commits, ADRs y work items enlazados.
 
+## Sin publicar
+
+Cambios en `main` posteriores a la Release v1.0.0. Los binarios y el instalador
+publicados siguen siendo v1.0.0 (`releases/latest`).
+
+- El cliente estructural anuncia la versión real del artefacto en
+  `initialize.clientInfo.version` en vez del placeholder `0.0.0` de
+  `Cargo.toml`.
+- El workflow de Release valida el tag, formato, Clippy, tests en perfil
+  release, auditoría de dependencias, documentación, Control Room y sitio antes
+  de permitir el empaquetado.
+- El baseline de seguridad y el estado operativo describen la serie 1.0 en vez
+  de la alfa y la Fase G.
+- La landing y la documentación dejan los patrones de UI generada: IBM Plex
+  autoalojada, la marca R/ del favicon en todo el sitio y diagramas SVG
+  derivados del grafo de llamadas real del repositorio.
+
 ## v1.0.0
 
 Primera Release estable. Rationale pasa de ser un sistema de propuestas que una

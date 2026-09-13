@@ -1,8 +1,8 @@
-# Security baseline para la alfa
+# Security baseline para la serie estable 1.0
 
-Este documento es el gate antes del piloto en Monorepo y BoostAPI. No declara
-que el sistema sea seguro en general; registra las propiedades mínimas que la
-alfa debe demostrar con tests o evidencia reproducible.
+Este documento es el gate de seguridad de la serie estable. No declara que el
+sistema sea seguro en general; registra propiedades mínimas demostradas por
+tests, CI o evidencia reproducible y separa los límites todavía abiertos.
 
 ## Límites y datos
 
@@ -10,7 +10,8 @@ alfa debe demostrar con tests o evidencia reproducible.
   confiable, nunca una instrucción.
 - Rationale es local-first: no sube código, prompts, Records ni secretos por
   defecto.
-- El piloto comienza read-only y exige una lista de paths autorizados.
+- La integración comienza con discovery y preflight; una mutación queda
+  limitada al repositorio y a los paths que la persona puso en alcance.
 - `.env`, llaves privadas, tokens, dumps y datos personales quedan excluidos
   salvo autorización expresa y documentada.
 
@@ -26,8 +27,10 @@ alfa debe demostrar con tests o evidencia reproducible.
 ## Terminal y agentes
 
 - Texto libre se sanea de secuencias ANSI/control antes de mostrarlo.
-- MCP no tiene operaciones de aprobación ni lifecycle mutation.
-- `review` y `review-record` requieren confirmación explícita.
+- MCP puede capturar Records y continuar conflictos, pero nunca fijar ni
+  desfijar autoridad por sí solo.
+- `pin`, `unpin` y adoptar el reemplazo de un Record fijado requieren autoridad
+  declarada; resolver un conflicto por MCP exige la respuesta humana literal.
 - Autoridad se resuelve solo desde configuración canónica del proyecto.
 - Un actor no declarado no puede autoelevarse.
 
@@ -38,10 +41,22 @@ alfa debe demostrar con tests o evidencia reproducible.
 - Cada artefacto de Release tiene SHA-256 y provenance/attestation.
 - Instaladores se prueban en máquina limpia, update, rollback y uninstall.
 
-## Hallazgos abiertos antes de la alfa
+## Evidencia 1.0
 
-- Verificar locking/rename en Windows.
-- Verificar targets ARM64 en CI.
-- Repetir adversarial review contra el paquete instalado, no solo el árbol de
-  fuente.
-- Registrar evidencia del piloto y de cualquier dato excluido.
+- CI verificó tests, Clippy y empaquetado en Windows; la suite cubre claims y
+  escrituras concurrentes, recuperación y fidelidad de round-trip.
+- La Release construye cinco targets, incluidos macOS y Linux ARM64, con
+  checksums y attestations. El workflow bloquea el empaquetado hasta que pasa
+  la verificación del source tag.
+- El artefacto macOS ARM64 se ejercitó instalado: CLI, servidor MCP, Control
+  Room embebido, guardas HTTP y migración aislada de registros de agentes.
+- `cargo audit` no reportó vulnerabilidades en el lockfile de la 1.0.
+
+## Límites abiertos no P0/P1
+
+- Los artefactos Linux y Windows se compilan y empaquetan en CI, pero no existe
+  todavía un smoke funcional post-publicación independiente en cada sistema.
+- Varios ADRs de la serie 1.0 siguen `proposed`; eso limita su autoridad
+  documental, no las guardas reproducibles enumeradas arriba.
+- Cada piloto conserva la responsabilidad de revisar sus exclusiones de datos,
+  bindings obsoletos y canon antes de declarar `doctor --check` limpio.

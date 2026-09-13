@@ -1,7 +1,7 @@
 # Rationale vNext — implementation delta-plan
 
-Status: in progress on branch `codex/rationale-vnext` (local only — no push,
-PR, merge or release is part of this work).
+Status: completed and released from `main` in `v1.0.0`; follow-up release
+hardening is tracked in the changelog and release verification.
 
 ## Authority and scope
 
@@ -261,11 +261,8 @@ filter is replaced by a fix inside the compiler, where the invariant belongs.
   Findings: name-based Rust call resolution in the provider, noisy lexical
   polarity (a tested fence, left as is), index-freshness wording.
 
-## Remaining before release (out of this work's scope)
+## Release closure
 
-- Documentation pass: `README.md`, `docs/user-guide/` (configuration, daily
-  workflow, CLI reference), `site/src/content/docs/` and the landing page
-  still describe the approval queue; `docs/RELEASE_VERSION` says beta.2
-  while beta.3 is installed.
-- Release workflow: build `ui/dist` before `cargo build --release` so the
-  published binary embeds the Control Room instead of the fallback page.
+The documentation, landing, embedded Control Room, stable installer channel,
+cross-platform CI and release packaging were completed in `v1.0.0`. The
+verification record is `docs/work-items/v1.0-release-verification.md`.
