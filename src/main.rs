@@ -8,6 +8,7 @@
 //! assessments persistidos) pertenece a Fase E/F.
 
 mod activity;
+mod advice;
 mod agents;
 mod assessment;
 mod binding_match;
@@ -261,7 +262,7 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "prepare" => validate_flags(
             command,
             args,
-            &["--no-mascot"],
+            &["--no-mascot", "--advise"],
             &["--project-root", "--repo-path", "--intent"],
         ),
         "serve" => validate_flags(command, args, &[], &["--client"]),
@@ -580,6 +581,7 @@ fn cmd_prepare(args: &[String]) {
             structural_budget: context::StructuralBudget::default(),
             actor: cli_actor(),
             verbose: true,
+            advise: args.iter().any(|a| a == "--advise").then_some(true),
         },
         &mut provider,
         &recorder,

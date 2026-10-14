@@ -280,6 +280,7 @@ fn tool_definitions() -> Value {
                     "repo_path": {"type": "string"},
                     "max_tokens": {"type": "integer", "description": "Ceiling for this whole response, as an upper-bound token estimate (default 2400). Governing knowledge is never cut; what does not fit is listed in packet.omitted with the call that returns it"},
                     "verbose": {"type": "boolean", "description": "Also return pipeline diagnostics and the per-binding assessment (debugging only)"},
+                    "advise": {"type": "boolean", "description": "Add execution_advice: a model tier and reasoning effort derived from this packet's risk signals, with reasons (a heuristic; default from advice.enabled in .rationale/config.yaml)"},
                     "max_critical_constraints": {"type": "integer"},
                     "max_risks": {"type": "integer"},
                     "max_nodes": {"type": "integer", "description": "Ceiling for structural nodes in the packet (default 12)"},
@@ -520,6 +521,7 @@ fn call_prepare_change(
         .get("verbose")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let advise = args.get("advise").and_then(Value::as_bool);
 
     let structural_default = context::StructuralBudget::default();
     let arg_usize = |field: &str| args.get(field).and_then(Value::as_u64).map(|n| n as usize);
@@ -540,6 +542,7 @@ fn call_prepare_change(
             structural_budget,
             actor: session.actor.clone(),
             verbose,
+            advise,
         },
         provider,
         &session.recorder,

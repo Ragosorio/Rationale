@@ -34,6 +34,8 @@ pub struct PrepareRequest {
     pub actor: canon::ActorContext,
     /// Assessment completo (resolución por binding) en vez del compacto.
     pub verbose: bool,
+    /// Consejo de modelo y esfuerzo; `None` sigue `advice.enabled`.
+    pub advise: Option<bool>,
 }
 
 pub struct PrepareOutcome {
@@ -404,17 +406,21 @@ pub fn prepare(
         .map(|a| assessment_view(a, req.verbose));
     // El techo cubre la respuesta MCP completa: se descuenta lo que viaja
     // fuera del packet.
+    let advise = req.advise.unwrap_or(config.advice.enabled);
     let mut budget = req.budget.clone();
-    budget.overhead_tokens = crate::tokens::estimate(
-        &serde_json::json!({
-            "operation_id": operation.operation_id,
-            "packet": null,
-            "assessment": assessment_view,
-            "latency_ms": 99999,
-        })
-        .to_string(),
-        "",
-    );
+    // El consejo se calcula sobre el packet compilado: se le reserva su
+    // tamaño (≈160 tokens) dentro del techo.
+    budget.overhead_tokens = if advise { 160 } else { 0 }
+        + crate::tokens::estimate(
+            &serde_json::json!({
+                "operation_id": operation.operation_id,
+                "packet": null,
+                "assessment": assessment_view,
+                "latency_ms": 99999,
+            })
+            .to_string(),
+            "",
+        );
     let packet = retrieval::compile(
         retrieval::PacketInput {
             git_head: snap.head.clone(),
@@ -442,6 +448,18 @@ pub fn prepare(
         Some(&mut structural),
     );
 
+    let mut packet = packet;
+    if advise {
+        packet.execution_advice = Some(crate::advice::advise(
+            &packet,
+            packet.target.as_ref().and_then(|t| t.file_path.as_deref()),
+            &config.advice.models,
+        ));
+        let total =
+            retrieval::estimate_tokens(&packet) + budget.overhead_tokens.saturating_sub(160);
+        packet.token_estimate = total;
+        packet.budget.estimated_tokens = total;
+    }
     let mut selected_records: Vec<String> = packet
         .critical_constraints
         .iter()

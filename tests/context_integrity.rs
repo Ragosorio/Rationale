@@ -626,3 +626,44 @@ fn claude_code_hooks_recover_context_remind_once_and_ask_to_close() {
         "asks once per operation"
     );
 }
+
+#[test]
+fn execution_advice_is_opt_in_explained_and_separates_effort_from_context() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+    let (plain, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shared/cache.ts::cacheGet"}),
+    );
+    assert!(plain["packet"].get("execution_advice").is_none(), "opt-in");
+
+    let (quiet, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shared/cache.ts::cacheGet", "advise": true}),
+    );
+    let advice = &quiet["packet"]["execution_advice"];
+    assert_eq!(advice["tier"], "fast");
+    assert_eq!(advice["effort"], "low");
+
+    let (risky, text) = client.call(
+        "prepare_change",
+        json!({
+            "target": "src/secrets/rotation.ts::rotateKeys",
+            "intent": "Never rotate legacy KMS keys",
+            "advise": true
+        }),
+    );
+    let advice = &risky["packet"]["execution_advice"];
+    assert_eq!(advice["tier"], "deep", "{advice}");
+    assert!(matches!(advice["effort"].as_str(), Some("high" | "xhigh")));
+    let reasons = advice["reasons"].to_string();
+    assert!(reasons.contains("pinned"), "{reasons}");
+    assert!(reasons.contains("security"), "{reasons}");
+    assert!(estimate(&text) <= 2400, "advice stays inside the budget");
+
+    let (folder, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping", "advise": true}),
+    );
+    assert_ne!(folder["packet"]["execution_advice"]["context"], "small");
+}

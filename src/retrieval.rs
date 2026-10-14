@@ -216,6 +216,9 @@ pub struct ContextPacket {
     /// Lo relevante que no cupo, con la llamada que lo trae.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<Omission>,
+    /// Consejo de modelo y esfuerzo, solo si se pidió (`advise`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_advice: Option<crate::advice::ExecutionAdvice>,
     pub budget: BudgetReport,
     /// Estimación (cota superior, `tokens`) de la respuesta completa que
     /// recibe el agente — igual a `budget.estimated_tokens`.
@@ -389,7 +392,7 @@ pub struct RelevantCode {
 
 /// Tokens estimados del packet serializado, tal como viaja (JSON compacto),
 /// con el código del target recontado como código (`tokens`).
-fn estimate_tokens(packet: &ContextPacket) -> usize {
+pub(crate) fn estimate_tokens(packet: &ContextPacket) -> usize {
     let json = serde_json::to_string(packet).unwrap_or_default();
     let code = packet
         .relevant_code
@@ -1400,6 +1403,7 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         warnings,
         budget_overflow: None,
         omitted: Vec::new(),
+        execution_advice: None,
         budget: BudgetReport {
             max_tokens: budget.max_tokens,
             estimated_tokens: 0,
