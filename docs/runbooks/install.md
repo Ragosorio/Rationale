@@ -34,6 +34,22 @@ and the `rationale-update` helper, runs `rationale install-agent --global-only`
 to register the MCP server with the detected agents, and leaves every
 `.rationale/` untouched.
 
+### From a mirror
+
+`RATIONALE_DOWNLOAD_BASE` points the shell installer at a mirror with the same
+layout as GitHub Releases (`v<version>/rationale-<version>-<target>.tar.xz`,
+its `.sha256`, and `rationale-update.sh`). It needs an explicit
+`RATIONALE_VERSION`, because a mirror has no "latest" API:
+
+```bash
+RATIONALE_DOWNLOAD_BASE=https://mirror.example.com/rationale \
+RATIONALE_VERSION=1.2.0 sh rationale-installer.sh
+```
+
+The checksum is verified the same way. `eval/install_lifecycle.sh` uses this to
+test an install, an upgrade over an existing project, and an uninstall from a
+locally built package before it is published.
+
 ## Structural provider (optional but recommended)
 
 Rationale works without a code-intelligence provider, with degraded coverage

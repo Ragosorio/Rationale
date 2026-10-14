@@ -1,0 +1,371 @@
+{
+  "repo_head": "f97895427cc8a7ba918c0310869affb477342040",
+  "runs": {
+    "v1.1.0": {
+      "first_call_with_cold_index_ms": 451.0,
+      "health_is_error": false,
+      "targets": [
+        {
+          "target": "src/pipeline.rs::explain",
+          "tokens": 3288,
+          "legacy_tokens": 2113,
+          "bytes": 8450,
+          "latency_ms": 166.3,
+          "governing": 2,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/pipeline.rs::prepare",
+          "tokens": 3418,
+          "legacy_tokens": 2199,
+          "bytes": 8796,
+          "latency_ms": 123.3,
+          "governing": 2,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/retrieval.rs::compile",
+          "tokens": 3060,
+          "legacy_tokens": 1959,
+          "bytes": 7835,
+          "latency_ms": 115.3,
+          "governing": 2,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/retrieval.rs::select_constraints",
+          "tokens": 3178,
+          "legacy_tokens": 2039,
+          "bytes": 8153,
+          "latency_ms": 113.3,
+          "governing": 2,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/binding_match.rs::governing",
+          "tokens": 2914,
+          "legacy_tokens": 1912,
+          "bytes": 7645,
+          "latency_ms": 115.1,
+          "governing": 1,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/canon.rs::capture_candidates",
+          "tokens": 3006,
+          "legacy_tokens": 1923,
+          "bytes": 7691,
+          "latency_ms": 117.0,
+          "governing": 2,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/providers/codebase_memory.rs::resolve_project",
+          "tokens": 3068,
+          "legacy_tokens": 1964,
+          "bytes": 7855,
+          "latency_ms": 115.4,
+          "governing": 3,
+          "nodes": 3,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/agents.rs::install",
+          "tokens": 4731,
+          "legacy_tokens": 3085,
+          "bytes": 12340,
+          "latency_ms": 120.5,
+          "governing": 5,
+          "nodes": 10,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/mcp/server.rs::handle_tools_call",
+          "tokens": 3973,
+          "legacy_tokens": 2573,
+          "bytes": 10290,
+          "latency_ms": 116.4,
+          "governing": 3,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/main.rs",
+          "tokens": 2488,
+          "legacy_tokens": 1675,
+          "bytes": 6700,
+          "latency_ms": 60.7,
+          "governing": 2,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/providers",
+          "tokens": 418,
+          "legacy_tokens": 282,
+          "bytes": 1125,
+          "latency_ms": 40.3,
+          "governing": 0,
+          "nodes": 0,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "site/astro.config.mjs",
+          "tokens": 1156,
+          "legacy_tokens": 779,
+          "bytes": 3115,
+          "latency_ms": 83.2,
+          "governing": 1,
+          "nodes": 1,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        }
+      ],
+      "tokens_p50": 3068,
+      "tokens_p95": 3973,
+      "tokens_max": 4731,
+      "over_default_budget": 10,
+      "warm_prepare_ms": {
+        "n": 60,
+        "p50": 115.61,
+        "p95": 126.87
+      }
+    },
+    "v1.2.0-dev": {
+      "first_call_with_cold_index_ms": 564.8,
+      "health_is_error": false,
+      "targets": [
+        {
+          "target": "src/pipeline.rs::explain",
+          "tokens": 2399,
+          "legacy_tokens": 1513,
+          "bytes": 6052,
+          "latency_ms": 171.5,
+          "governing": 2,
+          "nodes": 5,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "3 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "src/pipeline.rs::prepare",
+          "tokens": 2370,
+          "legacy_tokens": 1493,
+          "bytes": 5971,
+          "latency_ms": 192.1,
+          "governing": 1,
+          "nodes": 2,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "4 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "src/retrieval.rs::compile",
+          "tokens": 2455,
+          "legacy_tokens": 1551,
+          "bytes": 6203,
+          "latency_ms": 167.5,
+          "governing": 2,
+          "nodes": 5,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "3 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": "authoritative_context"
+        },
+        {
+          "target": "src/retrieval.rs::select_constraints",
+          "tokens": 2375,
+          "legacy_tokens": 1498,
+          "bytes": 5989,
+          "latency_ms": 172.0,
+          "governing": 0,
+          "nodes": 7,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "2 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "src/binding_match.rs::governing",
+          "tokens": 2328,
+          "legacy_tokens": 1517,
+          "bytes": 6066,
+          "latency_ms": 179.0,
+          "governing": 0,
+          "nodes": 8,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "2 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "src/canon.rs::capture_candidates",
+          "tokens": 2385,
+          "legacy_tokens": 1503,
+          "bytes": 6009,
+          "latency_ms": 139.5,
+          "governing": 0,
+          "nodes": 9,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "1 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "src/providers/codebase_memory.rs::resolve_project",
+          "tokens": 1987,
+          "legacy_tokens": 1235,
+          "bytes": 4939,
+          "latency_ms": 121.2,
+          "governing": 1,
+          "nodes": 3,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "1 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "src/agents.rs::install",
+          "tokens": 1869,
+          "legacy_tokens": 1259,
+          "bytes": 5035,
+          "latency_ms": 118.1,
+          "governing": 1,
+          "nodes": 0,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "4 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "src/mcp/server.rs::handle_tools_call",
+          "tokens": 2456,
+          "legacy_tokens": 1550,
+          "bytes": 6197,
+          "latency_ms": 122.4,
+          "governing": 1,
+          "nodes": 4,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "2 active Record(s) apply",
+            "scope": "symbol",
+            "status": "found"
+          },
+          "budget_overflow": "authoritative_context"
+        },
+        {
+          "target": "src/main.rs",
+          "tokens": 2020,
+          "legacy_tokens": 1360,
+          "bytes": 5440,
+          "latency_ms": 37.3,
+          "governing": 2,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "2 active Record(s) apply",
+            "scope": "file",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "src/providers",
+          "tokens": 1306,
+          "legacy_tokens": 881,
+          "bytes": 3524,
+          "latency_ms": 26.7,
+          "governing": 3,
+          "nodes": 0,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "3 active Record(s) apply",
+            "scope": "folder",
+            "status": "found"
+          },
+          "budget_overflow": null
+        },
+        {
+          "target": "site/astro.config.mjs",
+          "tokens": 816,
+          "legacy_tokens": 550,
+          "bytes": 2200,
+          "latency_ms": 33.8,
+          "governing": 1,
+          "nodes": 0,
+          "nodes_from_missing_files": [],
+          "retrieval": {
+            "detail": "1 active Record(s) apply; the structural index is behind the working tree (see warnings)",
+            "scope": "file",
+            "status": "found"
+          },
+          "budget_overflow": null
+        }
+      ],
+      "tokens_p50": 2370,
+      "tokens_p95": 2455,
+      "tokens_max": 2456,
+      "over_default_budget": 2,
+      "warm_prepare_ms": {
+        "n": 60,
+        "p50": 127.54,
+        "p95": 180.77
+      }
+    }
+  }
+}

@@ -468,6 +468,8 @@ def main() -> int:
     parser.add_argument("--out", default=str(Path(__file__).resolve().parent / "results"))
     parser.add_argument("--warm", type=int, default=20, help="warm repetitions per scenario")
     parser.add_argument("--cold", type=int, default=5, help="cold process starts")
+    parser.add_argument("--check", action="store_true",
+                        help="exit 1 unless the last binary passes every scenario and suite (CI gate)")
     args = parser.parse_args()
 
     binaries = [
@@ -506,6 +508,19 @@ def main() -> int:
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     (out_dir / "report.md").write_text(render_markdown(report))
     print(out_dir / "report.md")
+    if args.check:
+        last = report["runs"][binaries[-1][0]]
+        failures = [r["id"] for r in last["retrieval"]["scenarios"] if not r["passed"]]
+        failures += [suite for suite in ("capture", "operations", "repair")
+                     if not last[suite].get("passed")]
+        if last["doctor"]["detected_count"] < last["doctor"]["expected_count"]:
+            failures.append("doctor")
+        if "compatibility" in last and not last["compatibility"]["passed"]:
+            failures.append("compatibility")
+        if failures:
+            print("evaluation gate failed: " + ", ".join(failures), file=sys.stderr)
+            return 1
+        print("evaluation gate passed", file=sys.stderr)
     return 0
 
 

@@ -11,8 +11,10 @@ Canonical data is never deleted automatically.
 
 This only uninstalls the binary. If `rationale init` or `install-agent`
 configured an agent **inside a project** (a block in `CLAUDE.md` or
-`AGENTS.md`, `.cursor/rules/rationale.mdc`, or skills under `.claude/skills/`
-and `.agents/skills/rationale/`), reverting that is per project:
+`AGENTS.md`, `.cursor/rules/rationale.mdc`, skills under `.claude/skills/`
+and `.agents/skills/rationale/`, or Claude Code hooks in
+`.claude/settings.local.json`), reverting that is per project — do it
+**before** removing the binary, because the hooks call it:
 
 ```bash
 cd /path/to/project
@@ -28,7 +30,14 @@ rationale uninstall-agent --global-only
 
 It deletes only what `install-agent` wrote, according to
 `.rationale-local/installed-agent-files.json`, and leaves any earlier user
-content in those files intact. Skill files you edited are kept.
+content in those files intact. Skill files you edited are kept. Hooks are
+recognized by the program they run (`…/rationale hook …`); other hooks in the
+same file are kept.
+
+To go back to a release before 1.2 in a project with hooks, run
+`rationale uninstall-agent` with the newer binary first: earlier binaries do not
+know the `hook` command, so Claude Code would report a failing hook on every
+event.
 
 ## Always safe to delete
 

@@ -131,7 +131,7 @@ fn print_usage() {
     println!("  rationale init [--skip-agent-config] [--no-mascot]");
     println!("  rationale health [--project-root <path>] [--no-mascot]");
     println!(
-        "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--no-mascot]"
+        "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--advise] [--no-mascot]"
     );
     println!(
         "  rationale serve [--client <claude-code|codex|cursor>]   # servidor MCP (prepare_change, explain_target, health, finalize_change, resolve_conflict)"
@@ -161,7 +161,7 @@ fn print_usage() {
         "  rationale review-record <record-id> [--project-root <path>] [--no-mascot]   # lifecycle humano de un Record aprobado"
     );
     println!(
-        "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-mascot]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
+        "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--refresh-skills] [--no-hooks] [--stop-hook <block|remind|off>] [--no-mascot]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
     );
     println!(
         "  rationale uninstall-agent [--project-root <path>] [--global-only] [--no-mascot]   # revierte exactamente lo que install-agent escribió"
@@ -194,7 +194,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale health [--project-root <path>] [--no-mascot]\n\nReporta el estado del proyecto y del proveedor."
         ),
         "prepare" => println!(
-            "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--no-mascot]\n\nCompila un ContextPacket antes de un cambio."
+            "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--advise] [--no-mascot]\n\nCompila un ContextPacket antes de un cambio para un símbolo (path::symbol), un archivo o una carpeta. --advise adds execution advice (model tier, reasoning effort, context size, and reasons)."
         ),
         "serve" => println!(
             "Uso: rationale serve [--client <claude-code|codex|cursor>]\n\nInicia el servidor MCP persistente por stdin/stdout. El proceso permanece abierto esperando mensajes del agente. --client identifica al agente en la actividad local; sin él se usa el nombre que el cliente declara al conectarse, o 'unknown'."
@@ -224,7 +224,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale review-record <record-id> [--project-root <path>] [--no-mascot]\n\nEjecuta lifecycle sobre un Record aprobado."
         ),
         "install-agent" => println!(
-            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-hooks] [--stop-hook <block|remind|off>] [--no-mascot]\n\nRegistra MCP e instrucciones de invocación de forma idempotente. With Claude Code it also writes Rationale's hooks to .claude/settings.local.json (local, outside Git): --no-hooks skips them, --stop-hook remind only tells the person about open operations instead of asking the agent to close them."
+            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--refresh-skills] [--no-hooks] [--stop-hook <block|remind|off>] [--no-mascot]\n\nRegistra MCP e instrucciones de invocación de forma idempotente. --refresh-skills overwrites skill files that exist without a recorded hash (never ones recorded as edited). With Claude Code it also writes Rationale's hooks to .claude/settings.local.json (local, outside Git): --no-hooks skips them, --stop-hook remind only tells the person about open operations instead of asking the agent to close them."
         ),
         "uninstall-agent" => println!(
             "Uso: rationale uninstall-agent [--project-root <path>] [--global-only] [--no-mascot]\n\nRevierte exactamente lo que install-agent escribió."
