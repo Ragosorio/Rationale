@@ -61,7 +61,8 @@ on each call and never deletes the explanation:
 
 - `agent_asserted`: written by an agent through `finalize_change`, with the
   client, session, and operation that asserted it.
-- `human_stated`: declared by a person.
+- `human_stated`: declared by a person, with `rationale rule add` at an
+  interactive terminal (an agent cannot write it).
 - `migrated`: carried over from the pre-1.0 approval workflow.
 
 **Authority** says how far a Record can move:
@@ -76,10 +77,17 @@ People pin and unpin with `rationale pin` and `rationale unpin`. Pinning,
 unpinning, and adopting a replacement for a pinned Record require an actor
 declared under `authority:` in `.rationale/config.yaml`.
 
-The **lifecycle** of a governing Record is `active`. `superseded` and `revoked`
-Records are history and no longer govern. People correct, dispute, revoke, or
-supersede a Record with `rationale review-record`, which appends an audited
-lifecycle event.
+The **lifecycle** of a governing Record is `active`. `superseded`, `revoked`,
+and `retired` Records are history: packets list them under `history` with
+their replacement and never as authority. A Record is superseded when it says
+so or when an active Record names it in `supersedes`. `retired` means a person
+retired the code it was bound to with `rationale retire`. People correct,
+dispute, revoke, or supersede a Record with `rationale review-record`, which
+appends an audited lifecycle event.
+
+An **exception** relaxes a rule under stated conditions and names that rule in
+`exception_to`. When the rule stops governing, the exception is
+**orphaned**: it is flagged, never silently applied to the replacement.
 
 ## Operations, packets, and the gate
 

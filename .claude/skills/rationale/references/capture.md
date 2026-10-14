@@ -97,6 +97,24 @@ finalize_change(
 Without an `operation_id` (no preflight ran), the mechanical diff is taken
 against `base_revision` when you pass one, and against HEAD otherwise.
 
+An exception names the rule it relaxes in `exception_to` (Record ids). Without
+that link nobody can tell when the exception stops applying, and `doctor`
+cannot flag it when the rule is replaced.
+
+### Close every operation you open
+
+Every `prepare_change` opens an operation, and it stays open until you close
+it. Close it in one of two ways, never by pretending:
+
+- **The change happened:** `finalize_change` with the `operation_id`, a
+  `summary`, and candidates, or no candidates when nothing durable was learned.
+- **It did not** (you only explored, the plan was dropped, the person changed
+  their mind): `finalize_change(operation_id, abandon=true, summary="why")`.
+  It writes no memory and is never recorded as finalized.
+
+Never finalize as done a change that did not happen. In Claude Code, a Stop
+hook asks once to close operations the session left open.
+
 ## 6. Read the result and report
 
 | Field | Meaning | What to do |

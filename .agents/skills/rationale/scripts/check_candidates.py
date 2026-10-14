@@ -203,7 +203,7 @@ def shape_error(candidate: dict) -> Finding | None:
     for field in text_fields:
         if field in candidate and candidate[field] is not None and not isinstance(candidate[field], str):
             return Finding("malformed_candidate", f"'{field}' must be a string")
-    for field in ("bindings", "relationships", "supersedes", "risks", "evidence"):
+    for field in ("bindings", "relationships", "supersedes", "risks", "evidence", "exception_to"):
         if field in candidate and not isinstance(candidate[field], list):
             return Finding("malformed_candidate", f"'{field}' must be an array")
     for binding in candidate.get("bindings", []):
@@ -270,19 +270,19 @@ def split_spec(spec: str) -> tuple[str, str | None]:
     return path.strip(), (symbol.strip() or None) if separator else None
 
 
-def resolve_file(repo: Path, raw_path: str) -> tuple[str | None, str | None]:
+def resolve_file(repo: Path, raw_path: str, allow_dir: bool = False) -> tuple[str | None, str | None]:
     if not raw_path:
         return None, "has an empty path"
     candidate = Path(raw_path)
     full = candidate if candidate.is_absolute() else repo / candidate
-    if not full.is_file():
-        return None, "does not point to an existing file"
+    if not (full.is_file() or (allow_dir and full.is_dir())):
+        return None, "does not point to an existing file" + (" or folder" if allow_dir else "")
     try:
         relative = full.resolve().relative_to(repo.resolve()).as_posix()
     except (ValueError, OSError):
         return None, "is outside the repository"
-    if relative.startswith((".rationale/", ".rationale-local/")):
-        return None, "points at Rationale data, not code"
+    if relative in (".", "") or relative.split("/")[0] in (".rationale", ".rationale-local"):
+        return None, "points at Rationale data or the whole repository, not code"
     return relative, None
 
 
@@ -304,15 +304,16 @@ def check_anchors(repo: Path, candidate: dict, warnings: list[Finding]) -> Findi
         else:
             path, symbol = binding["path"].strip(), (binding.get("symbol") or "").strip() or None
             spec = f"{path}::{symbol}" if symbol else path
-        relative, problem = resolve_file(repo, path)
+        # A folder binding (no symbol) scopes the Record to everything below it.
+        relative, problem = resolve_file(repo, path, allow_dir=symbol is None)
         if problem:
             warnings.append(Finding("binding_ignored", f"binding '{spec}' {problem}"))
             continue
         anchored = True
         if symbol and not symbol_appears(repo, relative, symbol):
             warnings.append(Finding("symbol_not_found",
-                                    f"'{symbol}' does not appear in {relative}; the file binding still counts, "
-                                    "but the provider will likely not confirm the symbol"))
+                                    f"'{symbol}' does not appear in {relative}; the gate will bind the whole "
+                                    "file, which governs every symbol in it"))
     for relationship in candidate.get("relationships", []):
         kind = relationship["kind"].strip().lower()
         label = f"{relationship['source']} {kind} {relationship['target']}"
@@ -330,9 +331,15 @@ def check_anchors(repo: Path, candidate: dict, warnings: list[Finding]) -> Findi
             elif symbol is None:
                 warnings.append(Finding("relationship_endpoint", f"'{label}': use path::symbol for '{end}'"))
         anchored = anchored or ends_ok
+    if candidate.get("kind") == "exception" and not candidate.get("exception_to"):
+        warnings.append(Finding("unlinked_exception",
+                                "an exception should name the Records whose rule it relaxes in exception_to; "
+                                "without it nobody can tell when it stops applying"))
+    if candidate.get("exception_to") and candidate.get("kind") != "exception":
+        warnings.append(Finding("exception_to_ignored", "exception_to only applies to kind exception"))
     if not anchored:
         return Finding("no_meaningful_binding",
-                       "no binding or relationship resolves to a real file in the repository")
+                       "no binding or relationship resolves to a real file or folder in the repository")
     return None
 
 

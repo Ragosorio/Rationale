@@ -14,9 +14,14 @@ its reason lives in the canon, not in the code.
 ## Steps
 
 1. Locate the target as in preflight: `path` or `path::symbol`.
-2. Call `explain_target(target)`.
+2. Call `explain_target(target)`. It returns the active Records that govern
+   the target (`governing_records`) and the ones that no longer do (`history`,
+   with status and replacement). Add `include_history=true` when the past
+   decision matters, for example to explain why the code changed shape. A
+   folder works as a target too.
 3. For each governing Record, report its statement, `kind`, `authority`,
-   `provenance`, evidence, and whether its bindings still resolve.
+   `provenance`, `why` it applies, and any `stale_bindings` or
+   `orphaned_exception` flag. Never present a `history` entry as current.
 4. Keep three things apart in the answer: what the Records state (retrieved),
    what you infer from them and the code (inference), and what remains unknown.
 5. Decide:

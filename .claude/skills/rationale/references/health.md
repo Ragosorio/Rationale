@@ -22,6 +22,8 @@ turning a missing provider into a missing canon.
 | `provider_status` | `successful` | `degraded` or `unavailable`: structure and symbol bindings are not fully verified |
 | `provider_coverage` | `complete` | `partial` or `unknown`: say which parts may be missing |
 | `provider_error` | `null` | Quote it |
+| `canon` | `active`, `pinned`, `human_stated` counts | `pinned` and `human_stated` at 0 means every rule is an agent's assertion; mention it when it matters |
+| `open_operations` | `count: 0` | List the oldest; finalize or abandon the ones you opened, report the rest |
 
 A degraded provider never means the canon is empty or that nothing governs a
 target. Records with file bindings are still served.
@@ -34,7 +36,9 @@ target. Records with file bindings are still served.
 | `rationale: command not found` | Rationale is not installed, or not on `PATH` | Point the user to the installer in the project README |
 | `provider_status: unavailable` | Codebase Memory is not installed or not on `PATH` | Continue with degraded coverage and say so; suggest installing it |
 | The provider lost the project it indexed | A stale project mapping | Rationale re-resolves it on the next call; call `health` again |
-| A Record does not appear in `prepare_change` | Its bindings point at moved or deleted code, or it was superseded or revoked | Run `rationale doctor --check`, then follow `references/maintain.md` |
+| A Record does not appear in `prepare_change` | It was superseded, revoked or retired (see `history`), it is bound to another symbol of the file, or its bindings point at moved code | Call `explain_target` with `include_history=true`, run `rationale doctor`, then follow `references/maintain.md` |
+| `retrieval.status: index_incomplete` | The structural index does not know the symbol yet | Records still apply; structure was not verified. Say so; reindexing belongs to the provider |
+| Warnings about a stale index | The provider indexed files that are gone (another checkout at the same path, or an old index) | The stale nodes were dropped; tell the user the provider needs reindexing |
 | `finalize_change` discarded every candidate | The candidates failed the gate | Read each `reason` in `references/records.md` |
 | `rationale ui` serves an instructions page | A source build without the embedded Control Room | Release binaries include it; from source, build `ui/` before the binary |
 | `rationale serve` prints nothing when started by hand | Expected: it waits for JSON-RPC on stdin | Nothing to fix |

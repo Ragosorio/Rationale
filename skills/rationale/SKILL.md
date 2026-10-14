@@ -69,7 +69,9 @@ Supporting references, loaded on demand:
    relevant tests.
 5. **Capture.** Call `finalize_change` with the `operation_id`, a short
    `summary`, and only the knowledge that stays true after the change. When
-   nothing durable was learned, send no candidates.
+   nothing durable was learned, send no candidates. When the change did not
+   happen, close the operation with `abandon=true` and the reason instead;
+   never leave it open and never finalize work that did not happen.
 6. **Report.** Say what was written, what was discarded and why, what was
    superseded, and what needs a person.
 
@@ -98,7 +100,12 @@ These hold in every operation. Each protects something the project depends on.
 - **Memory is durable knowledge.** What changed belongs in Git and in
   `summary`. Why the code must stay this way belongs in a candidate.
 - **The canon changes only through the gate.** Write Records with
-  `finalize_change`, never by editing `.rationale/` files.
+  `finalize_change`, never by editing `.rationale/` files. Retiring code's
+  Records (`rationale retire --apply`), accepting a doctor baseline, and
+  stating a rule as a person (`rationale rule add`) are the person's commands:
+  plan, propose, and hand them the exact command.
+- **History is not authority.** Superseded, revoked, and retired Records are
+  context about the past, and an orphaned exception may no longer apply.
 
 ## Tools
 
@@ -107,11 +114,11 @@ The `rationale` MCP server provides five tools. Hosts may add a prefix, such as
 
 | Tool | Purpose |
 |---|---|
-| `prepare_change` | Opens an operation and returns the packet for one target and intent |
-| `explain_target` | Records that govern a target by exact binding, and what is unknown |
-| `finalize_change` | Closes the operation; the capture gate writes durable candidates as Records |
+| `prepare_change` | Opens an operation and returns the packet for a symbol, file, or folder and an intent |
+| `explain_target` | Active Records that govern a target, the ones that no longer do, and what is unknown |
+| `finalize_change` | Closes the operation: the capture gate writes durable candidates as Records, or `abandon=true` closes it without memory |
 | `resolve_conflict` | Applies a person's decision on a conflict with a pinned Record |
-| `health` | Git revision, working tree, provider status, and coverage |
+| `health` | Git revision, working tree, provider status and coverage, canon size, and open operations |
 
 When none of these tools is available, follow
 [references/health.md](references/health.md) and tell the user. Never describe
