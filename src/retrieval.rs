@@ -953,6 +953,115 @@ impl Trimmed {
     }
 }
 
+/// `true` mientras quede algo de lo que se recorta antes que los Records de
+/// carpeta; la primera fase se detiene ahí para no ceder riesgos ni la razón
+/// principal antes que miembros de menor prioridad.
+fn trimmed_before_members(packet: &ContextPacket, trimmable_inherited: &[String]) -> bool {
+    !packet.affected_targets.is_empty()
+        || !packet.history.is_empty()
+        || packet.structure.is_some()
+        || packet.relevant_code.is_some()
+        || !trimmable_inherited.is_empty()
+}
+
+/// Mantiene los Records de carpeta de mayor prioridad que caben bajo el
+/// techo, con el costo estimado de cada uno, y lista el resto en `omitted`.
+/// `members` está ordenado de mayor a menor prioridad (`pop` saca el de
+/// menor prioridad).
+fn fit_members(
+    packet: &mut ContextPacket,
+    members: &mut Vec<String>,
+    ceiling: usize,
+    trimmed: &mut Trimmed,
+) {
+    let removed: HashSet<String> = members.iter().cloned().collect();
+    let cost_of = |value: serde_json::Result<String>| {
+        value.map_or(0, |json| crate::tokens::estimate(&json, "") + 1)
+    };
+    let mut costs: HashMap<String, usize> = HashMap::new();
+    for constraint in packet
+        .critical_constraints
+        .iter()
+        .filter(|c| removed.contains(&c.id))
+    {
+        *costs.entry(constraint.id.clone()).or_default() +=
+            cost_of(serde_json::to_string(constraint));
+    }
+    for decision in packet.decisions.iter().filter(|d| removed.contains(&d.id)) {
+        *costs.entry(decision.id.clone()).or_default() += cost_of(serde_json::to_string(decision));
+    }
+    for conflict in packet
+        .intent_conflicts
+        .iter()
+        .filter(|c| removed.contains(&c.record_id))
+    {
+        *costs.entry(conflict.record_id.clone()).or_default() +=
+            cost_of(serde_json::to_string(conflict));
+    }
+    let mut kept_constraints: Vec<CriticalConstraint> = Vec::new();
+    let mut kept_decisions: Vec<GoverningDecision> = Vec::new();
+    let mut kept_conflicts: Vec<IntentConflict> = Vec::new();
+    let mut constraints: HashMap<String, CriticalConstraint> = HashMap::new();
+    let mut decisions: HashMap<String, GoverningDecision> = HashMap::new();
+    let mut conflicts: HashMap<String, IntentConflict> = HashMap::new();
+    for c in std::mem::take(&mut packet.critical_constraints) {
+        if removed.contains(&c.id) {
+            constraints.insert(c.id.clone(), c);
+        } else {
+            kept_constraints.push(c);
+        }
+    }
+    for d in std::mem::take(&mut packet.decisions) {
+        if removed.contains(&d.id) {
+            decisions.insert(d.id.clone(), d);
+        } else {
+            kept_decisions.push(d);
+        }
+    }
+    for c in std::mem::take(&mut packet.intent_conflicts) {
+        if removed.contains(&c.record_id) {
+            conflicts.insert(c.record_id.clone(), c);
+        } else {
+            kept_conflicts.push(c);
+        }
+    }
+    packet.critical_constraints = kept_constraints;
+    packet.decisions = kept_decisions;
+    packet.intent_conflicts = kept_conflicts;
+    // Reserva para la sección `omitted` que crece con lo que no entra.
+    let mut used = estimate_tokens(packet) + 160;
+    let mut keep: HashSet<String> = HashSet::new();
+    for id in members.iter() {
+        let cost = costs.get(id).copied().unwrap_or(0);
+        if used + cost > ceiling {
+            break;
+        }
+        used += cost;
+        keep.insert(id.clone());
+    }
+    // Se reinsertan por prioridad, la misma en que se eligieron.
+    for id in members.iter() {
+        if keep.contains(id) {
+            if let Some(c) = constraints.remove(id) {
+                packet.critical_constraints.push(c);
+            }
+            if let Some(d) = decisions.remove(id) {
+                packet.decisions.push(d);
+            }
+            if let Some(c) = conflicts.remove(id) {
+                packet.intent_conflicts.push(c);
+            }
+        } else {
+            trimmed.add(
+                "folder_records",
+                Some(id.clone()),
+                "prepare_change on a subfolder or file",
+            );
+        }
+    }
+    members.clear();
+}
+
 /// Recorta un elemento regenerable o de menor prioridad, en este orden:
 /// targets afectados, historia, nodos estructurales de menor rol (nunca el
 /// target ni los extremos explicados), el código relevante (el agente puede
@@ -1419,12 +1528,30 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
     // resto de la respuesta (`overhead_tokens`) se descuenta.
     let packet_ceiling = budget.max_tokens.saturating_sub(budget.overhead_tokens);
     let mut trimmed = Trimmed::default();
+    // Los Records de carpeta pueden ser miles: quitarlos de a uno y volver a
+    // serializar el packet cada vez era cuadrático (1,6 s con 5.000 Records).
+    // Lo barato se recorta primero; luego los miembros entran por prioridad
+    // con su costo estimado, en una sola pasada.
+    let mut members = std::mem::take(&mut trimmable_members);
+    while estimate_tokens(&packet) > packet_ceiling
+        && trimmed_before_members(&packet, &trimmable_inherited)
+        && trim_one(
+            &mut packet,
+            structure.as_deref_mut(),
+            &mut trimmable_inherited,
+            &mut Vec::new(),
+            &mut trimmed,
+        )
+    {}
+    if !members.is_empty() && estimate_tokens(&packet) > packet_ceiling {
+        fit_members(&mut packet, &mut members, packet_ceiling, &mut trimmed);
+    }
     while estimate_tokens(&packet) > packet_ceiling
         && trim_one(
             &mut packet,
             structure.as_deref_mut(),
             &mut trimmable_inherited,
-            &mut trimmable_members,
+            &mut members,
             &mut trimmed,
         )
     {}

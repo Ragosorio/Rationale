@@ -67,6 +67,14 @@ pub fn prepare(
 ) -> Result<PrepareOutcome, String> {
     let t0 = Instant::now();
     let mut diagnostics = Vec::new();
+    // Tiempos por etapa (solo en `diagnostics`, es decir con `verbose`): el
+    // perfil que guía cualquier optimización.
+    let mut stages: Vec<(&'static str, u128)> = Vec::new();
+    let mut stage_clock = Instant::now();
+    let mut mark = |name: &'static str, stages: &mut Vec<(&'static str, u128)>| {
+        stages.push((name, stage_clock.elapsed().as_micros()));
+        stage_clock = Instant::now();
+    };
 
     let config = configuration::load(&req.project_root).map_err(|e| e.to_string())?;
 
@@ -207,6 +215,7 @@ pub fn prepare(
     );
     let provider_clock = Instant::now();
 
+    mark("canon+target+operation", &mut stages);
     // 3. Consultar Codebase Memory — sesión MCP persistente real (ADR-0002).
     // La sesión (`provider`) ya fue spawneada por el caller: la CLI una vez
     // por invocación, el servidor MCP una sola vez para toda su vida.
@@ -254,6 +263,7 @@ pub fn prepare(
         Err(e) => diagnostics.push(format!("advertencia: {e}")),
     }
 
+    mark("provider.resolve", &mut stages);
     // 4. Verificar revisión — SIEMPRE desde Git, nunca desde el proveedor (ADR-0006).
     // `snap` se tomó al abrir la operación.
     let bound_revision = record
@@ -266,19 +276,21 @@ pub fn prepare(
     let current_revision = snap.head.clone().unwrap_or_default();
     match cache::cache_root(&req.project_root).and_then(|dir| cache::open(&dir).map(|c| (dir, c))) {
         Ok((_dir, conn)) => {
-            // FTS se reconstruye en cada consulta a partir de los Records ya
-            // cargados — barato a esta escala y demuestra regenerabilidad
-            // total sin depender de que el cache sobreviva entre ejecuciones.
-            if let Err(e) = cache::rebuild_fts(&conn, &records) {
-                diagnostics.push(format!(
-                    "advertencia: no se pudo reconstruir el índice FTS: {e}"
-                ));
+            // FTS solo alimenta un diagnóstico (no decide selección): se
+            // reconstruye únicamente con `verbose`. Reconstruirlo en cada
+            // consulta costaba ~0,3 s con 5.000 Records.
+            if req.verbose {
+                if let Err(e) = cache::rebuild_fts(&conn, &records) {
+                    diagnostics.push(format!(
+                        "advertencia: no se pudo reconstruir el índice FTS: {e}"
+                    ));
+                }
             }
 
             // Recuperación determinista antes que semántica (v0.5 §19.1):
             // FTS es un paso de candidatos diagnóstico aquí, no decide
             // selección todavía (eso lo hace compile_packet con el budget real).
-            if let Some(sym) = &symbol {
+            if let Some(sym) = symbol.as_ref().filter(|_| req.verbose) {
                 match cache::search_candidates(&conn, sym, 5) {
                     Ok(candidates) if !candidates.is_empty() => {
                         diagnostics.push(format!("candidatos FTS para '{sym}': {candidates:?}"));
@@ -313,6 +325,7 @@ pub fn prepare(
         )),
     }
 
+    mark("cache+fts", &mut stages);
     // Assessment (Rationale_v0.5.md §5.6): lo que Rationale puede afirmar
     // HOY sobre la vigencia del Record, separado del Record mismo. Nunca
     // se autoaprueba autoridad ni se sirve una revisión no verificada.
@@ -346,6 +359,7 @@ pub fn prepare(
         }
     }
 
+    mark("assessment", &mut stages);
     // 5. Context Compiler vNext: la operación enlaza prepare → trabajo →
     // finalize → UI; el vecindario estructural y las relaciones explicadas
     // se superponen a la memoria causal; el presupuesto es un techo.
@@ -421,6 +435,7 @@ pub fn prepare(
             .to_string(),
             "",
         );
+    mark("structure.gather", &mut stages);
     let packet = retrieval::compile(
         retrieval::PacketInput {
             git_head: snap.head.clone(),
@@ -448,6 +463,7 @@ pub fn prepare(
         Some(&mut structural),
     );
 
+    mark("compile", &mut stages);
     let mut packet = packet;
     if advise {
         packet.execution_advice = Some(crate::advice::advise(
@@ -501,6 +517,15 @@ pub fn prepare(
         activity::payload::packet_compiled(&operation, packet.budget_overflow.as_deref()),
     );
 
+    mark("operation.save", &mut stages);
+    diagnostics.push(format!(
+        "timing_us: {}",
+        stages
+            .iter()
+            .map(|(name, us)| format!("{name}={us}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    ));
     Ok(PrepareOutcome {
         packet,
         assessment_view,

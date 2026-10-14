@@ -19,7 +19,7 @@
 //! `storage::tests::real_record_roundtrip_loses_no_data`.
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Roles válidos para una Approval. La configuración del proyecto declara
 /// qué actor tiene cada rol; un actor no declarado queda como contributor.
@@ -354,7 +354,7 @@ impl RecordAuthority {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Record {
     pub id: String,
     pub kind: String,
@@ -714,17 +714,56 @@ pub fn list_records_detailed(records_dir: &Path) -> Result<RecordListResult, Sto
         return Ok(RecordListResult { records, skipped });
     }
     let entries = std::fs::read_dir(records_dir).map_err(StorageError::Io)?;
+    let mut paths = Vec::new();
     for entry in entries {
         let entry = entry.map_err(StorageError::Io)?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
-            match read_record(&path) {
-                Ok(record) => records.push(record),
-                Err(e) => skipped.push((path, e)),
+            paths.push(path);
+        }
+    }
+    // Orden estable entre plataformas: `read_dir` no garantiza ninguno.
+    paths.sort();
+    let mut cache = parsed_cache().lock().unwrap_or_else(|e| e.into_inner());
+    for path in paths {
+        let stamp = std::fs::metadata(&path)
+            .ok()
+            .and_then(|m| Some((m.modified().ok()?, m.len())));
+        if let (Some(stamp), Some((cached_stamp, record))) = (stamp, cache.get(&path)) {
+            if *cached_stamp == stamp {
+                records.push(record.clone());
+                continue;
+            }
+        }
+        match read_record(&path) {
+            Ok(record) => {
+                if let Some(stamp) = stamp {
+                    cache.insert(path, (stamp, record.clone()));
+                }
+                records.push(record);
+            }
+            Err(e) => {
+                cache.remove(&path);
+                skipped.push((path, e));
             }
         }
     }
     Ok(RecordListResult { records, skipped })
+}
+
+type Stamp = (std::time::SystemTime, u64);
+
+/// Records ya parseados, por ruta, con la fecha de modificación y el tamaño
+/// con que se leyeron. El servidor MCP vive toda la sesión y relee el canon en
+/// cada llamada: con miles de Records, parsear cada YAML cada vez dominaba la
+/// latencia. Un archivo cambiado (fecha o tamaño) se vuelve a leer; uno
+/// borrado deja de listarse porque la lista sale del directorio.
+fn parsed_cache() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, (Stamp, Record)>>
+{
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, (Stamp, Record)>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
 }
 
 /// Variante simple para callers que no necesitan saber qué se saltó (la
