@@ -3,7 +3,12 @@
 Notable changes are recorded here by release. The technical detail of each
 change lives in the linked commits, ADRs, and work items.
 
-## Unreleased
+## v1.2.0-rc.1
+
+**Pre-release.** The installer's `stable` channel and `rationale update`
+stay on v1.1.0. Install this one with `RATIONALE_VERSION=v1.2.0-rc.1`, and keep
+`RATIONALE_CHANNEL=preview` when you update. It has not yet been verified on a
+clean machine.
 
 Rationale serves only the context that applies, says what kind of answer it
 is, stays inside its budget, and gives people and agents the tools to keep the

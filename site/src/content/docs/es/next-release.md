@@ -11,6 +11,16 @@ Estos cambios están en `main` y llegan en **la versión posterior a v1.1.0**.
 Con v1.1.0, que es lo que el instalador entrega hoy, el ciclo funciona como
 describe el resto de esta documentación; nada de esto hace falta para usarlo.
 
+Una prerelease, **v1.2.0-rc.1**, trae estos cambios para quien los quiera ya;
+el canal estable sigue en v1.1.0:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v1.2.0-rc.1/rationale-installer.sh | RATIONALE_VERSION=v1.2.0-rc.1 sh
+```
+
+Actualízala con `RATIONALE_CHANNEL=preview rationale update`; un
+`rationale update` sin más vuelve a v1.1.0.
+
 ## El contexto que recibe un agente
 
 - **Solo las reglas vigentes son autoridad.** Los Records reemplazados,

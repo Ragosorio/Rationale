@@ -11,6 +11,16 @@ These changes are on `main` and ship in **the release after v1.1.0**. With
 v1.1.0, which is what the installer gives you today, the loop works as the rest
 of this documentation describes; nothing here is needed to use it.
 
+A pre-release, **v1.2.0-rc.1**, carries these changes for people who want
+them now; the stable channel stays on v1.1.0:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Ragosorio/Rationale/releases/download/v1.2.0-rc.1/rationale-installer.sh | RATIONALE_VERSION=v1.2.0-rc.1 sh
+```
+
+Update it with `RATIONALE_CHANNEL=preview rationale update`; a plain
+`rationale update` goes back to v1.1.0.
+
 ## The context an agent receives
 
 - **Only current rules are authority.** Records that were superseded, revoked,
