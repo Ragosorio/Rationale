@@ -9,6 +9,11 @@ VERSION="${RATIONALE_VERSION:-latest}"
 # quien instala sin pedirla. `RATIONALE_CHANNEL=preview` sigue disponible.
 CHANNEL="${RATIONALE_CHANNEL:-stable}"
 PREFIX="${RATIONALE_INSTALL_DIR:-$HOME/.local/bin}"
+# Espejo de las Releases con la misma estructura (`v<tag>/<archivo>`): para
+# instalaciones sin acceso a GitHub y para probar un artefacto antes de
+# publicarlo. Exige RATIONALE_VERSION explícito: un espejo no tiene API de
+# "latest".
+DOWNLOAD_BASE="${RATIONALE_DOWNLOAD_BASE:-}"
 
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) TARGET="aarch64-apple-darwin" ;;
@@ -19,6 +24,10 @@ case "$(uname -s):$(uname -m)" in
 esac
 
 command -v curl >/dev/null || { echo "se necesita curl" >&2; exit 1; }
+if [[ -n "$DOWNLOAD_BASE" && ( -z "$VERSION" || "$VERSION" == "latest" ) ]]; then
+  echo "RATIONALE_DOWNLOAD_BASE requiere RATIONALE_VERSION explícito" >&2
+  exit 1
+fi
 if [[ -z "$VERSION" || "$VERSION" == "latest" ]]; then
   case "$CHANNEL" in
     stable)
@@ -54,7 +63,7 @@ tag="${tag#v}"
   echo "no se pudo resolver una Release publicada para $REPOSITORY" >&2
   exit 1
 }
-base="https://github.com/$REPOSITORY/releases/download/v$tag"
+base="${DOWNLOAD_BASE:-https://github.com/$REPOSITORY/releases/download}/v$tag"
 archive="rationale-$tag-$TARGET.tar.xz"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/rationale-install.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
