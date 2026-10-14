@@ -19,6 +19,7 @@ mod configuration;
 mod context;
 mod doctor;
 mod evaluation;
+mod hooks;
 mod lifecycle;
 mod mascot;
 mod mcp;
@@ -79,6 +80,7 @@ fn main() {
                 | "operations"
                 | "retire"
                 | "rule"
+                | "hook"
         )
     {
         print_command_help(command);
@@ -110,6 +112,7 @@ fn main() {
         "operations" => cli::cmd_operations(command_args),
         "retire" => cli::cmd_retire(command_args),
         "rule" => cli::cmd_rule(command_args),
+        "hook" => std::process::exit(hooks::run(command_args)),
         _ => {
             eprintln!("comando desconocido: {command}");
             print_usage();
@@ -120,7 +123,7 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "Uso: rationale <init|health|prepare|serve|ui|operations|retire|rule|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
+        "Uso: rationale <init|health|prepare|serve|ui|operations|retire|rule|hook|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
     );
     println!("  rationale --help");
     println!("  rationale --version");
@@ -220,7 +223,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale review-record <record-id> [--project-root <path>] [--no-mascot]\n\nEjecuta lifecycle sobre un Record aprobado."
         ),
         "install-agent" => println!(
-            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-mascot]\n\nRegistra MCP e instrucciones de invocación de forma idempotente."
+            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-hooks] [--stop-hook <block|remind|off>] [--no-mascot]\n\nRegistra MCP e instrucciones de invocación de forma idempotente. With Claude Code it also writes Rationale's hooks to .claude/settings.local.json (local, outside Git): --no-hooks skips them, --stop-hook remind only tells the person about open operations instead of asking the agent to close them."
         ),
         "uninstall-agent" => println!(
             "Uso: rationale uninstall-agent [--project-root <path>] [--global-only] [--no-mascot]\n\nRevierte exactamente lo que install-agent escribió."
@@ -233,6 +236,9 @@ fn print_command_help(command: &str) {
         ),
         "operations" => println!(
             "Usage: rationale operations [--all] [--json] [--project-root <path>]\n       rationale operations abandon <operation-id> --reason \"text\" [--project-root <path>]\n\nLists the operations prepare_change opened that nobody finalized or abandoned (oldest first; --all includes closed ones). `abandon` closes one without capture: it writes no memory and is never recorded as finalized. Operations open for more than 24 hours are marked stale; none is ever closed automatically."
+        ),
+        "hook" => println!(
+            "Usage: rationale hook <session-start|pre-edit|post-tool|stop> [--mode block|remind|off]\n\nRuns one Claude Code hook: reads the hook's JSON on stdin and prints the hook's JSON answer. `install-agent` writes these hooks to .claude/settings.local.json when Claude Code is detected (`--no-hooks` skips them; `uninstall-agent` removes them). session-start summarizes the canon, open operations and new doctor errors; pre-edit reminds once per file to prepare a change governed by pinned, critical or high rules, or exceptions; post-tool records the operations a session opens; stop asks to finalize or abandon them (--mode remind only tells the person). A hook never blocks an edit and never fails the session."
         ),
         "rule" => println!(
             "Usage: rationale rule add <constraint|decision|risk|exception> \"statement\" --why \"rationale\" --bind <path[::symbol]> [--bind …] [--severity <critical|high|medium|low>] [--pin] [--exception-to <id>] [--supersedes <id>] [--id <kind.slug>] [--json] [--project-root <path>]\n\nWrites a Record stated by a person: provenance human_stated with your Git actor, through the same gate as an agent's candidate (shape, bindings, duplicates). Bind it to a file, a symbol, or a folder (a folder binding governs everything below it, for invariants that span modules). --exception-to links an exception to the rule it relaxes. --pin, or replacing a pinned rule, needs authority declared in .rationale/config.yaml. Needs an interactive terminal: an agent cannot sign as a person."
@@ -269,8 +275,9 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
                 "--global-only",
                 "--no-mascot",
                 "--refresh-skills",
+                "--no-hooks",
             ],
-            &["--project-root"],
+            &["--project-root", "--stop-hook"],
         ),
         "uninstall-agent" => validate_flags(
             command,
@@ -296,6 +303,7 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "conflicts" => validate_flags(command, args, &["--json"], &["--project-root"]),
         "resolve" => validate_flags(command, args, &[], &["--project-root"]),
         "ui" => validate_flags(command, args, &["--no-open"], &["--port", "--project-root"]),
+        "hook" => validate_flags(command, args, &[], &["--mode"]),
         "rule" => validate_flags(
             command,
             args,
@@ -460,10 +468,20 @@ fn cmd_init(args: &[String]) {
         }
         Ok(report) => {
             mascot::print_stderr(args, mascot::Mood::Happy);
+            let hooks_line = report
+                .detected
+                .iter()
+                .any(|agent| agent == "claude-code")
+                .then(|| hooks::install(&cwd, "block", false));
             if mascot::stderr_enabled(args) {
                 eprintln!("  Avisé a: {}", report.detected.join(", "));
                 for line in &report.actions {
                     eprintln!("  - {line}");
+                }
+                match hooks_line {
+                    Some(Ok(line)) => eprintln!("  - {line}"),
+                    Some(Err(error)) => eprintln!("  - claude-code: hooks not installed: {error}"),
+                    None => {}
                 }
             }
         }
@@ -1037,6 +1055,19 @@ fn cmd_install_agent(args: &[String]) {
             for line in &report.actions {
                 println!("- {line}");
             }
+            if report.detected.iter().any(|agent| agent == "claude-code")
+                && !args.iter().any(|a| a == "--no-hooks")
+            {
+                let mode =
+                    parse_string_flag(args, "--stop-hook").unwrap_or_else(|| "block".to_string());
+                if !matches!(mode.as_str(), "block" | "remind" | "off") {
+                    fail::<()>("--stop-hook must be block, remind or off");
+                }
+                match hooks::install(&project_root, &mode, report.dry_run) {
+                    Ok(line) => println!("- {line}"),
+                    Err(error) => println!("- claude-code: hooks not installed: {error}"),
+                }
+            }
         }
         Err(error) => {
             eprintln!("install-agent falló: {error}");
@@ -1072,6 +1103,11 @@ fn cmd_uninstall_agent(args: &[String]) {
             mascot::print_stdout(args, mascot::Mood::Happy);
             for line in &actions {
                 println!("- {line}");
+            }
+            match hooks::uninstall(&project_root) {
+                Ok(Some(line)) => println!("- {line}"),
+                Ok(None) => {}
+                Err(error) => println!("- claude-code: hooks not removed: {error}"),
             }
         }
         Err(error) => {

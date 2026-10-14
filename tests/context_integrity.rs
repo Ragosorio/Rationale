@@ -528,3 +528,101 @@ fn open_operations_are_visible_and_close_only_explicitly() {
     assert_eq!(listed["open"], 1);
     assert_eq!(listed["operations"][0]["operation_id"], ids[2]);
 }
+
+fn hook(fixture: &Fixture, event: &str, input: Value) -> Option<Value> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rationale"))
+        .args(["hook", event])
+        .current_dir(fixture.project())
+        .env("HOME", fixture.home())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "a hook never fails the session");
+    let text = String::from_utf8(output.stdout).unwrap();
+    (!text.trim().is_empty()).then(|| serde_json::from_str(text.trim()).unwrap())
+}
+
+#[test]
+fn claude_code_hooks_recover_context_remind_once_and_ask_to_close() {
+    let fixture = fixture();
+    let cwd = fixture.project().display().to_string();
+    let base = |extra: Value| {
+        let mut input = json!({"session_id": "sess-1", "cwd": cwd, "hook_event_name": "x"});
+        for (key, value) in extra.as_object().unwrap() {
+            input[key] = value.clone();
+        }
+        input
+    };
+
+    // Una operación abierta por una sesión anterior.
+    let mut client = Client::start(&fixture);
+    let (earlier, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/billing/refunds.ts::refund"}),
+    );
+    let earlier_id = earlier["operation_id"].as_str().unwrap().to_string();
+
+    let start = hook(
+        &fixture,
+        "session-start",
+        base(json!({"source": "startup"})),
+    )
+    .unwrap();
+    let context = start["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert_eq!(start["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert!(context.contains(&earlier_id), "{context}");
+    assert!(context.contains("CANON_FINDINGS"), "{context}");
+    assert!(context.len() < 2000, "discreet: {} chars", context.len());
+
+    let edit = json!({"tool_name": "Edit", "tool_input": {"file_path": format!("{cwd}/src/secrets/rotation.ts")}});
+    let reminder = hook(&fixture, "pre-edit", base(edit.clone())).unwrap();
+    let text = reminder["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        text.contains("constraint.rotate-secrets-30d (pinned)"),
+        "{text}"
+    );
+    assert!(
+        hook(&fixture, "pre-edit", base(edit)).is_none(),
+        "once per file"
+    );
+    let unruled = json!({"tool_name": "Write", "tool_input": {"file_path": format!("{cwd}/src/shared/cache.ts")}});
+    assert!(hook(&fixture, "pre-edit", base(unruled)).is_none());
+
+    let (prepared, raw) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping/service.ts::cancelShipment"}),
+    );
+    let op = prepared["operation_id"].as_str().unwrap().to_string();
+    hook(
+        &fixture,
+        "post-tool",
+        base(
+            json!({"tool_name": "mcp__rationale__prepare_change", "tool_response": [{"type": "text", "text": raw}]}),
+        ),
+    );
+    let stop = hook(&fixture, "stop", base(json!({"stop_hook_active": false}))).unwrap();
+    assert_eq!(stop["decision"], "block");
+    assert!(stop["reason"].as_str().unwrap().contains(&op));
+    assert!(
+        !stop["reason"].as_str().unwrap().contains(&earlier_id),
+        "only this session's operations"
+    );
+    assert!(hook(&fixture, "stop", base(json!({"stop_hook_active": true}))).is_none());
+    assert!(
+        hook(&fixture, "stop", base(json!({"stop_hook_active": false}))).is_none(),
+        "asks once per operation"
+    );
+}
