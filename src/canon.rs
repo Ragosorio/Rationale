@@ -1073,7 +1073,7 @@ fn string_value(text: impl Into<String>) -> yaml_serde::Value {
     yaml_serde::Value::String(text.into())
 }
 
-fn lifecycle_event(fields: &[(&str, String)]) -> yaml_serde::Value {
+pub(crate) fn lifecycle_event(fields: &[(&str, String)]) -> yaml_serde::Value {
     let mut event = yaml_serde::Mapping::new();
     for (key, value) in fields {
         event.insert(string_value(*key), string_value(value.clone()));
@@ -1081,7 +1081,11 @@ fn lifecycle_event(fields: &[(&str, String)]) -> yaml_serde::Value {
     yaml_serde::Value::Mapping(event)
 }
 
-fn push_lifecycle_event(record: &mut Record, status: Option<&str>, event: yaml_serde::Value) {
+pub(crate) fn push_lifecycle_event(
+    record: &mut Record,
+    status: Option<&str>,
+    event: yaml_serde::Value,
+) {
     let lifecycle_key = string_value("lifecycle");
     if !matches!(
         record.extra.get(&lifecycle_key),

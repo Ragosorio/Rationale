@@ -132,3 +132,155 @@ pub fn cmd_operations(args: &[String]) {
         );
     }
 }
+
+/// `rationale retire <path> --reason "…" [--moved-to <path>] [--apply [--yes]] [--json]`
+/// y `rationale retire --undo <batch-id> [--force] [--json]`.
+pub fn cmd_retire(args: &[String]) {
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let config = configuration::load(&project_root).unwrap_or_else(fail);
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    let json_output = args.iter().any(|a| a == "--json");
+
+    if let Some(batch_id) = parse_string_flag(args, "--undo") {
+        let force = args.iter().any(|a| a == "--force");
+        let report = crate::retire::undo(&config.rationale_dir, &local_dir, &batch_id, force)
+            .unwrap_or_else(fail);
+        if json_output {
+            println!("{}", json!(report));
+        } else {
+            println!(
+                "Restored {} Record(s) from {}.",
+                report.restored.len(),
+                report.batch_id
+            );
+            if !report.changed_since.is_empty() {
+                println!(
+                    "Not restored because they changed after the batch (use --force to overwrite, or Git): {}",
+                    report.changed_since.join(", ")
+                );
+            }
+        }
+        if !report.changed_since.is_empty() {
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    let Some(scope) =
+        crate::first_positional_arg(args, &["--project-root", "--reason", "--moved-to"])
+    else {
+        fail::<()>("usage: rationale retire <path> --reason \"why\" [--moved-to <path>] [--apply]");
+        return;
+    };
+    let reason = parse_string_flag(args, "--reason")
+        .unwrap_or_else(|| fail("--reason is required: say why the scope is gone"));
+    let moved_to = parse_string_flag(args, "--moved-to");
+    let plan = crate::retire::plan(
+        &config.rationale_dir,
+        &config.project_root,
+        scope,
+        &reason,
+        moved_to.as_deref(),
+    )
+    .unwrap_or_else(fail);
+
+    if !args.iter().any(|a| a == "--apply") {
+        if json_output {
+            println!("{}", json!(plan));
+        } else {
+            print_plan(&plan);
+            println!("\nNothing was written. Review the plan; a person applies it with --apply.");
+        }
+        return;
+    }
+
+    let changes = plan.summary.retire + plan.summary.unbind + plan.summary.rebind;
+    if changes == 0 {
+        if json_output {
+            println!("{}", json!({"plan": plan, "batch_id": null}));
+        } else {
+            print_plan(&plan);
+            println!("\nNothing to apply.");
+        }
+        return;
+    }
+    if !args.iter().any(|a| a == "--yes") {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            fail::<()>(
+                "retire --apply changes the canon: run it in an interactive terminal, or pass --yes \
+                 only after a person approved this exact plan",
+            );
+        }
+        print_plan(&plan);
+        println!("\nType 'retire {changes}' to apply these {changes} change(s), anything else to cancel:");
+        let mut answer = String::new();
+        let _ = std::io::stdin().read_line(&mut answer);
+        if answer.trim() != format!("retire {changes}") {
+            println!("Cancelled. Nothing was written.");
+            return;
+        }
+    }
+    let actor = format!("user:{}", git_reviewer_actor(&config.project_root));
+    let (applied, batch) = crate::retire::apply(
+        &config.rationale_dir,
+        &config.project_root,
+        &local_dir,
+        &plan,
+        &actor,
+    )
+    .unwrap_or_else(fail);
+    if json_output {
+        println!(
+            "{}",
+            json!({"plan": applied, "batch_id": batch.batch_id, "files": batch.files.len()})
+        );
+    } else {
+        println!(
+            "Applied {} change(s) as {}. Review them with `git diff .rationale/`; undo with \
+             `rationale retire --undo {}`.",
+            batch.files.len(),
+            batch.batch_id,
+            batch.batch_id
+        );
+    }
+}
+
+fn print_plan(plan: &crate::retire::RetirePlan) {
+    println!(
+        "Retire '{}'{} — {}",
+        plan.scope,
+        if plan.path_exists {
+            " (the path still exists)"
+        } else {
+            ""
+        },
+        plan.reason
+    );
+    if plan.actions.is_empty() {
+        println!("No active Record is bound to it.");
+        return;
+    }
+    for action in &plan.actions {
+        println!(
+            "  {:<11} {} [{} {}, {}] — {}",
+            format!("{:?}", action.action).to_lowercase(),
+            action.record_id,
+            action.kind,
+            action.severity,
+            action.authority,
+            action.note
+        );
+    }
+    let s = &plan.summary;
+    println!(
+        "{} to retire, {} to unbind, {} to rebind, {} need a person.",
+        s.retire, s.unbind, s.rebind, s.needs_human
+    );
+    if !plan.exceptions_left_without_rule.is_empty() {
+        println!(
+            "Exceptions that would be left without their rule: {}",
+            plan.exceptions_left_without_rule.join(", ")
+        );
+    }
+}

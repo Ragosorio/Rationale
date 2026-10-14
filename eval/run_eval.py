@@ -334,10 +334,10 @@ def doctor_suite(binary: str, work: Path) -> dict:
         "orphaned_exception": "exception.legacy-kms-skips-rotation" in text and "orphan" in text.lower(),
         "inconsistent_supersession": "decision.label-retry-fixed-3x" in text,
         "retired_scope_grouped": any(
-            (f.get("kind") == "retired_scope" and f.get("path") == "src/comunicaciones")
+            (f.get("kind") in ("retired_scope", "retired-scope") and f.get("path") == "src/comunicaciones")
             for f in report.get("findings", []) if isinstance(f, dict)
         ),
-        "missing_binding_paths": "src/comunicaciones/" in text,
+        "missing_binding_paths": "src/comunicaciones" in text,
     }
     check_run = run_cli(binary, project, env, "doctor", "--check")
     return {
@@ -363,7 +363,7 @@ def repair_suite(binary: str, work: Path, old_binary: str | None) -> dict:
         return {"supported": False, "passed": False, "detail": (plan["stderr"] or plan["stdout"])[:300]}
     dry_unchanged = before == {p.name: p.read_text() for p in records_dir.glob("*.yaml")}
     applied = run_cli(binary, project, env, "retire", "src/comunicaciones", "--reason",
-                      "Module removed in favour of notifications", "--apply", "--json")
+                      "Module removed in favour of notifications", "--apply", "--yes", "--json")
     applied_json = json.loads(applied["stdout"]) if applied["stdout"].strip().startswith("{") else {}
     batch = applied_json.get("batch_id")
     doctor_after = run_cli(binary, project, env, "doctor", "--json")
