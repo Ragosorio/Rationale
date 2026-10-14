@@ -15,7 +15,7 @@ export const DOC_GROUPS = [
     key: "verify",
     en: "Verify",
     es: "Verificar",
-    slugs: ["versioning", "troubleshooting", "limits"],
+    slugs: ["versioning", "troubleshooting", "limits", "next-release"],
   },
   {
     key: "project",

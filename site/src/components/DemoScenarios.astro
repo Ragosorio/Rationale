@@ -1,0 +1,196 @@
+---
+// Cinco situaciones donde el contexto se rompe, con la llamada y la respuesta
+// (abreviada) del binario de desarrollo sobre `parcel`, el proyecto inventado
+// de `eval/`. Es una simulación declarada: ningún dato viene de un cliente.
+// Sin JavaScript se ven todos los paneles y pasos; con él, pestañas
+// accesibles (flechas, Inicio, Fin) y pasos con aria-pressed.
+import { landingCopy } from "../lib/landing";
+
+interface Props {
+  lang: "en" | "es";
+}
+const { lang } = Astro.props;
+const t = landingCopy[lang].demo;
+
+// Respuestas abreviadas, idénticas en ambos idiomas (las claves JSON no se
+// traducen). Generadas con el binario de desarrollo sobre eval/fixtures/parcel.
+const k = (v: string) => `<span class="k">"${v}"</span>`;
+const s = (v: string) => `<span class="s">"${v}"</span>`;
+const p = (v: string) => `<span class="p">"${v}"</span>`;
+const o = (v: string) => `<span class="o">"${v}"</span>`;
+const w = (v: string) => `<span class="w">"${v}"</span>`;
+const m = (v: string) => `<span class="m">${v}</span>`;
+
+const scenarios = [
+  {
+    id: "recover",
+    steps: [
+      {
+        call: `prepare_change(target="src/shipping/service.ts::cancelShipment",
+  intent="Allow cancelling locally when the carrier API is down")`,
+        body: `{
+  ${k("retrieval")}: { ${k("status")}: ${o("found")}, ${k("scope")}: ${s("symbol")} },
+  ${k("decisions")}: [{
+    ${k("id")}: ${s("decision.cancel-requires-carrier-ack")},
+    ${k("statement")}: ${s("A shipment is cancelled only after the carrier acknowledges the cancellation.")},
+    ${k("rationale")}: ${s("Cancelling locally … left paid labels in transit with no record.")},
+    ${k("provenance")}: ${s("agent_asserted")}, ${k("why")}: ${s("bound to this symbol")}
+  }],
+  ${k("intent_conflicts")}: [{ ${k("record_id")}: ${s("decision.cancel-requires-carrier-ack")},
+    ${k("detection")}: ${o("governs-target")} }],
+  ${k("governance_verdict_required")}: <span class="p">true</span>
+}`,
+      },
+    ],
+  },
+  {
+    id: "replaced",
+    steps: [
+      {
+        call: `explain_target(target="src/shipping/rates.ts::quoteRate")`,
+        body: `{
+  ${k("governing_records")}: [{
+    ${k("id")}: ${s("decision.rate-cache-ttl-60s")},
+    ${k("statement")}: ${s("Carrier rate quotes are cached for 60 seconds per route and weight.")},
+    ${k("replaces")}: [${s("decision.rate-cache-ttl-5m")}]
+  }],
+  ${k("history")}: [{ ${k("id")}: ${s("decision.rate-cache-ttl-5m")},
+    ${k("status")}: ${w("superseded")}, ${k("replaced_by")}: ${s("decision.rate-cache-ttl-60s")} }]
+}`,
+      },
+      {
+        call: `explain_target(target="src/shipping/rates.ts::quoteRate", include_history=true)`,
+        body: `{
+  ${k("history")}: [{
+    ${k("id")}: ${s("decision.rate-cache-ttl-5m")}, ${k("status")}: ${w("superseded")},
+    ${k("statement")}: ${s("Carrier rate quotes are cached for 5 minutes per route and weight.")},
+    ${k("rationale")}: ${s("Carrier APIs rate-limit quote calls; five minutes kept us under the limit at launch.")}
+  }]
+}`,
+      },
+    ],
+  },
+  {
+    id: "invariant",
+    steps: [
+      {
+        call: `prepare_change(target="src/billing/invoice.ts::issueInvoice",
+  intent="Sum invoice lines as floats and round once at the end")`,
+        body: `{
+  ${k("decisions")}: [{ ${k("id")}: ${s("decision.invoice-rounding-bankers")}, ${k("why")}: ${s("bound to this symbol")} }],
+  ${k("inherited_constraints")}: [{
+    ${k("id")}: ${s("constraint.money-in-integer-cents")},
+    ${k("statement")}: ${s("Monetary amounts are integers in cents from quote to invoice; never store, sum or compare floating-point currency.")},
+    ${k("authority")}: ${p("pinned")}, ${k("provenance")}: ${s("human_stated")}, ${k("severity")}: ${s("critical")},
+    ${k("via")}: ${o("issueInvoice calls toCents")}
+  }]
+}`,
+      },
+    ],
+  },
+  {
+    id: "budget",
+    steps: [
+      {
+        call: `prepare_change(target="src/shipping/service.ts::cancelShipment", max_tokens=800)`,
+        body: `{
+  ${k("decisions")}: [{ ${k("id")}: ${s("decision.cancel-requires-carrier-ack")}, ${m("…")} }],
+  ${k("omitted")}: [{ ${k("section")}: ${s("structure")}, ${k("count")}: <span class="s">1</span>, ${k("expand")}: ${o("raise max_tokens")} }],
+  ${k("budget")}: { ${k("max_tokens")}: <span class="s">800</span>, ${k("estimated_tokens")}: <span class="s">754</span>, ${k("estimator")}: ${s("upper-bound")} }
+}`,
+      },
+      {
+        call: `prepare_change(target="src/shipping/service.ts::cancelShipment", max_tokens=2400)`,
+        body: `{
+  ${k("decisions")}: [{ ${k("id")}: ${s("decision.cancel-requires-carrier-ack")}, ${m("…")} }],
+  ${k("structure")}: { ${k("nodes")}: [${s("cancelShipment")}, ${m("…")}], ${k("considered_nodes")}: <span class="s">4</span> },
+  ${k("relevant_code")}: { ${k("file_path")}: ${s("src/shipping/service.ts")}, ${k("start_line")}: <span class="s">10</span>, ${m("…")} },
+  ${k("budget")}: { ${k("max_tokens")}: <span class="s">2400</span>, ${k("estimated_tokens")}: <span class="s">1037</span>, ${k("estimator")}: ${s("upper-bound")} }
+}`,
+      },
+    ],
+  },
+  {
+    id: "operation",
+    steps: [
+      {
+        call: `prepare_change(target="src/shipping/rates.ts::applySurcharge",
+  intent="Make the remote surcharge a percentage")`,
+        body: `{ ${k("operation_id")}: ${s("op_1a13b671…")}, ${k("packet")}: { ${m("…")} } }`,
+      },
+      {
+        call: `Stop hook → ${lang === "es" ? "el agente intenta terminar sin cerrar" : "the agent tries to stop without closing it"}`,
+        body: `{ ${k("decision")}: ${w("block")}, ${k("reason")}: ${s("Rationale: this session prepared 1 change(s) that are still open: op_1a13b671… If you did not change the code, call finalize_change(operation_id, abandon=true, summary=\\\"why\\\"). Do not finalize as done a change that did not happen.")} }`,
+      },
+      {
+        call: `finalize_change(operation_id="op_1a13b671…", abandon=true,
+  summary="Only explored; the surcharge stays flat.")`,
+        body: `{ ${k("state")}: ${o("abandoned")}, ${k("memory_written")}: <span class="p">false</span> }`,
+      },
+    ],
+  },
+];
+---
+<section id="demo" class="l-section" aria-labelledby="demo-title">
+  <div class="l-container">
+    <div class="l-section-head">
+      <h2 id="demo-title" class="l-h2">{t.title}</h2>
+      <p class="l-lede">{t.body}</p>
+    </div>
+    <p class="l-demo-note"><strong>{t.simulatedLabel}</strong> {t.simulatedNote}</p>
+    <div class="l-demo" data-demo>
+      <div class="l-demo-tabs" role="tablist" aria-label={t.tablistLabel}>
+        {scenarios.map((scenario, index) => (
+          <button
+            type="button"
+            role="tab"
+            id={`demo-tab-${scenario.id}`}
+            aria-controls={`demo-panel-${scenario.id}`}
+            aria-selected={index === 0 ? "true" : "false"}
+            tabindex={index === 0 ? 0 : -1}
+            data-demo-tab
+          >
+            <span class="l-demo-index">{index + 1}</span>{t.scenarios[index].tab}
+          </button>
+        ))}
+      </div>
+      {scenarios.map((scenario, index) => {
+        const copy = t.scenarios[index];
+        return (
+          <div
+            class="l-demo-panel"
+            role="tabpanel"
+            id={`demo-panel-${scenario.id}`}
+            aria-labelledby={`demo-tab-${scenario.id}`}
+            tabindex="0"
+            data-demo-panel
+          >
+            <div class="l-demo-story">
+              <h3 class="l-demo-title">{copy.title}</h3>
+              <p>{copy.story}</p>
+              {scenario.steps.length > 1 && (
+                <div class="l-demo-steps" role="group" aria-label={t.stepsLabel}>
+                  {copy.steps.map((label, stepIndex) => (
+                    <button type="button" aria-pressed={stepIndex === 0 ? "true" : "false"} data-demo-step={stepIndex}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p class="l-demo-takeaway">{copy.takeaway}</p>
+            </div>
+            <div class="l-demo-output" aria-live="polite">
+              {scenario.steps.map((step, stepIndex) => (
+                <figure class="l-code" data-demo-output={stepIndex}>
+                  <figcaption class="l-code-bar"><b>{scenario.steps.length > 1 ? copy.steps[stepIndex] : t.callLabel}</b><span>{t.abridged}</span></figcaption>
+                  <pre class="l-json"><span class="m">{step.call}</span>{"\n"}<Fragment set:html={step.body} /></pre>
+                </figure>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+    <p class="l-after"><span>{t.release}</span><a class="l-link" href={t.evidenceHref}>{t.evidenceLink}</a></p>
+  </div>
+</section>

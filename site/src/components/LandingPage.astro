@@ -8,6 +8,7 @@ import "../styles/global.css";
 import "../styles/landing.css";
 import { landingCopy } from "../lib/landing";
 import ArchitectureDiagram from "./ArchitectureDiagram.astro";
+import DemoScenarios from "./DemoScenarios.astro";
 import Icon from "./Icon.astro";
 import LoopDiagram from "./LoopDiagram.astro";
 import RMark from "./RMark.astro";
@@ -298,6 +299,8 @@ const inline = (text: string) =>
             </figure>
           </div>
         </section>
+
+        <DemoScenarios lang={lang} />
 
         <section id="control-room" class="l-section" aria-labelledby="room-title">
           <div class="l-container">

@@ -1,4 +1,58 @@
+// Pestañas accesibles (patrón WAI-ARIA): flechas, Inicio y Fin mueven el
+// foco y la selección; los pasos dentro de un panel muestran una salida a la
+// vez. Sin este script todo queda visible.
+function bootDemo() {
+  const demo = document.querySelector("[data-demo]");
+  if (!demo) return;
+  const tabs = Array.from(demo.querySelectorAll("[data-demo-tab]"));
+  const panels = Array.from(demo.querySelectorAll("[data-demo-panel]"));
+
+  function select(index, focus) {
+    tabs.forEach((tab, i) => {
+      const selected = i === index;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      panels[i].hidden = !selected;
+    });
+    if (focus) tabs[index].focus();
+  }
+
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => select(index, false));
+    tab.addEventListener("keydown", (event) => {
+      const last = tabs.length - 1;
+      const next = {
+        ArrowRight: index === last ? 0 : index + 1,
+        ArrowLeft: index === 0 ? last : index - 1,
+        Home: 0,
+        End: last,
+      }[event.key];
+      if (next !== undefined) {
+        event.preventDefault();
+        select(next, true);
+      }
+    });
+  });
+
+  panels.forEach((panel) => {
+    const buttons = Array.from(panel.querySelectorAll("[data-demo-step]"));
+    const outputs = Array.from(panel.querySelectorAll("[data-demo-output]"));
+    if (buttons.length < 2) return;
+    function show(step) {
+      buttons.forEach((button, i) => button.setAttribute("aria-pressed", String(i === step)));
+      outputs.forEach((output, i) => {
+        output.hidden = i !== step;
+      });
+    }
+    buttons.forEach((button, step) => button.addEventListener("click", () => show(step)));
+    show(0);
+  });
+
+  select(0, false);
+}
+
 function boot() {
+  bootDemo();
   const root = document.documentElement;
   const themeToggle = document.querySelector("[data-theme-toggle]");
   const copyButtons = document.querySelectorAll("[data-copy-value]");
