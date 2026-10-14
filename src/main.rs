@@ -14,6 +14,7 @@ mod binding_match;
 mod cache;
 mod canon;
 mod capture;
+mod cli;
 mod configuration;
 mod context;
 mod doctor;
@@ -74,6 +75,7 @@ fn main() {
                 | "conflicts"
                 | "resolve"
                 | "ui"
+                | "operations"
         )
     {
         print_command_help(command);
@@ -102,6 +104,7 @@ fn main() {
         "conflicts" => cmd_conflicts(command_args),
         "resolve" => cmd_resolve(command_args),
         "ui" => cmd_ui(command_args),
+        "operations" => cli::cmd_operations(command_args),
         _ => {
             eprintln!("comando desconocido: {command}");
             print_usage();
@@ -112,7 +115,7 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "Uso: rationale <init|health|prepare|serve|ui|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
+        "Uso: rationale <init|health|prepare|serve|ui|operations|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
     );
     println!("  rationale --help");
     println!("  rationale --version");
@@ -153,6 +156,12 @@ fn print_usage() {
     );
     println!(
         "  rationale uninstall-agent [--project-root <path>] [--global-only] [--no-mascot]   # revierte exactamente lo que install-agent escribió"
+    );
+    println!(
+        "  rationale operations [--all] [--json] [--project-root <path>]   # operations prepare_change opened and nobody finalized or abandoned"
+    );
+    println!(
+        "  rationale operations abandon <operation-id> --reason \"text\" [--project-root <path>]   # close one without capture; never recorded as finalized"
     );
     println!("  rationale update   # descarga e instala la última Release disponible");
     println!(
@@ -210,6 +219,9 @@ fn print_command_help(command: &str) {
         "doctor" => println!(
             "Uso: rationale doctor [--project-root <path>] [--check] [--repair] [--json]\n\nDetecta severidades y autoridades inválidas, Records sin bindings, path_hint rotos, Subjects colgantes y propuestas pre-vNext sin migrar. Solo lectura por defecto; --check sale con código 1 si hay hallazgos; --repair pide confirmación por hallazgo."
         ),
+        "operations" => println!(
+            "Usage: rationale operations [--all] [--json] [--project-root <path>]\n       rationale operations abandon <operation-id> --reason \"text\" [--project-root <path>]\n\nLists the operations prepare_change opened that nobody finalized or abandoned (oldest first; --all includes closed ones). `abandon` closes one without capture: it writes no memory and is never recorded as finalized. Operations open for more than 24 hours are marked stale; none is ever closed automatically."
+        ),
         _ => unreachable!("solo se solicita ayuda para comandos conocidos"),
     }
 }
@@ -260,6 +272,12 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "conflicts" => validate_flags(command, args, &["--json"], &["--project-root"]),
         "resolve" => validate_flags(command, args, &[], &["--project-root"]),
         "ui" => validate_flags(command, args, &["--no-open"], &["--port", "--project-root"]),
+        "operations" => validate_flags(
+            command,
+            args,
+            &["--all", "--json"],
+            &["--project-root", "--reason"],
+        ),
         _ => Ok(()),
     }
 }
@@ -437,6 +455,8 @@ fn cmd_health(args: &[String]) {
         "project_root": outcome.project_root.display().to_string(),
         "git_revision": outcome.git_revision,
         "working_tree_dirty": outcome.working_tree_dirty,
+        "canon": outcome.canon,
+        "open_operations": outcome.open_operations,
     });
     let object = payload.as_object_mut().expect("payload es un objeto");
     match &outcome.provider_error {

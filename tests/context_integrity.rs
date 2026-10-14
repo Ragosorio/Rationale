@@ -472,3 +472,59 @@ fn the_budget_covers_the_whole_response() {
         ["decision.cancel-requires-carrier-ack"]
     );
 }
+
+#[test]
+fn open_operations_are_visible_and_close_only_explicitly() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+    let mut ids = Vec::new();
+    for target in [
+        "src/shipping/service.ts::cancelShipment",
+        "src/billing/invoice.ts::issueInvoice",
+        "src/secrets/rotation.ts::rotateKeys",
+    ] {
+        let (prepared, _) = client.call("prepare_change", json!({"target": target}));
+        ids.push(prepared["operation_id"].as_str().unwrap().to_string());
+    }
+    client.call(
+        "finalize_change",
+        json!({"operation_id": ids[0], "summary": "nothing durable"}),
+    );
+    let (health, _) = client.call("health", json!({}));
+    assert_eq!(health["open_operations"]["count"], 2, "{health}");
+    assert_eq!(
+        health["open_operations"]["oldest"][0]["operation_id"],
+        ids[1]
+    );
+
+    let (abandoned, _) = client.call(
+        "finalize_change",
+        json!({"operation_id": ids[1], "abandon": true, "summary": "Only explored the invoice code."}),
+    );
+    assert_eq!(abandoned["state"], "abandoned");
+    assert_eq!(abandoned["memory_written"], false);
+    let stored: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            fixture
+                .project()
+                .join(".rationale-local/operations")
+                .join(format!("{}.json", ids[1])),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        stored.get("finalized").is_none(),
+        "abandon is never a success"
+    );
+
+    let listing = Command::new(env!("CARGO_BIN_EXE_rationale"))
+        .args(["operations", "--json"])
+        .current_dir(fixture.project())
+        .env("HOME", fixture.home())
+        .output()
+        .unwrap();
+    let listed: Value = serde_json::from_slice(&listing.stdout).unwrap();
+    assert_eq!(listed["open"], 1);
+    assert_eq!(listed["operations"][0]["operation_id"], ids[2]);
+}

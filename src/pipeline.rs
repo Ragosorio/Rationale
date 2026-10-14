@@ -557,6 +557,38 @@ pub struct HealthOutcome {
     pub provider_status: ProviderStatus,
     pub provider_coverage: Coverage,
     pub provider_error: Option<String>,
+    /// Operaciones que `prepare_change` abrió y nadie finalizó ni abandonó.
+    pub open_operations: operations::OpenSummary,
+    pub canon: CanonSummary,
+}
+
+/// Lo mínimo para saber qué memoria hay: cuántos Records gobiernan y cuántos
+/// fijó una persona.
+#[derive(Debug, Clone, Serialize)]
+pub struct CanonSummary {
+    pub records: usize,
+    pub active: usize,
+    pub pinned: usize,
+    pub human_stated: usize,
+    pub inactive: usize,
+}
+
+pub fn canon_summary(records: &[Record]) -> CanonSummary {
+    let status = lifecycle::StatusIndex::build(records);
+    let active: Vec<&Record> = records.iter().filter(|r| status.is_active(r)).collect();
+    CanonSummary {
+        records: records.len(),
+        active: active.len(),
+        pinned: active
+            .iter()
+            .filter(|r| storage::record_authority(r) == storage::RecordAuthority::Pinned)
+            .count(),
+        human_stated: active
+            .iter()
+            .filter(|r| storage::provenance_kind(r) == storage::ProvenanceKind::HumanStated)
+            .count(),
+        inactive: records.len() - active.len(),
+    }
 }
 
 pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> Result<HealthOutcome, String> {
@@ -576,7 +608,11 @@ pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> Result<Heal
         ),
     };
 
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    let records = storage::list_records(&config.rationale_dir.join("records")).unwrap_or_default();
     Ok(HealthOutcome {
+        open_operations: operations::open_summary(&local_dir),
+        canon: canon_summary(&records),
         project_id: config.project_id,
         project_root: config.project_root,
         git_revision: snap.head,

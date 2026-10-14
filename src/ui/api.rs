@@ -95,7 +95,9 @@ fn operation_summary(operation: &Operation) -> Value {
         "target": operation.target,
         "intent": operation.intent,
         "selection": operation.selection,
+        "state": operation.state().as_str(),
         "finalized": operation.finalized,
+        "abandoned": operation.abandoned,
     })
 }
 

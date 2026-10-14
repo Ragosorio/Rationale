@@ -177,35 +177,37 @@ fn init_on_an_existing_project_still_honors_skip_and_json_stdout() {
 #[test]
 fn help_is_successful_and_non_mutating_for_every_command() {
     let project = unique_temp_project("help");
-    let commands: &[&[&str]] = &[
-        &["--help"],
-        &["init", "--help"],
-        &["health", "--help"],
-        &["prepare", "--help"],
-        &["serve", "--help"],
-        &["ui", "--help"],
-        &["review", "--help"],
-        &["review-record", "--help"],
-        &["install-agent", "--help"],
-        &["uninstall-agent", "--help"],
-        &["update", "--help"],
-        &["doctor", "--help"],
-        &["pin", "--help"],
-        &["unpin", "--help"],
-        &["migrate", "--help"],
-        &["conflicts", "--help"],
-        &["resolve", "--help"],
-    ];
+    // La lista sale del propio `--help`: un comando nuevo que olvide el
+    // guardián de ayuda (y ejecute su acción con `--help`, el defecto que
+    // motivó este test) falla aquí sin que nadie tenga que acordarse de
+    // añadirlo.
+    let usage = String::from_utf8_lossy(&run(&project, &["--help"]).stdout).to_string();
+    let first_line = usage.lines().next().unwrap_or_default();
+    let listed = first_line
+        .split_once('<')
+        .and_then(|(_, rest)| rest.split_once('>'))
+        .map(|(names, _)| names.to_string())
+        .expect("the usage line lists the commands");
+    let mut owned: Vec<Vec<String>> = vec![vec!["--help".to_string()]];
+    for name in listed.split('|') {
+        owned.push(vec![name.to_string(), "--help".to_string()]);
+    }
+    assert!(owned.len() > 15, "{first_line}");
+    let commands: Vec<Vec<&str>> = owned
+        .iter()
+        .map(|args| args.iter().map(String::as_str).collect())
+        .collect();
 
-    for args in commands {
+    for args in &commands {
         let output = run(&project, args);
         assert!(
             output.status.success(),
             "help debe salir con 0 para {args:?}; stderr: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            String::from_utf8_lossy(&output.stdout).contains("Uso:"),
+            stdout.contains("Uso:") || stdout.contains("Usage:"),
             "help debe imprimir uso para {args:?}"
         );
     }

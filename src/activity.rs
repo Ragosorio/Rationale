@@ -577,6 +577,11 @@ pub mod payload {
         })
     }
 
+    /// Cierre sin captura: solo el id; el motivo vive en la operación.
+    pub fn operation_abandoned(operation_id: &str) -> Value {
+        json!({"operation_id": ident(operation_id)})
+    }
+
     pub fn record_superseded(superseded: &SupersededRecord) -> Value {
         json!({
             "record_id": ident(&superseded.id),

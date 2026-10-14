@@ -304,7 +304,7 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "health",
-            "description": "Git revision, working tree, structural provider status and coverage, and what Rationale does not know.",
+            "description": "Git revision, working tree, structural provider status and coverage, the canon's size (active, pinned, human-stated), and operations still open: prepared changes nobody finalized or abandoned.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -319,6 +319,7 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "operation_id": {"type": "string", "description": "The operation_id returned by prepare_change, if any"},
+                    "abandon": {"type": "boolean", "description": "Close the operation without a change to capture (exploration only, plan dropped). Needs operation_id and a summary with the reason; writes no memory and is never recorded as finalized"},
                     "summary": {"type": "string", "description": "What changed, in one or two sentences. Reported, never stored as memory"},
                     "target": {"type": "string", "description": "path::symbol of the main target (diagnostics only)"},
                     "base_revision": {"type": "string", "description": "Git revision to capture the diff from. Default: the HEAD prepare_change saw for this operation, or HEAD without an operation"},
@@ -605,6 +606,8 @@ fn call_health(args: &Value, provider: &mut ProviderHandle) -> Result<Value, Str
         "provider_status": provider_status_label(&outcome.provider_status),
         "provider_coverage": coverage_label(&outcome.provider_coverage),
         "provider_error": outcome.provider_error,
+        "canon": outcome.canon,
+        "open_operations": outcome.open_operations,
     }))
 }
 
@@ -613,6 +616,9 @@ fn call_finalize_change(
     provider: &mut ProviderHandle,
     session: &Session,
 ) -> Result<Value, String> {
+    if args.get("abandon").and_then(Value::as_bool) == Some(true) {
+        return call_abandon_operation(args, session);
+    }
     let optional_str = |field: &str| -> Option<String> {
         args.get(field)
             .and_then(Value::as_str)
@@ -655,6 +661,57 @@ fn call_finalize_change(
         &session.recorder,
     )?;
     serde_json::to_value(&outcome).map_err(|e| format!("no se pudo serializar la respuesta: {e}"))
+}
+
+/// `finalize_change` con `abandon: true`: cierra una operación sin captura.
+/// Nunca escribe memoria ni se registra como finalizada.
+fn call_abandon_operation(args: &Value, session: &Session) -> Result<Value, String> {
+    let operation_id = args
+        .get("operation_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(|| "abandon needs the operation_id to close".to_string())?;
+    if args
+        .get("candidates")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+    {
+        return Err(
+            "an abandoned operation writes no memory: drop the candidates, or finalize \
+             normally if the change happened"
+                .to_string(),
+        );
+    }
+    let reason = args
+        .get("summary")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| {
+            "abandon needs a summary saying why no change is being finalized".to_string()
+        })?;
+    let (project_root, _) = resolve_roots(args)?;
+    let config = configuration::load(&project_root).map_err(|e| e.to_string())?;
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    let by = format!("agent:{}", session.actor.client);
+    let operation = crate::operations::record_abandon(&local_dir, operation_id, reason, &by)?;
+    let scope = activity::Scope::new(
+        &local_dir,
+        &config.project_root,
+        &config.project_id,
+        &session.actor,
+    )
+    .with_operation(operation_id);
+    session.recorder.emit(
+        &scope,
+        "operation.abandoned",
+        activity::payload::operation_abandoned(operation_id),
+    );
+    Ok(json!({
+        "operation_id": operation.operation_id,
+        "state": operation.state().as_str(),
+        "abandoned": operation.abandoned,
+        "memory_written": false,
+    }))
 }
 
 fn call_resolve_conflict(args: &Value, session: &Session) -> Result<Value, String> {
