@@ -921,25 +921,9 @@ impl Drop for CanonLock {
 /// en medio. Un Record `pinned` solo cuenta como reemplazado si él mismo lo
 /// declara — un `supersedes` escrito a mano nunca lo desplaza en silencio.
 pub fn superseded_ids(records: &[Record]) -> HashSet<String> {
-    let by_id: HashMap<&str, &Record> = records.iter().map(|r| (r.id.as_str(), r)).collect();
-    let mut superseded: HashSet<String> = records
-        .iter()
-        .filter(|r| {
-            storage::superseded_by(r).is_some()
-                || storage::lifecycle_status(r) == Some("superseded")
-        })
-        .map(|r| r.id.clone())
-        .collect();
-    for record in records.iter().filter(|r| !storage::is_revoked(r)) {
-        for target in &record.supersedes {
-            if let Some(existing) = by_id.get(target.as_str()) {
-                if storage::record_authority(existing) == RecordAuthority::Normal {
-                    superseded.insert(target.clone());
-                }
-            }
-        }
-    }
-    superseded
+    crate::lifecycle::StatusIndex::build(records)
+        .superseded_ids()
+        .clone()
 }
 
 pub fn is_active(record: &Record, superseded: &HashSet<String>) -> bool {

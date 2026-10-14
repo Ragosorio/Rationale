@@ -289,11 +289,12 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "explain_target",
-            "description": "Explains why a target exists: the Records that govern it by exact binding, its Subject, and what is known versus unknown. Call it before simplifying or removing code that looks redundant or odd.",
+            "description": "Explains why a target exists: the active Records that govern it, its Subject, the Records that no longer govern it (history, with status and replacement), and what is known versus unknown. Call it before simplifying or removing code that looks redundant or odd.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "target": {"type": "string"},
+                    "target": {"type": "string", "description": "path, path::symbol, or a folder inside the project"},
+                    "include_history": {"type": "boolean", "description": "Also return the statement and rationale of superseded, revoked, and retired Records (default: id, status, and replacement only)"},
                     "project_root": {"type": "string"},
                     "repo_path": {"type": "string"}
                 },
@@ -560,11 +561,16 @@ fn call_explain_target(args: &Value) -> Result<Value, String> {
         .ok_or_else(|| "falta el argumento requerido 'target'".to_string())?;
     let (project_root, repo_path) = resolve_roots(args)?;
 
-    let outcome = pipeline::explain(target, &project_root, &repo_path)?;
+    let include_history = args
+        .get("include_history")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let outcome = pipeline::explain(target, &project_root, &repo_path, include_history)?;
 
     Ok(json!({
         "resolved_target": outcome.resolved_target,
         "governing_records": outcome.governing_records,
+        "history": outcome.history,
         "subject": outcome.subject,
         "known": outcome.known,
         "unknown": outcome.unknown,

@@ -18,6 +18,7 @@ mod configuration;
 mod context;
 mod doctor;
 mod evaluation;
+mod lifecycle;
 mod mascot;
 mod mcp;
 mod operations;

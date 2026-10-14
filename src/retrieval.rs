@@ -8,6 +8,7 @@
 
 use crate::binding_match::MatchKind;
 use crate::context::StructuralContext;
+use crate::lifecycle::StatusIndex;
 use crate::providers::{Coverage, ProviderStatus};
 use crate::revision::Consistency;
 use crate::storage::Record;
@@ -62,6 +63,9 @@ pub struct CriticalConstraint {
     /// presupuesto ni por severidad cuando es `true`.
     pub governs_target: bool,
     pub match_kind: Option<String>,
+    /// Records que este reemplazó: la historia que el agente no debe aplicar.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub replaces: Vec<String>,
 }
 
 /// Cómo se determinó que un `IntentConflict` merece mostrarse. Nunca una
@@ -138,6 +142,10 @@ pub struct ContextPacket {
     /// en el packet (solo aparecía en el assessment).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub decisions: Vec<GoverningDecision>,
+    /// Records atados al target que ya no gobiernan, con su estado y su
+    /// reemplazo. `explain_target` con `include_history` devuelve su texto.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<HistoryEntry>,
     /// Relaciones que el canon explica y tocan el target, con su estado
     /// estructural derivado ahora y el porqué. Nunca se truncan.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -194,6 +202,22 @@ pub struct GoverningDecision {
     pub authority: String,
     pub provenance: String,
     pub match_kind: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub replaces: Vec<String>,
+}
+
+/// Un Record que estuvo atado al target y ya no gobierna: reemplazado,
+/// revocado o retirado. Es historia consultable, nunca autoridad — antes un
+/// Record reemplazado aparecía junto a su reemplazo y el agente podía elegir
+/// cualquiera de los dos.
+#[derive(Debug, Serialize, Clone)]
+pub struct HistoryEntry {
+    pub id: String,
+    pub kind: String,
+    /// `superseded | revoked | retired`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -281,15 +305,6 @@ fn authority_label(record: &Record) -> &'static str {
     crate::storage::authority_label(record)
 }
 
-/// Un Record revocado o reemplazado sigue en el canon como historia, pero ya
-/// no es una regla vigente: nunca debe presentarse como constraint del
-/// packet, ni siquiera con `authority: revoked` al lado.
-fn is_active(record: &Record) -> bool {
-    !crate::storage::is_revoked(record)
-        && crate::storage::superseded_by(record).is_none()
-        && crate::storage::lifecycle_status(record) != Some("superseded")
-}
-
 /// Precedencia vNext: lo fijado por una persona ordena antes que lo normal.
 fn pinned_first(a: &Record, b: &Record) -> std::cmp::Ordering {
     let pinned =
@@ -337,7 +352,11 @@ fn select_constraints<'a>(
     governing: &HashMap<String, MatchKind>,
     intent: Option<&str>,
     budget: &Budget,
+    status: &StatusIndex,
 ) -> ConstraintSelection<'a> {
+    // Un Record revocado o reemplazado sigue en el canon como historia, pero
+    // ya no es una regla vigente: nunca se presenta como constraint.
+    let is_active = |record: &Record| status.is_active(record);
     let constraints = || records.iter().filter(|r| r.kind == "constraint");
 
     let mut governing_active: Vec<&Record> = constraints()
@@ -476,7 +495,9 @@ pub(crate) fn polarity_of(intent: &str, statement: &str) -> Polarity {
 fn select_decisions<'a>(
     records: &'a [Record],
     governing: &HashMap<String, MatchKind>,
+    status: &StatusIndex,
 ) -> (Vec<&'a Record>, usize) {
+    let is_active = |record: &Record| status.is_active(record);
     let governing_other = || {
         records
             .iter()
@@ -607,6 +628,9 @@ pub struct PacketInput<'a> {
     pub governing: &'a HashMap<String, MatchKind>,
     pub operation_id: Option<String>,
     pub target: Option<PacketTarget>,
+    /// Estado de vida de todo el canon (`lifecycle`): la única fuente de
+    /// «¿sigue vigente?».
+    pub status: &'a StatusIndex,
 }
 
 /// Compila el packet. Con `structure`, superpone el subgrafo seleccionado y
@@ -627,6 +651,7 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         governing,
         operation_id,
         target,
+        status,
     } = input;
     let provider_status_str = match provider_status {
         ProviderStatus::Successful => "successful",
@@ -639,9 +664,32 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         Coverage::Unknown => "unknown",
     };
 
-    let selection = select_constraints(records, governing, intent, budget);
+    let selection = select_constraints(records, governing, intent, budget, status);
     let selected = selection.constraints;
-    let (decision_records, inactive_decisions) = select_decisions(records, governing);
+    let (decision_records, inactive_decisions) = select_decisions(records, governing, status);
+    let replaces = |record: &Record| -> Vec<String> {
+        record
+            .supersedes
+            .iter()
+            .filter(|id| status.replaced_by(id) == Some(record.id.as_str()))
+            .cloned()
+            .collect()
+    };
+    let mut history: Vec<HistoryEntry> = records
+        .iter()
+        .filter(|r| governing.contains_key(&r.id) && !status.is_active(r))
+        .map(|r| HistoryEntry {
+            id: r.id.clone(),
+            kind: r.kind.clone(),
+            status: status.status(r).as_str().to_string(),
+            replaced_by: status.current_replacement(&r.id).map(str::to_string),
+        })
+        .collect();
+    history.sort_by(|a, b| a.id.cmp(&b.id));
+    let active_governing = governing
+        .keys()
+        .filter(|id| status.status_of(id).is_some_and(|s| s.is_active()))
+        .count();
 
     let critical_constraints: Vec<CriticalConstraint> = selected
         .iter()
@@ -653,6 +701,7 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
             severity: r.severity.clone(),
             governs_target: governing.contains_key(&r.id),
             match_kind: governing.get(&r.id).map(|k| k.as_str().to_string()),
+            replaces: replaces(r),
         })
         .collect();
 
@@ -669,6 +718,7 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
                 .get(&r.id)
                 .map(|k| k.as_str().to_string())
                 .unwrap_or_default(),
+            replaces: replaces(r),
         })
         .collect();
 
@@ -717,7 +767,8 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         None => vec![],
     };
 
-    let governance_verdict_required = intent.is_some() && !governing.is_empty();
+    // Solo un Record vigente exige pronunciarse: la historia no gobierna.
+    let governance_verdict_required = intent.is_some() && active_governing > 0;
 
     let relationships = structure
         .as_deref()
@@ -793,6 +844,7 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         intent_conflicts,
         governance_verdict_required,
         decisions,
+        history,
         relationships,
         primary_reason,
         known_risks,
@@ -886,6 +938,7 @@ mod tests {
                 governing,
                 operation_id: None,
                 target: None,
+                status: &StatusIndex::build(records),
             },
             None,
         )
@@ -1676,6 +1729,7 @@ mod tests {
                     symbol: Some("create_link".to_string()),
                     qualified_name: Some("src.payments.create_link".to_string()),
                 }),
+                status: &StatusIndex::build(records),
             },
             Some(context),
         )

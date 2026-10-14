@@ -12,7 +12,7 @@ use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
 use crate::storage::Record;
 use crate::{
     activity, assessment, binding_match, cache, canon, capture, configuration, context, evaluation,
-    operations, project, relationships, retrieval, revision, signals, storage, subjects,
+    lifecycle, operations, project, relationships, retrieval, revision, signals, storage, subjects,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -87,7 +87,13 @@ pub fn prepare(
         .map(|t| binding_match::target_key(&req.repo_path, t))
         .unwrap_or_default();
     let governing_matches = binding_match::governing(&target_key, &records);
-    let record = governing_matches.first().map(|m| m.record);
+    let status = lifecycle::StatusIndex::build(&records);
+    // El assessment habla del Record vigente más específico: uno reemplazado
+    // o revocado es historia, nunca la decisión que gobierna.
+    let record = governing_matches
+        .iter()
+        .find(|m| status.is_active(m.record))
+        .map(|m| m.record);
 
     if record.is_none() {
         if records.is_empty() {
@@ -324,10 +330,9 @@ pub fn prepare(
             .iter()
             .map(|m| (m.record.id.clone(), m.kind))
             .collect();
-    let superseded = canon::superseded_ids(&records);
     let active: Vec<&Record> = records
         .iter()
-        .filter(|record| canon::is_active(record, &superseded))
+        .filter(|record| status.is_active(record))
         .collect();
     let gather_clock = Instant::now();
     let mut structural = context::gather(
@@ -390,6 +395,7 @@ pub fn prepare(
                 symbol,
                 qualified_name: operation.target.qualified_name.clone(),
             }),
+            status: &status,
         },
         Some(&mut structural),
     );
@@ -488,9 +494,11 @@ pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> Result<Heal
 }
 
 /// Un Record que gobierna el target, tal como lo expone `explain_target`.
+/// Siempre vigente: lo reemplazado, revocado o retirado va a `history`.
 #[derive(Debug, Serialize)]
 pub struct GoverningRecord {
     pub id: String,
+    pub kind: String,
     pub statement: String,
     pub rationale: Option<String>,
     pub authority: String,
@@ -502,6 +510,25 @@ pub struct GoverningRecord {
     /// `explain` sean auditablemente consistentes entre sí, nunca solo
     /// "confía en que coinciden".
     pub match_kind: String,
+    /// Records que este reemplazó.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub replaces: Vec<String>,
+}
+
+/// Un Record atado al target que ya no gobierna. Sin `include_history` se
+/// sirve solo su identidad, estado y reemplazo; con él, también su texto.
+#[derive(Debug, Serialize)]
+pub struct HistoricalRecord {
+    pub id: String,
+    pub kind: String,
+    /// `superseded | revoked | retired`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statement: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -515,6 +542,7 @@ pub struct SubjectSummary {
 pub struct ExplainOutcome {
     pub resolved_target: Option<String>,
     pub governing_records: Vec<GoverningRecord>,
+    pub history: Vec<HistoricalRecord>,
     pub subject: Option<SubjectSummary>,
     /// Lo que Rationale puede afirmar con evidencia — nunca "no existe una
     /// decisión" cuando en realidad es "no se encontró dentro de la
@@ -532,6 +560,7 @@ pub fn explain(
     target_spec: &str,
     project_root: &Path,
     repo_path: &Path,
+    include_history: bool,
 ) -> Result<ExplainOutcome, String> {
     let mut diagnostics = Vec::new();
     let mut known = Vec::new();
@@ -557,19 +586,30 @@ pub fn explain(
         .ok()
         .map(|t| binding_match::target_key(repo_path, t))
         .unwrap_or_default();
-    let governing_matches = binding_match::governing(&key, &records);
+    let all_matches = binding_match::governing(&key, &records);
+    let status = lifecycle::StatusIndex::build(&records);
+    let (governing_matches, inactive_matches): (Vec<_>, Vec<_>) = all_matches
+        .into_iter()
+        .partition(|m| status.is_active(m.record));
     let governing: Vec<&Record> = governing_matches.iter().map(|m| m.record).collect();
 
     if governing.is_empty() {
         unknown.push(
-            "no se encontró ningún Record con un binding exacto hacia este target dentro de la \
-             cobertura disponible; no implica que ninguna decisión lo gobierne"
+            "no active Record is bound to this target within the available coverage; that does \
+             not mean no decision governs it"
                 .to_string(),
         );
     } else {
         known.push(format!(
-            "{} Record(s) gobiernan este target por binding exacto",
+            "{} active Record(s) govern this target by binding",
             governing.len()
+        ));
+    }
+    if !inactive_matches.is_empty() {
+        known.push(format!(
+            "{} Record(s) bound to this target no longer govern it (see history); do not apply \
+             them",
+            inactive_matches.len()
         ));
     }
 
@@ -577,14 +617,36 @@ pub fn explain(
         .iter()
         .map(|m| GoverningRecord {
             id: m.record.id.clone(),
+            kind: m.record.kind.clone(),
             statement: m.record.statement.clone(),
             rationale: m.record.rationale.clone(),
             authority: storage::authority_label(m.record).to_string(),
             provenance: storage::provenance_kind(m.record).as_str().to_string(),
             epistemic_status: m.record.epistemic_status.to_string(),
             match_kind: m.kind.as_str().to_string(),
+            replaces: m
+                .record
+                .supersedes
+                .iter()
+                .filter(|id| status.replaced_by(id) == Some(m.record.id.as_str()))
+                .cloned()
+                .collect(),
         })
         .collect();
+    let mut history: Vec<HistoricalRecord> = inactive_matches
+        .iter()
+        .map(|m| HistoricalRecord {
+            id: m.record.id.clone(),
+            kind: m.record.kind.clone(),
+            status: status.status(m.record).as_str().to_string(),
+            replaced_by: status.current_replacement(&m.record.id).map(str::to_string),
+            statement: include_history.then(|| m.record.statement.clone()),
+            rationale: include_history
+                .then(|| m.record.rationale.clone())
+                .flatten(),
+        })
+        .collect();
+    history.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut subject = None;
     if let Some(primary) = governing.first() {
@@ -621,6 +683,7 @@ pub fn explain(
     Ok(ExplainOutcome {
         resolved_target,
         governing_records,
+        history,
         subject,
         known,
         unknown,
