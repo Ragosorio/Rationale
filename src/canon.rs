@@ -1276,7 +1276,27 @@ fn mark_superseded(
     actor_label: &str,
     reason: &str,
 ) -> Result<(), String> {
-    let path = record_path(ctx, target_id);
+    mark_superseded_in(
+        &records_dir(ctx),
+        target_id,
+        replacement_id,
+        actor_label,
+        reason,
+    )
+}
+
+/// Escribe el lado viejo de una supersesión (`superseded_by` y el evento de
+/// lifecycle). También lo usa `rationale doctor --repair` cuando solo el
+/// Record nuevo declaraba `supersedes`.
+pub(crate) fn mark_superseded_in(
+    records_dir: &Path,
+    target_id: &str,
+    replacement_id: &str,
+    actor_label: &str,
+    reason: &str,
+) -> Result<(), String> {
+    storage::validate_safe_id(target_id).map_err(|e| e.to_string())?;
+    let path = records_dir.join(format!("{target_id}.yaml"));
     let original = std::fs::read_to_string(&path)
         .map_err(|e| format!("no se pudo leer '{target_id}': {e}"))?;
     let mut record = storage::read_record(&path).map_err(|e| e.to_string())?;

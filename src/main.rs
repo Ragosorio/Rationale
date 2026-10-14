@@ -165,7 +165,7 @@ fn print_usage() {
     );
     println!("  rationale update   # descarga e instala la última Release disponible");
     println!(
-        "  rationale doctor [--project-root <path>] [--check] [--repair] [--json]   # detecta (y opcionalmente repara) defectos de integridad en el canon"
+        "  rationale doctor [--project-root <path>] [--check] [--fail-on <severity>] [--json] [--update-baseline] [--repair]   # canon integrity, with severities and a baseline for CI"
     );
 }
 
@@ -217,7 +217,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale update\n\nDescarga e instala la última Release mediante el helper instalado junto al binario."
         ),
         "doctor" => println!(
-            "Uso: rationale doctor [--project-root <path>] [--check] [--repair] [--json]\n\nDetecta severidades y autoridades inválidas, Records sin bindings, path_hint rotos, Subjects colgantes y propuestas pre-vNext sin migrar. Solo lectura por defecto; --check sale con código 1 si hay hallazgos; --repair pide confirmación por hallazgo."
+            "Usage: rationale doctor [--project-root <path>] [--check] [--fail-on <error|warning|info>] [--json] [--update-baseline] [--no-baseline] [--repair]\n\nChecks the canon's integrity: invalid severities and authorities, Records without bindings, bindings to paths that no longer exist (grouped into retired scopes), superseded Records that do not say so, supersession cycles, orphaned and unlinked exceptions, lexical symbol bindings whose symbol disappeared, Subjects that do not exist, and pre-1.0 proposals. Every finding has a severity (error, warning, info) and a fix.\n\nRead-only by default. --check exits 1 when a finding at or above --fail-on (default error) is not in .rationale/doctor-baseline.json; known findings are still reported. --update-baseline records the current findings as the accepted baseline (commit it). --repair asks for confirmation per finding."
         ),
         "operations" => println!(
             "Usage: rationale operations [--all] [--json] [--project-root <path>]\n       rationale operations abandon <operation-id> --reason \"text\" [--project-root <path>]\n\nLists the operations prepare_change opened that nobody finalized or abandoned (oldest first; --all includes closed ones). `abandon` closes one without capture: it writes no memory and is never recorded as finalized. Operations open for more than 24 hours are marked stale; none is ever closed automatically."
@@ -264,8 +264,14 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "doctor" => validate_flags(
             command,
             args,
-            &["--check", "--repair", "--json"],
-            &["--project-root"],
+            &[
+                "--check",
+                "--repair",
+                "--json",
+                "--update-baseline",
+                "--no-baseline",
+            ],
+            &["--project-root", "--fail-on"],
         ),
         "pin" | "unpin" => validate_flags(command, args, &[], &["--project-root", "--reason"]),
         "migrate" => validate_flags(command, args, &["--dry-run", "--json"], &["--project-root"]),
@@ -1089,32 +1095,93 @@ fn cmd_doctor(args: &[String]) {
     let project_root = resolve_project_root(args).unwrap_or_else(fail);
     let config = configuration::load(&project_root).unwrap_or_else(fail);
     let report = doctor::check(&config.rationale_dir, &project_root);
+    let fail_on = parse_string_flag(args, "--fail-on")
+        .map(|value| {
+            doctor::FindingSeverity::parse(&value)
+                .unwrap_or_else(|| fail("--fail-on must be error, warning or info"))
+        })
+        .unwrap_or(doctor::FindingSeverity::Error);
+
+    if args.iter().any(|a| a == "--update-baseline") {
+        let path = doctor::write_baseline(&config.rationale_dir, &report).unwrap_or_else(fail);
+        println!(
+            "Baseline written to {} with {} finding(s). Commit it: `doctor --check` now fails \
+             only on findings that are not in it, and keeps reporting the known ones.",
+            path.display(),
+            report.findings.len()
+        );
+        return;
+    }
+    let baseline = if args.iter().any(|a| a == "--no-baseline") {
+        None
+    } else {
+        doctor::load_baseline(&config.rationale_dir).unwrap_or_else(fail)
+    };
+    let (checked, summary) = doctor::classify(&report, baseline.as_ref(), fail_on);
 
     if args.iter().any(|a| a == "--json") {
         println!(
             "{}",
-            serde_json::to_string(&report)
-                .unwrap_or_else(|e| fail(format!("no se pudo serializar el reporte: {e}")))
+            serde_json::json!({
+                "schema_version": "rationale/doctor/2",
+                "fail_on": fail_on.as_str(),
+                "summary": summary,
+                "findings": checked,
+                "observations": report.observations,
+            })
         );
-    } else if report.findings.is_empty() {
+    } else if checked.is_empty() {
         println!(
-            "Sin hallazgos — el canon en {} está sano.",
+            "No findings: the canon in {} is healthy.",
             config.rationale_dir.display()
         );
+        for observation in &report.observations {
+            println!("note: {observation}");
+        }
     } else {
+        let mut ordered: Vec<&doctor::CheckedFinding> = checked.iter().collect();
+        ordered.sort_by_key(|item| std::cmp::Reverse(item.severity));
+        for item in ordered {
+            println!(
+                "{:<7} [{}] {}: {}",
+                item.severity.as_str().to_uppercase(),
+                item.baseline,
+                item.finding.kind(),
+                item.message
+            );
+            if let Some(fix) = &item.fix {
+                println!("        fix: {fix}");
+            }
+        }
         println!(
-            "{} hallazgo(s) en {}:",
-            report.findings.len(),
-            config.rationale_dir.display()
+            "\n{} error(s), {} warning(s), {} info · {} new at or above '{}' · {} known{}",
+            summary.errors,
+            summary.warnings,
+            summary.info,
+            summary.new_failing,
+            fail_on.as_str(),
+            summary.known,
+            if summary.baseline_present {
+                String::new()
+            } else {
+                " · no baseline (every finding counts as new)".to_string()
+            }
         );
-        for finding in &report.findings {
-            println!("- {}", finding.describe());
+        if !summary.fixed.is_empty() {
+            println!(
+                "{} baseline finding(s) are resolved; `rationale doctor --update-baseline` \
+                 records it.",
+                summary.fixed.len()
+            );
+        }
+        for observation in &report.observations {
+            println!("note: {observation}");
         }
     }
 
     let repair_mode = args.iter().any(|a| a == "--repair");
     if !repair_mode {
-        if args.iter().any(|a| a == "--check") && !report.findings.is_empty() {
+        if args.iter().any(|a| a == "--check") && summary.new_failing > 0 {
             std::process::exit(1);
         }
         return;

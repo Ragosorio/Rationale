@@ -590,7 +590,7 @@ fn health_skill_injection_shows_findings_without_failing_but_keeps_real_errors()
         clean.status.success(),
         "sin hallazgos, la inyección debe salir 0: {clean:?}"
     );
-    assert!(String::from_utf8_lossy(&clean.stdout).contains("Sin hallazgos"));
+    assert!(String::from_utf8_lossy(&clean.stdout).contains("No findings"));
 
     // Escenario 2: con hallazgos — mostrarlos ES el propósito del skill,
     //               así que no puede reportarse como fallo.
@@ -605,7 +605,7 @@ fn health_skill_injection_shows_findings_without_failing_but_keeps_real_errors()
         "un hallazgo normal no debe marcarse como fallo: {with_findings:?}"
     );
     assert!(
-        String::from_utf8_lossy(&with_findings.stdout).contains("hallazgo(s)"),
+        String::from_utf8_lossy(&with_findings.stdout).contains("error(s)"),
         "el reporte de hallazgos debe seguir visible: {with_findings:?}"
     );
     assert!(
