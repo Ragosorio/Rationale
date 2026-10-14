@@ -1,6 +1,6 @@
 # Rationale evaluation — synthetic `parcel` project
 
-Generated 2026-10-14T17:00:15Z on `macOS-26.5.2-arm64-arm-64bit`.
+Generated 2026-10-14T17:21:29Z on `macOS-26.5.2-arm64-arm-64bit`.
 **Synthetic data.** The project, its Records and its structural index are invented to
 reproduce reported failure modes; these numbers are not results from any real repository.
 Token estimator: ASCII chars/2.7 + code chars/2.0 + 1 per non-ASCII char (see eval/README.md).
@@ -16,9 +16,9 @@ Token estimator: ASCII chars/2.7 + code chars/2.0 + 1 per non-ASCII char (see ev
 | Required Records missing | 10 | 0 |
 | Irrelevant Records served | 11 | 0 |
 | Response tokens p50 / p95 / max | 1038 / 2213 / 2427 | 779 / 1626 / 1743 |
-| Warm prepare_change ms p50 / p95 | 30.85 / 35.19 | 27.09 / 31.04 |
-| Warm explain_target ms p50 / p95 | 1.02 / 1.33 | 0.23 / 0.4 |
-| Cold start + prepare ms p50 / p95 | 63.82 / 107.93 | 43.12 / 104.71 |
+| Warm prepare_change ms p50 / p95 | 27.74 / 29.76 | 24.32 / 28.61 |
+| Warm explain_target ms p50 / p95 | 1.03 / 1.18 | 0.23 / 0.29 |
+| Cold start + prepare ms p50 / p95 | 43.63 / 101.6 | 38.82 / 91.6 |
 | New-symbol capture governs only its symbol | False | True |
 | Open operations visible and abandonable | False | True |
 | Doctor detects (of 4) | 1 | 4 |

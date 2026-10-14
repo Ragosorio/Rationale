@@ -74,14 +74,14 @@ index (`real-repo.json`):
 
 | Metric | v1.1.0 | this branch |
 |---|---|---|
-| Estimated response tokens p50 / p95 / max | 3,068 / 3,973 / 4,731 | 2,370 / 2,455 / 2,456 |
+| Estimated response tokens p50 / p95 / max | 3,068 / 3,973 / 4,731 | 2,370 / 2,456 / 2,456 |
 | Targets over the 2,400 default | 10 | 2 (both declared overflows of governing knowledge) |
 | `src/providers` (folder) Records | 0 | 3 |
 | `src/agents.rs::install` Records | 5 (file-wide) | 1 |
 
 Latency, interleaved A/B on the same repository and provider
-(`ab-latency.json`, 72 calls each): `prepare_change` p50 109.0 → 102.5 ms, p95
-136.7 → 128.5 ms. Sequential runs on the same laptop varied by more than that
+(`ab-latency.json`, 72 calls each): `prepare_change` p50 116.9 → 110.9 ms, p95
+143.4 → 130.4 ms. Sequential runs on the same laptop varied by more than that
 under load (load averages from 3 to 30 during this work); only interleaved
 numbers are compared.
 
@@ -129,13 +129,13 @@ and the evaluation itself, gated in CI.
 
 | Kind | What ran | Result |
 |---|---|---|
-| Local tests | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (426 tests, macOS; 386 at v1.1.0) | pass |
+| Local tests | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (427 tests, macOS; 386 at v1.1.0) | pass |
 | Evaluation | `eval/run_eval.py` against v1.1.0 and this branch; `eval/real_repo.py`; `eval/ab_latency.py` | results above |
-| Documentation | `scripts/check-docs.sh` with `check-doc-commands.py` (286 documented invocations) | pass |
+| Documentation | `scripts/check-docs.sh` with `check-doc-commands.py` (302 documented invocations) | pass |
 | CI | GitHub Actions on the pull request (Linux, macOS, Windows; site; ui) | see the pull request |
 | Real client | Claude Code 2.1.296 headless: SessionStart hook output accepted, MCP connected | partial — the CLI's login had expired, so no model turn ran |
 | Packaged binary | `scripts/package.sh` artifact installed by the shell installer from a local mirror over an existing v1.1.0 install and project, then install-agent, uninstall-agent, uninstall (`install-lifecycle.txt`) | pass |
-| Browser | the website's interactive demo, in a local build | see the site section of the pull request |
+| Browser | the website's interactive demo in a local dev build: tabs by click and keyboard, steps, desktop dark and light, 375 px in Spanish without horizontal overflow, contrast of every JSON color measured at 4.5:1 or more in both themes, no console errors; `npm run check` (34 pages) | pass |
 | Published artifact on a clean machine | **not done**: publishing a Release needs authorization, and no new macOS user was created | pending |
 
 ## Lost work
@@ -163,6 +163,11 @@ branch; ADR-0018 is kept free for it.
 - **The reporting team's canon**: run `rationale doctor` and
   `rationale retire src/<communications module> --reason …` (plan only) on
   their repository to size the real repair — needs their authorization.
-- **Rationale's own canon**: none of its 40 active Records is pinned or
+- **Rationale's own canon**: none of its active Records is pinned or
   human-stated, and `decision.landing-beta-release-status` still describes a
   public beta. Pinning and revising them are the owner's decisions.
+- **CLI language**: the v1.1.0 help and messages for people are in Spanish,
+  while the text agents read moved to English. The new commands
+  (`operations`, `retire`, `rule`, `hook`) and `doctor`'s findings, read by
+  both, print English, so `rationale --help` now mixes both languages. Which
+  language the CLI speaks to people is the owner's decision.

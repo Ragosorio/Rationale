@@ -92,7 +92,7 @@ The causes, read in the code at v1.1.0:
   went from 0 to 3 governing Records; `src/agents.rs::install` from 5 Records
   (file-wide) to 1.
 - Interleaved A/B on the same repository (`ab-latency.json`): `prepare_change`
-  p50 109 → 102.5 ms.
+  p50 116.9 → 110.9 ms.
 - Token ratios: Anthropic's token-counting documentation (the count is an
   estimate; Claude 4.7 and later tokenize to about 30% more tokens) and a
   third-party measurement with `count_tokens` (playcode.io, July 2026: JSON

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-14T17:00:15Z",
+  "generated_at": "2026-10-14T17:21:29Z",
   "machine": {
     "platform": "macOS-26.5.2-arm64-arm-64bit",
     "python": "3.12.13"
@@ -47,7 +47,7 @@
             "tokens": 625,
             "legacy_tokens": 422,
             "bytes": 1685,
-            "latency_ms": 2.6,
+            "latency_ms": 2.73,
             "checks": {},
             "passed": false
           },
@@ -79,7 +79,7 @@
             "tokens": 741,
             "legacy_tokens": 500,
             "bytes": 1999,
-            "latency_ms": 0.99,
+            "latency_ms": 1.03,
             "checks": {},
             "passed": false
           },
@@ -108,7 +108,7 @@
             "tokens": 2213,
             "legacy_tokens": 1473,
             "bytes": 5890,
-            "latency_ms": 37.83,
+            "latency_ms": 31.68,
             "checks": {},
             "passed": false
           },
@@ -133,7 +133,7 @@
             "tokens": 419,
             "legacy_tokens": 282,
             "bytes": 1128,
-            "latency_ms": 32.48,
+            "latency_ms": 27.06,
             "checks": {},
             "passed": false
           },
@@ -154,7 +154,7 @@
             "tokens": 1416,
             "legacy_tokens": 939,
             "bytes": 3755,
-            "latency_ms": 31.19,
+            "latency_ms": 28.05,
             "checks": {},
             "passed": false
           },
@@ -174,7 +174,7 @@
             "tokens": 1581,
             "legacy_tokens": 1048,
             "bytes": 4191,
-            "latency_ms": 32.68,
+            "latency_ms": 26.98,
             "checks": {
               "orphaned_exception_flagged": {
                 "passed": false,
@@ -203,7 +203,7 @@
             "tokens": 2427,
             "legacy_tokens": 1625,
             "bytes": 6498,
-            "latency_ms": 32.62,
+            "latency_ms": 27.91,
             "checks": {
               "stale_records_flagged": {
                 "passed": false,
@@ -261,7 +261,7 @@
             "tokens": 1972,
             "legacy_tokens": 1328,
             "bytes": 5311,
-            "latency_ms": 31.39,
+            "latency_ms": 27.62,
             "checks": {
               "index_incomplete_reported": {
                 "passed": false,
@@ -289,7 +289,7 @@
             "tokens": 1391,
             "legacy_tokens": 907,
             "bytes": 3625,
-            "latency_ms": 49.22,
+            "latency_ms": 26.88,
             "checks": {
               "budget_respected": {
                 "passed": false,
@@ -322,7 +322,7 @@
             "tokens": 1482,
             "legacy_tokens": 982,
             "bytes": 3928,
-            "latency_ms": 30.21,
+            "latency_ms": 28.02,
             "checks": {
               "within_budget": {
                 "passed": false,
@@ -344,7 +344,7 @@
             "tokens": 316,
             "legacy_tokens": 213,
             "bytes": 851,
-            "latency_ms": 29.74,
+            "latency_ms": 28.02,
             "checks": {
               "retired_target_explained": {
                 "passed": false,
@@ -368,7 +368,7 @@
             "tokens": 1038,
             "legacy_tokens": 700,
             "bytes": 2799,
-            "latency_ms": 30.04,
+            "latency_ms": 28.1,
             "checks": {},
             "passed": true
           },
@@ -393,7 +393,7 @@
             "tokens": 470,
             "legacy_tokens": 317,
             "bytes": 1267,
-            "latency_ms": 1.22,
+            "latency_ms": 1.4,
             "checks": {
               "orphaned_exception_flagged": {
                 "passed": false,
@@ -415,7 +415,7 @@
             "tokens": 731,
             "legacy_tokens": 485,
             "bytes": 1940,
-            "latency_ms": 30.93,
+            "latency_ms": 27.09,
             "checks": {
               "none_found_reported": {
                 "passed": false,
@@ -427,21 +427,21 @@
         ],
         "warm_latency_ms": {
           "prepare_change": {
-            "n": 220,
-            "p50": 30.85,
-            "p95": 35.19
+            "n": 110,
+            "p50": 27.74,
+            "p95": 29.76
           },
           "explain_target": {
-            "n": 80,
-            "p50": 1.02,
-            "p95": 1.33
+            "n": 40,
+            "p50": 1.03,
+            "p95": 1.18
           }
         }
       },
       "cold_latency_ms": {
-        "n": 5,
-        "p50": 63.82,
-        "p95": 107.93
+        "n": 3,
+        "p50": 43.63,
+        "p95": 101.6
       },
       "capture": {
         "committed": [
@@ -476,7 +476,7 @@
         "detected_count": 1,
         "expected_count": 4,
         "check_exit_code": 1,
-        "latency_ms": 5.1
+        "latency_ms": 5.05
       },
       "repair": {
         "supported": false,
@@ -514,7 +514,7 @@
             "tokens": 341,
             "legacy_tokens": 230,
             "bytes": 920,
-            "latency_ms": 2.98,
+            "latency_ms": 1.88,
             "checks": {},
             "passed": true
           },
@@ -533,7 +533,7 @@
             "tokens": 362,
             "legacy_tokens": 244,
             "bytes": 976,
-            "latency_ms": 0.31,
+            "latency_ms": 0.41,
             "checks": {},
             "passed": true
           },
@@ -552,7 +552,7 @@
             "tokens": 1037,
             "legacy_tokens": 682,
             "bytes": 2727,
-            "latency_ms": 30.22,
+            "latency_ms": 28.25,
             "checks": {},
             "passed": true
           },
@@ -577,7 +577,7 @@
             "tokens": 1626,
             "legacy_tokens": 1098,
             "bytes": 4389,
-            "latency_ms": 25.84,
+            "latency_ms": 25.28,
             "checks": {},
             "passed": true
           },
@@ -597,7 +597,7 @@
             "tokens": 1304,
             "legacy_tokens": 864,
             "bytes": 3455,
-            "latency_ms": 26.78,
+            "latency_ms": 24.31,
             "checks": {},
             "passed": true
           },
@@ -617,7 +617,7 @@
             "tokens": 1432,
             "legacy_tokens": 949,
             "bytes": 3795,
-            "latency_ms": 26.86,
+            "latency_ms": 25.44,
             "checks": {
               "orphaned_exception_flagged": {
                 "passed": true,
@@ -643,7 +643,7 @@
             "tokens": 1743,
             "legacy_tokens": 1166,
             "bytes": 4661,
-            "latency_ms": 25.34,
+            "latency_ms": 24.93,
             "checks": {
               "stale_records_flagged": {
                 "passed": true,
@@ -674,7 +674,7 @@
             "tokens": 819,
             "legacy_tokens": 553,
             "bytes": 2209,
-            "latency_ms": 0.41,
+            "latency_ms": 0.32,
             "checks": {},
             "passed": true
           },
@@ -691,7 +691,7 @@
             "tokens": 535,
             "legacy_tokens": 361,
             "bytes": 1442,
-            "latency_ms": 27.2,
+            "latency_ms": 23.42,
             "checks": {
               "index_incomplete_reported": {
                 "passed": true,
@@ -716,7 +716,7 @@
             "tokens": 935,
             "legacy_tokens": 631,
             "bytes": 2523,
-            "latency_ms": 32.51,
+            "latency_ms": 23.5,
             "checks": {
               "budget_respected": {
                 "passed": true,
@@ -740,7 +740,7 @@
             "tokens": 750,
             "legacy_tokens": 488,
             "bytes": 1952,
-            "latency_ms": 26.76,
+            "latency_ms": 31.69,
             "checks": {
               "within_budget": {
                 "passed": true,
@@ -762,7 +762,7 @@
             "tokens": 447,
             "legacy_tokens": 302,
             "bytes": 1206,
-            "latency_ms": 25.99,
+            "latency_ms": 22.79,
             "checks": {
               "retired_target_explained": {
                 "passed": true,
@@ -786,7 +786,7 @@
             "tokens": 779,
             "legacy_tokens": 525,
             "bytes": 2100,
-            "latency_ms": 27.71,
+            "latency_ms": 24.02,
             "checks": {},
             "passed": true
           },
@@ -806,7 +806,7 @@
             "tokens": 586,
             "legacy_tokens": 395,
             "bytes": 1580,
-            "latency_ms": 0.41,
+            "latency_ms": 0.33,
             "checks": {
               "orphaned_exception_flagged": {
                 "passed": true,
@@ -828,7 +828,7 @@
             "tokens": 700,
             "legacy_tokens": 464,
             "bytes": 1856,
-            "latency_ms": 28.27,
+            "latency_ms": 23.92,
             "checks": {
               "none_found_reported": {
                 "passed": true,
@@ -840,21 +840,21 @@
         ],
         "warm_latency_ms": {
           "prepare_change": {
-            "n": 220,
-            "p50": 27.09,
-            "p95": 31.04
+            "n": 110,
+            "p50": 24.32,
+            "p95": 28.61
           },
           "explain_target": {
-            "n": 80,
+            "n": 40,
             "p50": 0.23,
-            "p95": 0.4
+            "p95": 0.29
           }
         }
       },
       "cold_latency_ms": {
-        "n": 5,
-        "p50": 43.12,
-        "p95": 104.71
+        "n": 3,
+        "p50": 38.82,
+        "p95": 91.6
       },
       "capture": {
         "committed": [
@@ -891,7 +891,7 @@
         "detected_count": 4,
         "expected_count": 4,
         "check_exit_code": 1,
-        "latency_ms": 5.14
+        "latency_ms": 5.5
       },
       "repair": {
         "supported": true,
