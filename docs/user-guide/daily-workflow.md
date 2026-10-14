@@ -11,10 +11,17 @@ rationale prepare "src/auth/authorization.rs::resolve" --intent "change how perm
 
 The JSON packet goes to stdout and diagnostics to stderr. Look above all at:
 
-- `critical_constraints` and `decisions`, with their `authority` and `provenance`;
+- `retrieval.status` and `retrieval.scope`: what kind of answer it is;
+- `critical_constraints` and `decisions`, with their `authority`, `provenance`, and `why`;
+- `inherited_constraints`, invariants reaching the target through code it uses;
+- `history`, Records that no longer govern (never applied as current);
 - `relationships`, with their state (`observed`, `indirect`, `orphaned`, `unknown`);
 - `intent_conflicts` — a lexical signal, not a proven contradiction;
-- coverage `snapshot` and `warnings`, and `budget_overflow` when it appears.
+- coverage `snapshot` and `warnings`, `omitted` (what the budget left out and
+  how to get it), and `budget_overflow` when it appears.
+
+A folder works as a target (`rationale prepare src/billing`): its packet lists
+the Records bound inside it, highest priority first.
 
 Keep the `operation_id`: `finalize_change` uses it to close the operation.
 
@@ -38,6 +45,12 @@ candidates, no memory is written.
 
 Review what was captured the way you review code: `.rationale/records/` travels
 in the same pull request.
+
+If the agent prepared a change and did not make it, it closes the operation
+with `finalize_change(operation_id, abandon=true, summary="why")`: no memory,
+and never recorded as finalized. `rationale operations` lists the ones left
+open; in Claude Code a Stop hook asks the agent to close the ones its session
+opened.
 
 ## While you work
 
@@ -72,19 +85,42 @@ to an existing Record:
 rationale review-record <record-id>
 ```
 
+State a rule yourself, with your name on it (provenance `human_stated`):
+
+```bash
+rationale rule add constraint "Amounts are integer cents from quote to invoice." \
+  --why "Float rounding double-charged customers in an incident." \
+  --bind src/shipping --bind src/billing --pin
+```
+
 All these actions require an interactive terminal and leave auditable lifecycle
 events.
 
 ## Keeping the canon healthy
 
 ```bash
-rationale doctor --check
+rationale doctor                    # findings with severity and a fix each
+rationale doctor --update-baseline  # accept today's findings as known debt (commit the file)
+rationale doctor --check            # in CI: fails only on new errors
 ```
 
-Run it in CI or before a release. When bindings go stale after a refactor, ask
-the agent to run the skill's `maintain` operation: it supersedes outdated
-Records through the capture gate and leaves pinned Records and lifecycle
-changes to you.
+When bindings go stale after a refactor, ask the agent to run the skill's
+`maintain` operation: it supersedes outdated Records through the capture gate
+and leaves pinned Records and lifecycle changes to you.
+
+When a module is removed, its Records keep describing it as current until
+someone retires them. `doctor` groups them into one `retired-scope` finding;
+`retire` plans the repair and applies it only when you say so:
+
+```bash
+rationale retire src/comunicaciones --reason "Replaced by src/notifications"   # plan only
+rationale retire src/comunicaciones --reason "Replaced by src/notifications" --apply
+rationale retire --undo <batch-id>                                             # if you change your mind
+```
+
+Records bound only to the removed code are retired, Records also bound to
+current code lose only the removed bindings, pinned Records are left for you,
+and the whole change is a reviewable `git diff` of `.rationale/`.
 
 ## Projects that predate 1.0
 

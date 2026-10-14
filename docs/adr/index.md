@@ -6,7 +6,7 @@ evidence.
 
 The mandatory initial ADRs (0001–0012, `Rationale_Arquitectura_Conceptual_v0.1.md §22`),
 ADR-0013 added in Phase G, ADR-0014–0016 added in the pre-beta dogfood, and
-ADR-0017 added in vNext are kept explicit in this index; proposals require
+ADR-0017 added in vNext, and ADR-0019–0020 added in 1.2 are kept explicit in this index; proposals require
 evidence before changing status:
 
 | ADR | Title | Status | Depends on |
@@ -28,6 +28,9 @@ evidence before changing status:
 | [ADR-0015](ADR-0015-mcp-executable-resolution.md) | Executable resolution in per-project MCP config | **proposed** | The `PATH` premise was refuted empirically against Claude Code. Complements ADR-0014 |
 | [ADR-0016](ADR-0016-user-scoped-agent-registration.md) | User-scoped MCP registration and convergent migration | **proposed** | ADR-0015's Cursor validation failed; proposes replacing it if it receives review and approval |
 | [ADR-0017](ADR-0017-local-activity-stream.md) | Local activity stream and operation snapshots | **proposed** | vNext: the activity view needs the intent and target; narrows ADR-0012 §Decision 3 for these emitters (identifiers and an intent of ≤280 characters, never content) and retires `RunLog` |
+| ADR-0018 | Native structural provider | **not in this repository** | Written on a local branch that was never pushed and whose checkout was lost; the number is kept free in case that work is recovered |
+| [ADR-0019](ADR-0019-authority-view-and-retrieval-scope.md) | Authority view, retrieval scope, and a budget over the whole response | **proposed** | 1.2: only active Records are authority; symbol, file and folder scope; inherited constraints along observed edges; a stale index is detected; the budget covers the whole response |
+| [ADR-0020](ADR-0020-claude-code-hooks.md) | Claude Code hooks as the mechanical backstop of the protocol | **proposed** | 1.2: SessionStart, PreToolUse, PostToolUse and Stop hooks in `.claude/settings.local.json`; never block, never fail the session |
 
 **A proposal does not supersede another proposal.** While two ADRs are
 `proposed`, the one that proposes replacing the other says so in its header but

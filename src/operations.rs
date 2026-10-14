@@ -13,9 +13,15 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 const SCHEMA: &str = "rationale/operation/1";
-/// Techo de snapshots conservados: la UI muestra lo reciente, y un proyecto
-/// activo no debe acumular miles de archivos locales.
+/// Techo de snapshots cerrados conservados: la UI muestra lo reciente, y un
+/// proyecto activo no debe acumular miles de archivos locales.
 const RETAINED_OPERATIONS: usize = 200;
+/// Una operación abierta nunca se poda por antigüedad: es trabajo sin cerrar
+/// que alguien tiene que finalizar o abandonar. Solo un volumen anómalo de
+/// abiertas (un cliente que nunca cierra) se poda, y se reporta.
+const MAX_OPEN_OPERATIONS: usize = 1000;
+/// Abierta más de esto se presenta como `stale` — nunca se cierra sola.
+pub const STALE_AFTER_HOURS: i64 = 24;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OperationTarget {
@@ -82,6 +88,34 @@ pub struct FinalizeSummary {
     pub conflicts: Vec<String>,
 }
 
+/// Cierre explícito sin cambio que capturar: exploración, plan descartado,
+/// sesión interrumpida. Nunca se registra como `finalized` — no es un éxito.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AbandonSummary {
+    pub abandoned_at: String,
+    pub reason: String,
+    /// Quién la cerró: `agent:<cliente>` o `user:<actor git>`.
+    pub by: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationState {
+    Open,
+    Finalized,
+    Abandoned,
+}
+
+impl OperationState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Finalized => "finalized",
+            Self::Abandoned => "abandoned",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Operation {
     pub schema_version: String,
@@ -97,6 +131,8 @@ pub struct Operation {
     pub selection: Selection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finalized: Option<FinalizeSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abandoned: Option<AbandonSummary>,
 }
 
 impl Operation {
@@ -121,7 +157,24 @@ impl Operation {
             graph: OperationGraph::default(),
             selection: Selection::default(),
             finalized: None,
+            abandoned: None,
         }
+    }
+
+    pub fn state(&self) -> OperationState {
+        if self.finalized.is_some() {
+            OperationState::Finalized
+        } else if self.abandoned.is_some() {
+            OperationState::Abandoned
+        } else {
+            OperationState::Open
+        }
+    }
+
+    /// Horas desde que se abrió, si `created_at` se puede leer.
+    pub fn age_hours(&self, now_millis: i64) -> Option<i64> {
+        evaluation::parse_timestamp_millis(&self.created_at)
+            .map(|created| (now_millis - created).max(0) / 3_600_000)
     }
 }
 
@@ -173,11 +226,34 @@ pub fn list_recent(local_dir: &Path, limit: usize) -> Vec<Operation> {
         .collect()
 }
 
+/// Poda los snapshots cerrados más viejos por encima de `RETAINED_OPERATIONS`.
+/// Las abiertas se conservan: antes la poda borraba trabajo sin cerrar junto
+/// con el resto y el indicador de «operaciones abiertas» mentía por omisión.
 fn prune(local_dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(operations_dir(local_dir)) else {
+    let mut names = operation_files(local_dir);
+    if names.len() <= RETAINED_OPERATIONS {
         return;
+    }
+    names.sort();
+    let (open, closed): (Vec<PathBuf>, Vec<PathBuf>) =
+        names.into_iter().partition(|path| is_open_file(path));
+    if closed.len() > RETAINED_OPERATIONS {
+        for stale in &closed[..closed.len() - RETAINED_OPERATIONS] {
+            let _ = std::fs::remove_file(stale);
+        }
+    }
+    if open.len() > MAX_OPEN_OPERATIONS {
+        for stale in &open[..open.len() - MAX_OPEN_OPERATIONS] {
+            let _ = std::fs::remove_file(stale);
+        }
+    }
+}
+
+fn operation_files(local_dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(operations_dir(local_dir)) else {
+        return Vec::new();
     };
-    let mut names: Vec<PathBuf> = entries
+    entries
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| {
@@ -185,14 +261,103 @@ fn prune(local_dir: &Path) {
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n.starts_with("op_") && n.ends_with(".json"))
         })
+        .collect()
+}
+
+fn is_open_file(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Operation>(&content).ok())
+        .is_some_and(|operation| operation.state() == OperationState::Open)
+}
+
+/// Todas las operaciones conservadas, más recientes primero.
+pub fn list_all(local_dir: &Path) -> Vec<Operation> {
+    list_recent(local_dir, usize::MAX)
+}
+
+/// Resumen de lo que sigue abierto, para `health` y los hooks.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct OpenSummary {
+    pub count: usize,
+    /// Abiertas hace más de `STALE_AFTER_HOURS`.
+    pub stale: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oldest_created_at: Option<String>,
+    /// Las más viejas primero, hasta cinco.
+    pub oldest: Vec<OpenOperation>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct OpenOperation {
+    pub operation_id: String,
+    pub target: String,
+    pub client: String,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub age_hours: Option<i64>,
+}
+
+pub fn open_summary(local_dir: &Path) -> OpenSummary {
+    let now = evaluation::parse_timestamp_millis(&evaluation::now_rfc3339_millis()).unwrap_or(0);
+    let mut open: Vec<Operation> = list_all(local_dir)
+        .into_iter()
+        .filter(|operation| operation.state() == OperationState::Open)
         .collect();
-    if names.len() <= RETAINED_OPERATIONS {
-        return;
+    open.reverse();
+    OpenSummary {
+        count: open.len(),
+        stale: open
+            .iter()
+            .filter(|op| op.age_hours(now).is_some_and(|h| h >= STALE_AFTER_HOURS))
+            .count(),
+        oldest_created_at: open.first().map(|op| op.created_at.clone()),
+        oldest: open
+            .iter()
+            .take(5)
+            .map(|op| OpenOperation {
+                operation_id: op.operation_id.clone(),
+                target: op.target.spec.clone(),
+                client: op.actor.client.clone(),
+                created_at: op.created_at.clone(),
+                age_hours: op.age_hours(now),
+            })
+            .collect(),
     }
-    names.sort();
-    for stale in &names[..names.len() - RETAINED_OPERATIONS] {
-        let _ = std::fs::remove_file(stale);
+}
+
+/// Cierra una operación sin captura. Una ya finalizada no se puede
+/// abandonar (eso reescribiría un cierre exitoso); una ya abandonada se deja
+/// como está.
+pub fn record_abandon(
+    local_dir: &Path,
+    operation_id: &str,
+    reason: &str,
+    by: &str,
+) -> Result<Operation, String> {
+    let Some(mut operation) = load(local_dir, operation_id) else {
+        return Err(format!("unknown operation '{operation_id}'"));
+    };
+    match operation.state() {
+        OperationState::Finalized => {
+            return Err(format!(
+                "operation '{operation_id}' was already finalized; it cannot be abandoned"
+            ))
+        }
+        OperationState::Abandoned => return Ok(operation),
+        OperationState::Open => {}
     }
+    let reason = reason.trim();
+    if reason.is_empty() {
+        return Err("abandoning an operation needs a reason".to_string());
+    }
+    operation.abandoned = Some(AbandonSummary {
+        abandoned_at: evaluation::now_rfc3339_millis(),
+        reason: crate::canon::sanitize_control_chars(reason),
+        by: by.to_string(),
+    });
+    save(local_dir, &operation)?;
+    Ok(operation)
 }
 
 /// Registra el cierre de la operación. Un id desconocido (otra máquina,
@@ -205,6 +370,9 @@ pub fn record_finalize(
     let Some(mut operation) = load(local_dir, operation_id) else {
         return Err(format!("operación '{operation_id}' desconocida"));
     };
+    // Retomar y finalizar una operación abandonada es legítimo: el cierre
+    // con captura reemplaza al abandono.
+    operation.abandoned = None;
     operation.finalized = Some(summary);
     save(local_dir, &operation).map(|_| ())
 }
@@ -285,6 +453,44 @@ mod tests {
     }
 
     #[test]
+    fn open_operations_survive_pruning_and_abandon_is_never_a_success() {
+        let dir = local_dir();
+        let open = Operation::new(&actor(), target(), Some("explore".into()), None);
+        save(&dir, &open).unwrap();
+        for _ in 0..(RETAINED_OPERATIONS + 3) {
+            let mut closed = Operation::new(&actor(), target(), None, None);
+            closed.finalized = Some(FinalizeSummary {
+                finalized_at: String::new(),
+                committed: vec![],
+                discarded: 0,
+                conflicts: vec![],
+            });
+            save(&dir, &closed).unwrap();
+        }
+        assert!(
+            load(&dir, &open.operation_id).is_some(),
+            "the open one survives"
+        );
+        let summary = open_summary(&dir);
+        assert_eq!(summary.count, 1);
+        assert_eq!(summary.oldest[0].operation_id, open.operation_id);
+
+        assert!(record_abandon(&dir, &open.operation_id, "  ", "agent:test").is_err());
+        let abandoned =
+            record_abandon(&dir, &open.operation_id, "only explored", "agent:test").unwrap();
+        assert_eq!(abandoned.state(), OperationState::Abandoned);
+        assert!(abandoned.finalized.is_none());
+        assert_eq!(open_summary(&dir).count, 0);
+
+        let finalized = list_all(&dir)
+            .into_iter()
+            .find(|op| op.state() == OperationState::Finalized)
+            .unwrap();
+        assert!(record_abandon(&dir, &finalized.operation_id, "x", "agent:test").is_err());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn unsafe_or_foreign_ids_never_touch_the_filesystem() {
         let dir = local_dir();
         for id in ["../escape", "op_../../x", "conflict_abc", ""] {
@@ -310,7 +516,12 @@ mod tests {
         let dir = local_dir();
         let mut ids = Vec::new();
         for _ in 0..(RETAINED_OPERATIONS + 5) {
-            let operation = Operation::new(&actor(), target(), None, None);
+            let mut operation = Operation::new(&actor(), target(), None, None);
+            operation.abandoned = Some(AbandonSummary {
+                abandoned_at: String::new(),
+                reason: "test".into(),
+                by: "agent:test".into(),
+            });
             ids.push(operation.operation_id.clone());
             save(&dir, &operation).unwrap();
         }

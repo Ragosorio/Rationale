@@ -1,0 +1,41 @@
+id: decision.rate-cache-ttl-5m
+kind: decision
+severity: medium
+statement: "Carrier rate quotes are cached for 5 minutes per route and weight."
+rationale: "Carrier APIs rate-limit quote calls; five minutes kept us under the limit at launch."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-06-01T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.decision.rate-cache-ttl-5m.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/shipping/rates.ts
+  provisional: false
+- id: binding.decision.rate-cache-ttl-5m.1
+  type: symbol
+  provider: fixture
+  structural_id: src.shipping.rates.quoteRate
+  path_hint: src/shipping/rates.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+applicability_policy:
+  superseded_by: decision.rate-cache-ttl-60s
+lifecycle:
+  status: superseded
+  events:
+  - type: asserted
+    timestamp: 2026-06-01T10:00:00Z
+  - type: superseded
+    replacement_id: decision.rate-cache-ttl-60s
+    timestamp: 2026-07-15T10:00:00Z

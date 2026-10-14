@@ -511,12 +511,15 @@
   white-space: pre;
 }
 
-.l-json .k { color: var(--signal); }
+/* Keys and states at 0.8rem need 4.5:1 on the code background; the brand
+   tokens alone measure 4.1–4.4 in the light theme. Mixing toward --ink raises
+   contrast in both themes; the plain token is the fallback. */
+.l-json .k { color: var(--signal); color: color-mix(in srgb, var(--signal) 82%, var(--ink)); }
 .l-json .s { color: var(--ink); }
 .l-json .p { color: var(--causal); }
 .l-json .m { color: var(--muted); }
-.l-json .o { color: var(--state-observed); }
-.l-json .w { color: var(--state-indirect); }
+.l-json .o { color: var(--state-observed); color: color-mix(in srgb, var(--state-observed) 82%, var(--ink)); }
+.l-json .w { color: var(--state-indirect); color: color-mix(in srgb, var(--state-indirect) 82%, var(--ink)); }
 
 /* ---------- definition lists (features, memory, trust) ---------- */
 
@@ -979,4 +982,136 @@
     align-items: center;
     justify-content: space-between;
   }
+}
+
+/* Demo: cinco situaciones simuladas, con pestañas y pasos. Sin JavaScript se
+   ven todos los paneles uno debajo de otro. */
+.l-demo-note {
+  margin: 0 0 1.5rem;
+  max-width: 62ch;
+  color: var(--muted-strong);
+  font-size: 0.92rem;
+}
+
+.l-demo-note strong {
+  color: var(--causal);
+  font-weight: 600;
+}
+
+.l-demo-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.l-demo-tabs [role="tab"] {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: -1px;
+  padding: 0.7rem 1rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.l-demo-tabs [role="tab"]:hover {
+  color: var(--ink);
+}
+
+.l-demo-tabs [role="tab"][aria-selected="true"] {
+  border-color: var(--line);
+  border-bottom-color: var(--canvas);
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.l-demo-tabs [role="tab"]:focus-visible,
+.l-demo-steps button:focus-visible,
+.l-demo-panel:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.l-demo-index {
+  color: var(--signal);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.l-demo-panel {
+  display: grid;
+  gap: 2rem;
+  padding: 2rem 0 0;
+}
+
+@media (min-width: 960px) {
+  .l-demo-panel {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  }
+}
+
+.l-demo-panel[hidden] {
+  display: none;
+}
+
+.l-demo-title {
+  margin: 0 0 0.75rem;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.l-demo-story p {
+  margin: 0 0 1rem;
+  color: var(--muted-strong);
+}
+
+.l-demo-takeaway {
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.l-demo-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
+.l-demo-steps button {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted-strong);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.l-demo-steps button[aria-pressed="true"] {
+  border-color: var(--signal);
+  color: var(--ink);
+}
+
+.l-demo-output {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.l-demo-output .l-json {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.l-demo-output [hidden] {
+  display: none;
 }

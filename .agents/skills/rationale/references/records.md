@@ -95,22 +95,45 @@ lifetimes.
 
 ## Bindings and relationships
 
-`bindings` anchor the Record to the code it governs. A candidate without at
-least one binding that resolves to a real file is discarded as
-`no_meaningful_binding`.
+`bindings` anchor the Record to the code it governs, and they decide where it
+is served: a Record bound to more than it governs is noise in every packet for
+that code. A candidate without at least one binding that resolves to a real
+file or folder is discarded as `no_meaningful_binding`.
 
 - Use `path::symbol` when the rule governs a function, type, or method, for
-  example `"src/billing/retry.rs::backoff"`. The provider confirms the symbol;
-  when it cannot, the file binding still counts.
-- Use a file path when the rule governs the whole file.
+  example `"src/billing/retry.rs::backoff"`. The Record is then served for that
+  symbol (and in file and folder queries), not for the file's other symbols.
+  The provider confirms the symbol; when its index does not know it yet (a
+  symbol new on your branch), the gate checks that the file defines it and
+  binds it lexically. Only a symbol the file does not define falls back to the
+  whole file.
+- Use a file path when the rule governs the whole file. If the Record also
+  names a symbol of that file, list the file on its own too; it is then marked
+  as a whole-file rule.
+- Use a folder path for an invariant that holds for everything below it, such
+  as `"src/billing"` for "amounts are integer cents". A folder binding governs
+  every file and symbol inside the folder.
 - The structured form works too:
   `{"path": "src/billing/retry.rs", "symbol": "backoff"}`.
 - Bind only the code the rule governs. Several bindings are fine when the rule
-  spans files; a directory or an unrelated file is not.
+  spans modules: an invariant shared by shipping and billing binds both. Code
+  that merely calls the bound symbol does not need its own binding:
+  `prepare_change` brings a `critical` or `high` constraint across observed
+  calls as an inherited constraint.
 - Paths are relative to the repository root. Bindings into `.rationale/` or
-  `.rationale-local/` are ignored.
+  `.rationale-local/`, or to the repository root, are ignored.
 - Bindings to files with uncommitted changes are stored as `provisional` until
   the code is committed.
+
+An exception names the Records whose rule it relaxes:
+
+```json
+{ "kind": "exception", "exception_to": ["constraint.rotate-secrets-30d"], ... }
+```
+
+Without `exception_to` nobody can tell when the exception stops applying, and
+when that rule is replaced `doctor` and the packet flag the exception as
+orphaned instead of silently keeping it.
 
 When the Record explains why a relationship exists, add `relationships`:
 
@@ -202,7 +225,8 @@ For each candidate
 - [ ] statement: one specific, checkable assertion, not a change log
 - [ ] rationale: gives the cause and does not repeat the statement
 - [ ] exactly one decision
-- [ ] bindings: the narrowest existing file or path::symbol
+- [ ] bindings: the narrowest existing path::symbol, file, or folder (folders for invariants below them)
+- [ ] exception: exception_to names the rule it relaxes
 - [ ] supersedes: only active Records this one replaces; pinned ones go to a person
 - [ ] severity chosen on purpose
 - [ ] language matches the canon

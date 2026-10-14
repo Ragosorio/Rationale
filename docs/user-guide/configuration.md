@@ -4,7 +4,8 @@
 
 ```text
 .rationale/
-├── config.yaml   # project identity and declared authority
+├── config.yaml   # project identity, declared authority, optional advice
+├── doctor-baseline.json  # known findings accepted for `doctor --check` (optional)
 ├── records/      # canonical Records
 ├── subjects/     # conceptual identity
 ├── schemas/      # local schemas
@@ -16,6 +17,8 @@
 ├── activity/                # one NDJSON file per session (ADR-0017)
 ├── operations/              # snapshots of each prepare_change
 ├── conflicts/               # pending conflicts with pinned Records
+├── repairs/                 # `rationale retire` batches, for --undo
+├── hooks/                   # Claude Code hook state per session
 └── installed-agent-files.json
 ```
 
@@ -34,6 +37,10 @@ CLAUDE.md, AGENTS.md          # delimited protocol block
 .agents/skills/rationale/     # the rationale skill for Codex
 ```
 
+Claude Code hooks go to `.claude/settings.local.json`, Claude Code's
+machine-local settings file, which is not versioned: each person installs them
+on their machine. See [Claude Code](claude-code.md).
+
 `installed-agent-files.json` records a hash for every file Rationale owns, so
 reinstalling updates untouched files, keeps your edits, and uninstalling removes
 exactly what Rationale wrote.
@@ -48,7 +55,22 @@ authority:
 
 The actor is your Git identity. Anyone not listed here is a contributor: they
 can use Rationale normally, but cannot pin, unpin, or adopt a replacement for a
-pinned rule.
+pinned rule. `rationale rule add` records any person as the `human_stated`
+author of a rule; with `--pin` it needs a declared actor.
+
+## Execution advice
+
+```yaml
+advice:
+  enabled: false        # true adds execution_advice to every prepare_change
+  models:               # Claude Code aliases for each tier
+    fast: haiku
+    balanced: sonnet
+    deep: opus
+```
+
+Earlier binaries ignore the section. See
+[Claude Code](claude-code.md#model-and-effort-advice).
 
 ## Environment variables
 
@@ -64,6 +86,8 @@ For the installer and `rationale update`:
   or `preview` (the most recent release, pre-releases included).
 - `RATIONALE_VERSION`: pins a specific version, for example to roll back.
 - `RATIONALE_INSTALL_DIR`: changes the binary's directory.
+- `RATIONALE_DOWNLOAD_BASE`: installs from a mirror with the Releases layout;
+  requires `RATIONALE_VERSION`.
 
 ## Privacy
 

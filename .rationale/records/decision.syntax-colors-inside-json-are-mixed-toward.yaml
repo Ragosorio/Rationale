@@ -1,0 +1,35 @@
+id: decision.syntax-colors-inside-json-are-mixed-toward
+kind: decision
+severity: low
+statement: Syntax colors inside .l-json are mixed toward --ink so keys and states reach 4.5:1 contrast in both themes; the plain brand tokens are only the fallback for browsers without color-mix.
+rationale: At 0.8rem the brand tokens --signal, --state-observed and --state-indirect measured 4.1 to 4.4:1 on the light code background, below WCAG AA for normal text. Darkening the global tokens instead would shift the brand and the diagrams that share them.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a13b60ff6969b43473
+  session_id: session_1a13b6e0cd4ecc8639d
+  asserted_at: 2026-10-14T17:20:30Z
+approvals: []
+binding_declarations:
+- id: binding.decision.syntax-colors-inside-json-are-mixed-toward.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/styles/landing.css
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 31f28c8276ff2139a52c49c2334325a71a8aa500
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-10-14T17:20:30Z
+    operation_id: op_1a13b60ff6969b43473

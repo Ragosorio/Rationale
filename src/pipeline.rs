@@ -12,7 +12,7 @@ use crate::providers::{Coverage, ProviderHandle, ProviderStatus};
 use crate::storage::Record;
 use crate::{
     activity, assessment, binding_match, cache, canon, capture, configuration, context, evaluation,
-    operations, project, relationships, retrieval, revision, signals, storage, subjects,
+    lifecycle, operations, project, relationships, retrieval, revision, signals, storage, subjects,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -32,6 +32,10 @@ pub struct PrepareRequest {
     pub structural_budget: context::StructuralBudget,
     /// Quién pide el contexto — queda registrado en la operación.
     pub actor: canon::ActorContext,
+    /// Assessment completo (resolución por binding) en vez del compacto.
+    pub verbose: bool,
+    /// Consejo de modelo y esfuerzo; `None` sigue `advice.enabled`.
+    pub advise: Option<bool>,
 }
 
 pub struct PrepareOutcome {
@@ -39,7 +43,8 @@ pub struct PrepareOutcome {
     /// `None` es válido para un proyecto recién inicializado sin Records:
     /// el packet puede informar salud/target/proveedor sin inventar una
     /// decisión ni panicar por un canon vacío.
-    pub assessment: Option<assessment::Assessment>,
+    /// Lo que el agente recibe del assessment: compacto salvo `verbose`.
+    pub assessment_view: Option<serde_json::Value>,
     /// Lo que antes eran `eprintln!` sueltos — cada caller decide destino.
     pub diagnostics: Vec<String>,
     pub latency_ms: u128,
@@ -62,6 +67,14 @@ pub fn prepare(
 ) -> Result<PrepareOutcome, String> {
     let t0 = Instant::now();
     let mut diagnostics = Vec::new();
+    // Tiempos por etapa (solo en `diagnostics`, es decir con `verbose`): el
+    // perfil que guía cualquier optimización.
+    let mut stages: Vec<(&'static str, u128)> = Vec::new();
+    let mut stage_clock = Instant::now();
+    let mut mark = |name: &'static str, stages: &mut Vec<(&'static str, u128)>| {
+        stages.push((name, stage_clock.elapsed().as_micros()));
+        stage_clock = Instant::now();
+    };
 
     let config = configuration::load(&req.project_root).map_err(|e| e.to_string())?;
 
@@ -87,7 +100,32 @@ pub fn prepare(
         .map(|t| binding_match::target_key(&req.repo_path, t))
         .unwrap_or_default();
     let governing_matches = binding_match::governing(&target_key, &records);
-    let record = governing_matches.first().map(|m| m.record);
+    let status = lifecycle::StatusIndex::build(&records);
+    let target_scope = match &target {
+        Ok(t) if t.path.is_dir() => retrieval::TargetScope::Folder,
+        Ok(t) if t.symbol.as_deref().is_some_and(|s| !s.is_empty()) => {
+            retrieval::TargetScope::Symbol
+        }
+        Ok(_) => retrieval::TargetScope::File,
+        Err(_) => match project::parse_target_spec(&req.target_spec).1 {
+            Some(_) => retrieval::TargetScope::Symbol,
+            None => retrieval::TargetScope::File,
+        },
+    };
+    let missing_target = match &target {
+        Err(project::TargetError::NotFound) => Some(records_bound_to_missing_path(
+            &req.target_spec,
+            &records,
+            &status,
+        )),
+        _ => None,
+    };
+    // El assessment habla del Record vigente más específico: uno reemplazado
+    // o revocado es historia, nunca la decisión que gobierna.
+    let record = governing_matches
+        .iter()
+        .find(|m| status.is_active(m.record))
+        .map(|m| m.record);
 
     if record.is_none() {
         if records.is_empty() {
@@ -177,6 +215,7 @@ pub fn prepare(
     );
     let provider_clock = Instant::now();
 
+    mark("canon+target+operation", &mut stages);
     // 3. Consultar Codebase Memory — sesión MCP persistente real (ADR-0002).
     // La sesión (`provider`) ya fue spawneada por el caller: la CLI una vez
     // por invocación, el servidor MCP una sola vez para toda su vida.
@@ -224,6 +263,7 @@ pub fn prepare(
         Err(e) => diagnostics.push(format!("advertencia: {e}")),
     }
 
+    mark("provider.resolve", &mut stages);
     // 4. Verificar revisión — SIEMPRE desde Git, nunca desde el proveedor (ADR-0006).
     // `snap` se tomó al abrir la operación.
     let bound_revision = record
@@ -236,19 +276,21 @@ pub fn prepare(
     let current_revision = snap.head.clone().unwrap_or_default();
     match cache::cache_root(&req.project_root).and_then(|dir| cache::open(&dir).map(|c| (dir, c))) {
         Ok((_dir, conn)) => {
-            // FTS se reconstruye en cada consulta a partir de los Records ya
-            // cargados — barato a esta escala y demuestra regenerabilidad
-            // total sin depender de que el cache sobreviva entre ejecuciones.
-            if let Err(e) = cache::rebuild_fts(&conn, &records) {
-                diagnostics.push(format!(
-                    "advertencia: no se pudo reconstruir el índice FTS: {e}"
-                ));
+            // FTS solo alimenta un diagnóstico (no decide selección): se
+            // reconstruye únicamente con `verbose`. Reconstruirlo en cada
+            // consulta costaba ~0,3 s con 5.000 Records.
+            if req.verbose {
+                if let Err(e) = cache::rebuild_fts(&conn, &records) {
+                    diagnostics.push(format!(
+                        "advertencia: no se pudo reconstruir el índice FTS: {e}"
+                    ));
+                }
             }
 
             // Recuperación determinista antes que semántica (v0.5 §19.1):
             // FTS es un paso de candidatos diagnóstico aquí, no decide
             // selección todavía (eso lo hace compile_packet con el budget real).
-            if let Some(sym) = &symbol {
+            if let Some(sym) = symbol.as_ref().filter(|_| req.verbose) {
                 match cache::search_candidates(&conn, sym, 5) {
                     Ok(candidates) if !candidates.is_empty() => {
                         diagnostics.push(format!("candidatos FTS para '{sym}': {candidates:?}"));
@@ -283,10 +325,11 @@ pub fn prepare(
         )),
     }
 
+    mark("cache+fts", &mut stages);
     // Assessment (Rationale_v0.5.md §5.6): lo que Rationale puede afirmar
     // HOY sobre la vigencia del Record, separado del Record mismo. Nunca
     // se autoaprueba autoridad ni se sirve una revisión no verificada.
-    let computed_assessment = record.map(|record| {
+    let computed_assessment: Option<assessment::Assessment> = record.map(|record| {
         let assessment = assessment::compute(
             record,
             &snap,
@@ -316,6 +359,7 @@ pub fn prepare(
         }
     }
 
+    mark("assessment", &mut stages);
     // 5. Context Compiler vNext: la operación enlaza prepare → trabajo →
     // finalize → UI; el vecindario estructural y las relaciones explicadas
     // se superponen a la memoria causal; el presupuesto es un techo.
@@ -324,10 +368,9 @@ pub fn prepare(
             .iter()
             .map(|m| (m.record.id.clone(), m.kind))
             .collect();
-    let superseded = canon::superseded_ids(&records);
     let active: Vec<&Record> = records
         .iter()
-        .filter(|record| canon::is_active(record, &superseded))
+        .filter(|record| status.is_active(record))
         .collect();
     let gather_clock = Instant::now();
     let mut structural = context::gather(
@@ -339,6 +382,7 @@ pub fn prepare(
             target_symbol: symbol.as_deref(),
             records: &active,
             budget: &req.structural_budget,
+            target_is_dir: target.as_ref().is_ok_and(|t| t.path.is_dir()),
         },
     );
     provider_elapsed += gather_clock.elapsed();
@@ -371,6 +415,27 @@ pub fn prepare(
             provider_elapsed.as_millis(),
         ),
     );
+    let assessment_view = computed_assessment
+        .as_ref()
+        .map(|a| assessment_view(a, req.verbose));
+    // El techo cubre la respuesta MCP completa: se descuenta lo que viaja
+    // fuera del packet.
+    let advise = req.advise.unwrap_or(config.advice.enabled);
+    let mut budget = req.budget.clone();
+    // El consejo se calcula sobre el packet compilado: se le reserva su
+    // tamaño (≈160 tokens) dentro del techo.
+    budget.overhead_tokens = if advise { 160 } else { 0 }
+        + crate::tokens::estimate(
+            &serde_json::json!({
+                "operation_id": operation.operation_id,
+                "packet": null,
+                "assessment": assessment_view,
+                "latency_ms": 99999,
+            })
+            .to_string(),
+            "",
+        );
+    mark("structure.gather", &mut stages);
     let packet = retrieval::compile(
         retrieval::PacketInput {
             git_head: snap.head.clone(),
@@ -381,7 +446,7 @@ pub fn prepare(
             intent: req.intent.as_deref(),
             resolved_target,
             provider_warnings,
-            budget: &req.budget,
+            budget: &budget,
             governing: &governing_by_kind,
             operation_id: Some(operation.operation_id.clone()),
             target: Some(retrieval::PacketTarget {
@@ -390,10 +455,27 @@ pub fn prepare(
                 symbol,
                 qualified_name: operation.target.qualified_name.clone(),
             }),
+            status: &status,
+            scope: target_scope,
+            repo_path: Some(&req.repo_path),
+            missing_target,
         },
         Some(&mut structural),
     );
 
+    mark("compile", &mut stages);
+    let mut packet = packet;
+    if advise {
+        packet.execution_advice = Some(crate::advice::advise(
+            &packet,
+            packet.target.as_ref().and_then(|t| t.file_path.as_deref()),
+            &config.advice.models,
+        ));
+        let total =
+            retrieval::estimate_tokens(&packet) + budget.overhead_tokens.saturating_sub(160);
+        packet.token_estimate = total;
+        packet.budget.estimated_tokens = total;
+    }
     let mut selected_records: Vec<String> = packet
         .critical_constraints
         .iter()
@@ -435,14 +517,75 @@ pub fn prepare(
         activity::payload::packet_compiled(&operation, packet.budget_overflow.as_deref()),
     );
 
+    mark("operation.save", &mut stages);
+    diagnostics.push(format!(
+        "timing_us: {}",
+        stages
+            .iter()
+            .map(|(name, us)| format!("{name}={us}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    ));
     Ok(PrepareOutcome {
         packet,
-        assessment: computed_assessment,
+        assessment_view,
         diagnostics,
         latency_ms: t0.elapsed().as_millis(),
         operation,
         activity: scope,
     })
+}
+
+/// Lo que el agente necesita del assessment: el Record, su estado y el
+/// motivo. La resolución por binding solo con `verbose` (depuración).
+fn assessment_view(assessment: &assessment::Assessment, verbose: bool) -> serde_json::Value {
+    if verbose {
+        return serde_json::to_value(assessment).unwrap_or_default();
+    }
+    serde_json::json!({
+        "record_id": assessment.record_id,
+        "state": assessment.state,
+        "assessment_reason": assessment.assessment_reason,
+    })
+}
+
+/// Records vigentes atados a una ruta que ya no existe (o a algo debajo de
+/// ella): la huella de un módulo retirado cuyos Records siguen activos.
+pub fn records_bound_to_missing_path(
+    spec: &str,
+    records: &[Record],
+    status: &lifecycle::StatusIndex,
+) -> Vec<String> {
+    let (path, _) = project::parse_target_spec(spec);
+    let path = path.replace('\\', "/");
+    let path = path
+        .trim_start_matches("./")
+        .trim_end_matches('/')
+        .to_string();
+    if path.is_empty() {
+        return Vec::new();
+    }
+    let as_file = binding_match::TargetKey {
+        rel_path: Some(path.clone()),
+        symbol: None,
+        is_dir: false,
+    };
+    let as_folder = binding_match::TargetKey {
+        rel_path: Some(path),
+        symbol: None,
+        is_dir: true,
+    };
+    let mut ids: Vec<String> = records
+        .iter()
+        .filter(|r| status.is_active(r))
+        .filter(|r| {
+            binding_match::match_record(&as_file, r).is_some()
+                || binding_match::match_record(&as_folder, r).is_some()
+        })
+        .map(|r| r.id.clone())
+        .collect();
+    ids.sort();
+    ids
 }
 
 /// Salida de `health` — Rationale_v0.5.md §24: revisión, working tree,
@@ -457,6 +600,38 @@ pub struct HealthOutcome {
     pub provider_status: ProviderStatus,
     pub provider_coverage: Coverage,
     pub provider_error: Option<String>,
+    /// Operaciones que `prepare_change` abrió y nadie finalizó ni abandonó.
+    pub open_operations: operations::OpenSummary,
+    pub canon: CanonSummary,
+}
+
+/// Lo mínimo para saber qué memoria hay: cuántos Records gobiernan y cuántos
+/// fijó una persona.
+#[derive(Debug, Clone, Serialize)]
+pub struct CanonSummary {
+    pub records: usize,
+    pub active: usize,
+    pub pinned: usize,
+    pub human_stated: usize,
+    pub inactive: usize,
+}
+
+pub fn canon_summary(records: &[Record]) -> CanonSummary {
+    let status = lifecycle::StatusIndex::build(records);
+    let active: Vec<&Record> = records.iter().filter(|r| status.is_active(r)).collect();
+    CanonSummary {
+        records: records.len(),
+        active: active.len(),
+        pinned: active
+            .iter()
+            .filter(|r| storage::record_authority(r) == storage::RecordAuthority::Pinned)
+            .count(),
+        human_stated: active
+            .iter()
+            .filter(|r| storage::provenance_kind(r) == storage::ProvenanceKind::HumanStated)
+            .count(),
+        inactive: records.len() - active.len(),
+    }
 }
 
 pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> Result<HealthOutcome, String> {
@@ -476,7 +651,11 @@ pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> Result<Heal
         ),
     };
 
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    let records = storage::list_records(&config.rationale_dir.join("records")).unwrap_or_default();
     Ok(HealthOutcome {
+        open_operations: operations::open_summary(&local_dir),
+        canon: canon_summary(&records),
         project_id: config.project_id,
         project_root: config.project_root,
         git_revision: snap.head,
@@ -488,9 +667,11 @@ pub fn health(project_root: &Path, provider: &mut ProviderHandle) -> Result<Heal
 }
 
 /// Un Record que gobierna el target, tal como lo expone `explain_target`.
+/// Siempre vigente: lo reemplazado, revocado o retirado va a `history`.
 #[derive(Debug, Serialize)]
 pub struct GoverningRecord {
     pub id: String,
+    pub kind: String,
     pub statement: String,
     pub rationale: Option<String>,
     pub authority: String,
@@ -502,6 +683,28 @@ pub struct GoverningRecord {
     /// `explain` sean auditablemente consistentes entre sí, nunca solo
     /// "confía en que coinciden".
     pub match_kind: String,
+    pub why: String,
+    /// Records que este reemplazó.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub replaces: Vec<String>,
+    #[serde(flatten)]
+    pub caveats: retrieval::Caveats,
+}
+
+/// Un Record atado al target que ya no gobierna. Sin `include_history` se
+/// sirve solo su identidad, estado y reemplazo; con él, también su texto.
+#[derive(Debug, Serialize)]
+pub struct HistoricalRecord {
+    pub id: String,
+    pub kind: String,
+    /// `superseded | revoked | retired`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statement: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -515,6 +718,7 @@ pub struct SubjectSummary {
 pub struct ExplainOutcome {
     pub resolved_target: Option<String>,
     pub governing_records: Vec<GoverningRecord>,
+    pub history: Vec<HistoricalRecord>,
     pub subject: Option<SubjectSummary>,
     /// Lo que Rationale puede afirmar con evidencia — nunca "no existe una
     /// decisión" cuando en realidad es "no se encontró dentro de la
@@ -532,6 +736,7 @@ pub fn explain(
     target_spec: &str,
     project_root: &Path,
     repo_path: &Path,
+    include_history: bool,
 ) -> Result<ExplainOutcome, String> {
     let mut diagnostics = Vec::new();
     let mut known = Vec::new();
@@ -557,34 +762,70 @@ pub fn explain(
         .ok()
         .map(|t| binding_match::target_key(repo_path, t))
         .unwrap_or_default();
-    let governing_matches = binding_match::governing(&key, &records);
+    let all_matches = binding_match::governing(&key, &records);
+    let status = lifecycle::StatusIndex::build(&records);
+    let (governing_matches, inactive_matches): (Vec<_>, Vec<_>) = all_matches
+        .into_iter()
+        .partition(|m| status.is_active(m.record));
     let governing: Vec<&Record> = governing_matches.iter().map(|m| m.record).collect();
 
     if governing.is_empty() {
         unknown.push(
-            "no se encontró ningún Record con un binding exacto hacia este target dentro de la \
-             cobertura disponible; no implica que ninguna decisión lo gobierne"
+            "no active Record is bound to this target within the available coverage; that does \
+             not mean no decision governs it"
                 .to_string(),
         );
     } else {
         known.push(format!(
-            "{} Record(s) gobiernan este target por binding exacto",
+            "{} active Record(s) govern this target by binding",
             governing.len()
         ));
     }
+    if !inactive_matches.is_empty() {
+        known.push(format!(
+            "{} Record(s) bound to this target no longer govern it (see history); do not apply \
+             them",
+            inactive_matches.len()
+        ));
+    }
 
+    let mut tree = Some(crate::symbols::WorkingTree::new(repo_path));
     let governing_records: Vec<GoverningRecord> = governing_matches
         .iter()
         .map(|m| GoverningRecord {
+            caveats: retrieval::caveats_for(m.record, &status, &mut tree),
             id: m.record.id.clone(),
+            kind: m.record.kind.clone(),
             statement: m.record.statement.clone(),
             rationale: m.record.rationale.clone(),
             authority: storage::authority_label(m.record).to_string(),
             provenance: storage::provenance_kind(m.record).as_str().to_string(),
             epistemic_status: m.record.epistemic_status.to_string(),
             match_kind: m.kind.as_str().to_string(),
+            why: m.kind.reason().to_string(),
+            replaces: m
+                .record
+                .supersedes
+                .iter()
+                .filter(|id| status.replaced_by(id) == Some(m.record.id.as_str()))
+                .cloned()
+                .collect(),
         })
         .collect();
+    let mut history: Vec<HistoricalRecord> = inactive_matches
+        .iter()
+        .map(|m| HistoricalRecord {
+            id: m.record.id.clone(),
+            kind: m.record.kind.clone(),
+            status: status.status(m.record).as_str().to_string(),
+            replaced_by: status.current_replacement(&m.record.id).map(str::to_string),
+            statement: include_history.then(|| m.record.statement.clone()),
+            rationale: include_history
+                .then(|| m.record.rationale.clone())
+                .flatten(),
+        })
+        .collect();
+    history.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut subject = None;
     if let Some(primary) = governing.first() {
@@ -621,6 +862,7 @@ pub fn explain(
     Ok(ExplainOutcome {
         resolved_target,
         governing_records,
+        history,
         subject,
         known,
         unknown,

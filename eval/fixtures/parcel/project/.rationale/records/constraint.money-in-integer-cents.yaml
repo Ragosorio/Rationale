@@ -1,0 +1,36 @@
+id: constraint.money-in-integer-cents
+kind: constraint
+severity: critical
+statement: "Monetary amounts are integers in cents from quote to invoice; never store, sum or compare floating-point currency."
+rationale: "Incident INC-12 double-charged customers when float totals from quoteRate and issueInvoice rounded differently."
+epistemic_status: stated
+authority: pinned
+provenance:
+  kind: human_stated
+  actor: 'user:owner <owner@example.invalid>'
+  stated_at: 2026-08-01T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.constraint.money-in-integer-cents.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/shipping/rates.ts
+  provisional: false
+- id: binding.constraint.money-in-integer-cents.1
+  type: symbol
+  provider: fixture
+  structural_id: src.shipping.rates.toCents
+  path_hint: src/shipping/rates.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-08-01T10:00:00Z

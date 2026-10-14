@@ -16,10 +16,13 @@ Use this protocol at the start of every conversation that may change code:
    how it connects; it does not decide why the code must remain as it is.
 2. Before changing non-trivial code, call Rationale's
    `prepare_change(target, intent)` with the target you found and your actual
-   intended change. Keep the returned `operation_id`. Read the constraints
-   and decisions that govern the target, the explained relationships with
-   their structural state (`observed`, `indirect`, `orphaned`, `unknown`),
-   risks, unknowns, provider coverage, and intent conflicts.
+   intended change. Keep the returned `operation_id`. Read `retrieval.status`
+   first, then the active constraints and decisions that govern the target,
+   inherited constraints from code it depends on, the explained relationships
+   with their structural state (`observed`, `indirect`, `orphaned`,
+   `unknown`), risks, unknowns, provider coverage, and intent conflicts.
+   Records under `history` were superseded, revoked, or retired: never apply
+   them as current.
 3. If the packet reports a governing Record or a conflict with your intent,
    say so explicitly. Compare the proposed change with the Record; do not
    silently proceed and do not call an undetermined conflict a proven semantic
@@ -38,6 +41,9 @@ Use this protocol at the start of every conversation that may change code:
    noise and duplicates and writes the rest as canonical Records in the same
    call; there is no approval queue. When nothing durable was learned, send no
    candidates. Report what was written and what was discarded, with reasons.
+   If you prepared a change and did not make it, close the operation with
+   `finalize_change(operation_id, abandon: true, summary)` and the reason;
+   never leave it open, and never finalize work that did not happen.
 7. **One decision per Record.** If the work contains several independent
    decisions, send several small candidates — not one that covers everything.
    Split when the parts could be replaced or revoked separately; when they

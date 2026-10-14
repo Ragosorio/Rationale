@@ -40,3 +40,6 @@ fixtures/vertical-slice/repo/
 # construye desde el árbol. Mismo criterio que `.mcp.json`, que se conserva
 # con `cargo run` a propósito.
 .cursor/
+
+# Python bytecode of the evaluation harness
+__pycache__/

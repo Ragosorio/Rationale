@@ -15,9 +15,10 @@ English and Spanish.
 5. [Control Room](user-guide/control-room.md)
 6. [CLI reference](user-guide/cli-reference.md)
 7. [Agents and MCP](user-guide/agents-and-mcp.md)
-8. [Configuration, files, and privacy](user-guide/configuration.md)
-9. [Diagnostics](runbooks/diagnostics.md)
-10. [Master prompt for agents](prompt-master.md)
+8. [Claude Code: hooks and model advice](user-guide/claude-code.md)
+9. [Configuration, files, and privacy](user-guide/configuration.md)
+10. [Diagnostics](runbooks/diagnostics.md)
+11. [Master prompt for agents](prompt-master.md)
 
 ## I want to contribute
 
@@ -29,6 +30,7 @@ English and Spanish.
 6. [Work items and evidence](work-items/)
 7. [Build and test](runbooks/build-and-test.md)
 8. [Skill source and evals](../skills/rationale/)
+9. [Retrieval evaluation](../eval/README.md)
 
 ## I want to operate an installation
 
@@ -42,6 +44,8 @@ English and Spanish.
 
 ## I want to understand the design
 
+- [Context integrity (1.2): evidence, before and after](work-items/context-integrity-1.2.md)
+- [Research behind 1.2](research/context-integrity-2026-10.md)
 - [Plan and history of the 1.0 model](work-items/vnext-implementation-plan.md)
 - [1.0 release verification](work-items/v1.0-release-verification.md)
 - [Product contract](../Rationale_v0.5.md)

@@ -65,8 +65,13 @@ Keep the returned `operation_id`. `finalize_change` closes the same operation.
 
 [packet.md](packet.md) explains every field. The ones that shape the decision:
 
+- `retrieval.status` first: `found`, `none_found`, `index_incomplete`, or
+  `target_missing` tell you what kind of answer you got.
 - `critical_constraints` and `decisions` with `governs_target: true` govern
-  your change. Note each one's `authority` and `provenance`.
+  your change. Note each one's `authority`, `provenance`, and `why`.
+- `inherited_constraints` are invariants that reach the target through code it
+  uses: they bind your change as much as its own Records.
+- `history` lists Records that no longer govern. Do not apply them.
 - `relationships` explain why edges around the target exist, with their state.
 - `intent_conflicts` flag Records that may oppose your intent.
   `detection: governs-target` means the Record is bound to the target (a fact);
@@ -95,6 +100,9 @@ State each of these when present. None of them proves anything on its own.
 - `known_unknowns` and `warnings`;
 - `budget_overflow`: governing knowledge exceeded the token ceiling and was
   still delivered in full, so the packet is larger than requested;
+- `omitted`: sections cut to fit the budget, each with the call that brings it
+  back; fetch what your change needs;
+- `stale_bindings` or an `orphaned_exception` flag on a Record;
 - a `resolved_target` that is not the code you meant.
 
 ## 6. Decide the next step
@@ -102,6 +110,7 @@ State each of these when present. None of them proves anything on its own.
 | Situation | Next step |
 |---|---|
 | Nothing governs the target | Proceed. Capture may still be needed afterwards. |
+| You decide not to change the code | Close the operation: `finalize_change(operation_id, abandon=true, summary="why")`. |
 | Every verdict is `respects` | Proceed with the smallest change consistent with the packet. |
 | Contradicts a `normal` Record | Proceed only if the user's request requires it. Tell the user, and plan a capture candidate that names the Record in `supersedes` and explains the new reason. |
 | Contradicts a `pinned` Record | Stop. Explain the rule and how the intent collides with it, and ask the person whether to change the plan or pursue a replacement they will decide. |

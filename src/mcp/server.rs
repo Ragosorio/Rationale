@@ -273,12 +273,14 @@ fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "target": {"type": "string", "description": "path or path::symbol inside the project, e.g. src/main.rs::cmd_prepare"},
+                    "target": {"type": "string", "description": "path::symbol, a file, or a folder inside the project, e.g. src/main.rs::cmd_prepare or src/providers"},
                     "intent": {"type": "string", "description": "The change you actually intend. When present, intent-conflict detection runs automatically"},
                     "mode": {"type": "string", "enum": ["baseline", "intent-aware"], "description": "Usually unnecessary: the mode follows from whether 'intent' is present. Pass 'baseline' to force plain retrieval even with an intent."},
                     "project_root": {"type": "string", "description": "Default: the Rationale project that contains the server's working directory"},
                     "repo_path": {"type": "string"},
-                    "max_tokens": {"type": "integer"},
+                    "max_tokens": {"type": "integer", "description": "Ceiling for this whole response, as an upper-bound token estimate (default 2400). Governing knowledge is never cut; what does not fit is listed in packet.omitted with the call that returns it"},
+                    "verbose": {"type": "boolean", "description": "Also return pipeline diagnostics and the per-binding assessment (debugging only)"},
+                    "advise": {"type": "boolean", "description": "Add execution_advice: a model tier and reasoning effort derived from this packet's risk signals, with reasons (a heuristic; default from advice.enabled in .rationale/config.yaml)"},
                     "max_critical_constraints": {"type": "integer"},
                     "max_risks": {"type": "integer"},
                     "max_nodes": {"type": "integer", "description": "Ceiling for structural nodes in the packet (default 12)"},
@@ -289,11 +291,12 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "explain_target",
-            "description": "Explains why a target exists: the Records that govern it by exact binding, its Subject, and what is known versus unknown. Call it before simplifying or removing code that looks redundant or odd.",
+            "description": "Explains why a target exists: the active Records that govern it, its Subject, the Records that no longer govern it (history, with status and replacement), and what is known versus unknown. Call it before simplifying or removing code that looks redundant or odd.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "target": {"type": "string"},
+                    "target": {"type": "string", "description": "path, path::symbol, or a folder inside the project"},
+                    "include_history": {"type": "boolean", "description": "Also return the statement and rationale of superseded, revoked, and retired Records (default: id, status, and replacement only)"},
                     "project_root": {"type": "string"},
                     "repo_path": {"type": "string"}
                 },
@@ -302,7 +305,7 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "health",
-            "description": "Git revision, working tree, structural provider status and coverage, and what Rationale does not know.",
+            "description": "Git revision, working tree, structural provider status and coverage, the canon's size (active, pinned, human-stated), and operations still open: prepared changes nobody finalized or abandoned.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -317,6 +320,7 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "operation_id": {"type": "string", "description": "The operation_id returned by prepare_change, if any"},
+                    "abandon": {"type": "boolean", "description": "Close the operation without a change to capture (exploration only, plan dropped). Needs operation_id and a summary with the reason; writes no memory and is never recorded as finalized"},
                     "summary": {"type": "string", "description": "What changed, in one or two sentences. Reported, never stored as memory"},
                     "target": {"type": "string", "description": "path::symbol of the main target (diagnostics only)"},
                     "base_revision": {"type": "string", "description": "Git revision to capture the diff from. Default: the HEAD prepare_change saw for this operation, or HEAD without an operation"},
@@ -334,6 +338,7 @@ fn tool_definitions() -> Value {
                                 "bindings": {"type": "array", "items": {"type": "string"}, "description": "Code the Record governs: 'src/x.rs' or 'src/x.rs::symbol'"},
                                 "relationships": {"type": "array", "description": "Relationships this Record explains, as path::symbol endpoints; kind is calls, uses, writes, imports, defines, implements, tests, configures, depends_on, http_calls, contains, or decorates. A resolved relationship also anchors the Record", "items": {"type": "object", "required": ["source", "kind", "target"], "properties": {"source": {"type": "string"}, "kind": {"type": "string"}, "target": {"type": "string"}}}},
                                 "supersedes": {"type": "array", "items": {"type": "string"}, "description": "ids of active Records this one explicitly replaces"},
+                                "exception_to": {"type": "array", "items": {"type": "string"}, "description": "For kind exception: ids of the Records whose rule it relaxes. Without it nobody can tell when the exception stops applying"},
                                 "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
                                 "id": {"type": "string", "description": "Optional: '<kind>.<slug>'; generated when absent"},
                                 "risks": {"type": "array", "items": {"type": "string"}},
@@ -510,7 +515,13 @@ fn call_prepare_change(
             .and_then(|v| v.as_u64())
             .map(|n| n as usize)
             .unwrap_or(default_budget.max_risks),
+        overhead_tokens: 0,
     };
+    let verbose = args
+        .get("verbose")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let advise = args.get("advise").and_then(Value::as_bool);
 
     let structural_default = context::StructuralBudget::default();
     let arg_usize = |field: &str| args.get(field).and_then(Value::as_u64).map(|n| n as usize);
@@ -530,18 +541,24 @@ fn call_prepare_change(
             budget,
             structural_budget,
             actor: session.actor.clone(),
+            verbose,
+            advise,
         },
         provider,
         &session.recorder,
     )?;
 
-    let response = json!({
+    // `packet.budget` cubre esta respuesta completa: el pipeline descontó el
+    // `operation_id`, el `assessment` compacto y la latencia del techo.
+    let mut response = json!({
         "operation_id": outcome.operation.operation_id,
         "packet": outcome.packet,
-        "assessment": outcome.assessment,
-        "diagnostics": outcome.diagnostics,
+        "assessment": outcome.assessment_view,
         "latency_ms": outcome.latency_ms,
     });
+    if verbose {
+        response["diagnostics"] = json!(outcome.diagnostics);
+    }
     session.recorder.emit(
         &outcome.activity,
         "packet.delivered",
@@ -560,11 +577,16 @@ fn call_explain_target(args: &Value) -> Result<Value, String> {
         .ok_or_else(|| "falta el argumento requerido 'target'".to_string())?;
     let (project_root, repo_path) = resolve_roots(args)?;
 
-    let outcome = pipeline::explain(target, &project_root, &repo_path)?;
+    let include_history = args
+        .get("include_history")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let outcome = pipeline::explain(target, &project_root, &repo_path, include_history)?;
 
     Ok(json!({
         "resolved_target": outcome.resolved_target,
         "governing_records": outcome.governing_records,
+        "history": outcome.history,
         "subject": outcome.subject,
         "known": outcome.known,
         "unknown": outcome.unknown,
@@ -588,6 +610,8 @@ fn call_health(args: &Value, provider: &mut ProviderHandle) -> Result<Value, Str
         "provider_status": provider_status_label(&outcome.provider_status),
         "provider_coverage": coverage_label(&outcome.provider_coverage),
         "provider_error": outcome.provider_error,
+        "canon": outcome.canon,
+        "open_operations": outcome.open_operations,
     }))
 }
 
@@ -596,6 +620,9 @@ fn call_finalize_change(
     provider: &mut ProviderHandle,
     session: &Session,
 ) -> Result<Value, String> {
+    if args.get("abandon").and_then(Value::as_bool) == Some(true) {
+        return call_abandon_operation(args, session);
+    }
     let optional_str = |field: &str| -> Option<String> {
         args.get(field)
             .and_then(Value::as_str)
@@ -638,6 +665,57 @@ fn call_finalize_change(
         &session.recorder,
     )?;
     serde_json::to_value(&outcome).map_err(|e| format!("no se pudo serializar la respuesta: {e}"))
+}
+
+/// `finalize_change` con `abandon: true`: cierra una operación sin captura.
+/// Nunca escribe memoria ni se registra como finalizada.
+fn call_abandon_operation(args: &Value, session: &Session) -> Result<Value, String> {
+    let operation_id = args
+        .get("operation_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(|| "abandon needs the operation_id to close".to_string())?;
+    if args
+        .get("candidates")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+    {
+        return Err(
+            "an abandoned operation writes no memory: drop the candidates, or finalize \
+             normally if the change happened"
+                .to_string(),
+        );
+    }
+    let reason = args
+        .get("summary")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| {
+            "abandon needs a summary saying why no change is being finalized".to_string()
+        })?;
+    let (project_root, _) = resolve_roots(args)?;
+    let config = configuration::load(&project_root).map_err(|e| e.to_string())?;
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    let by = format!("agent:{}", session.actor.client);
+    let operation = crate::operations::record_abandon(&local_dir, operation_id, reason, &by)?;
+    let scope = activity::Scope::new(
+        &local_dir,
+        &config.project_root,
+        &config.project_id,
+        &session.actor,
+    )
+    .with_operation(operation_id);
+    session.recorder.emit(
+        &scope,
+        "operation.abandoned",
+        activity::payload::operation_abandoned(operation_id),
+    );
+    Ok(json!({
+        "operation_id": operation.operation_id,
+        "state": operation.state().as_str(),
+        "abandoned": operation.abandoned,
+        "memory_written": false,
+    }))
 }
 
 fn call_resolve_conflict(args: &Value, session: &Session) -> Result<Value, String> {

@@ -1,0 +1,43 @@
+id: decision.when-the-structural-index-does-not-confirm
+kind: decision
+severity: high
+statement: When the structural index does not confirm a symbol that the file defines, capture binds the Record to the symbol lexically (symbol, no structural_id) instead of to the whole file, and never invents a structural identity.
+rationale: A stale index made Records for symbols new on the branch fall back to file bindings, which then governed every symbol in the file; a structural_id the provider never confirmed would break policy.no-inferred-blocks.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a13b110f6fc79effda
+  session_id: session_1a13b51b3aba9564675
+  asserted_at: 2026-10-14T16:49:33Z
+approvals: []
+binding_declarations:
+- id: binding.decision.when-the-structural-index-does-not-confirm.symbol.0
+  type: symbol
+  provider: null
+  structural_id: null
+  path_hint: src/canon.rs
+  provisional: false
+  symbol: resolve_bindings
+- id: binding.decision.when-the-structural-index-does-not-confirm.symbol.1
+  type: symbol
+  provider: null
+  structural_id: null
+  path_hint: src/symbols.rs
+  provisional: false
+  symbol: find_definition
+evidence: []
+risks: []
+bound_revision: b93f9f78eadb6179beaafee57d25d3b313e6bd50
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-10-14T16:49:33Z
+    operation_id: op_1a13b110f6fc79effda

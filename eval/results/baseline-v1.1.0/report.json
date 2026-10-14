@@ -1,0 +1,455 @@
+{
+  "generated_at": "2026-10-14T15:47:00Z",
+  "machine": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python": "3.12.13"
+  },
+  "synthetic": true,
+  "estimator": "ASCII chars/2.7 + code chars/2.0 + 1 per non-ASCII char (see eval/README.md)",
+  "runs": {
+    "v1.1.0": {
+      "binary_version": "rationale v1.1.0",
+      "summary": {
+        "scenarios": 14,
+        "passed": 1,
+        "inactive_served_as_authority": 6,
+        "out_of_scope_served": 3,
+        "missing_required": 10,
+        "irrelevant_served": 8,
+        "tokens_p50": 741,
+        "tokens_p95": 2213,
+        "tokens_max": 2427
+      },
+      "retrieval": {
+        "scenarios": [
+          {
+            "id": "Q1",
+            "category": "superseded",
+            "title": "explain a symbol whose decision was superseded (both sides marked)",
+            "is_error": false,
+            "served_authority": [
+              "constraint.money-in-integer-cents",
+              "decision.rate-cache-ttl-5m",
+              "decision.rate-cache-ttl-60s",
+              "decision.remote-zone-flat-surcharge"
+            ],
+            "missing": [],
+            "forbidden_served": [
+              "decision.rate-cache-ttl-5m"
+            ],
+            "inactive_served": [
+              "decision.rate-cache-ttl-5m"
+            ],
+            "irrelevant_served": [
+              "constraint.money-in-integer-cents",
+              "decision.remote-zone-flat-surcharge"
+            ],
+            "tokens": 625,
+            "legacy_tokens": 422,
+            "bytes": 1685,
+            "latency_ms": 2.13,
+            "checks": {},
+            "passed": false
+          },
+          {
+            "id": "Q2",
+            "category": "superseded",
+            "title": "explain a symbol whose old decision is replaced only through `supersedes`",
+            "is_error": false,
+            "served_authority": [
+              "constraint.no-weekend-pickups",
+              "constraint.shipment-idempotency-key",
+              "decision.cancel-requires-carrier-ack",
+              "decision.label-retry-exponential-backoff",
+              "decision.label-retry-fixed-3x"
+            ],
+            "missing": [],
+            "forbidden_served": [
+              "constraint.no-weekend-pickups",
+              "decision.label-retry-fixed-3x"
+            ],
+            "inactive_served": [
+              "constraint.no-weekend-pickups",
+              "decision.label-retry-fixed-3x"
+            ],
+            "irrelevant_served": [
+              "constraint.shipment-idempotency-key",
+              "decision.cancel-requires-carrier-ack"
+            ],
+            "tokens": 741,
+            "legacy_tokens": 500,
+            "bytes": 1999,
+            "latency_ms": 1.22,
+            "checks": {},
+            "passed": false
+          },
+          {
+            "id": "Q3",
+            "category": "symbol",
+            "title": "prepare a symbol in a file with Records bound to other symbols",
+            "is_error": false,
+            "served_authority": [
+              "constraint.shipment-idempotency-key",
+              "decision.cancel-requires-carrier-ack",
+              "decision.label-retry-exponential-backoff",
+              "decision.label-retry-fixed-3x"
+            ],
+            "missing": [],
+            "forbidden_served": [
+              "decision.label-retry-fixed-3x"
+            ],
+            "inactive_served": [
+              "decision.label-retry-fixed-3x"
+            ],
+            "irrelevant_served": [
+              "constraint.shipment-idempotency-key",
+              "decision.label-retry-exponential-backoff"
+            ],
+            "tokens": 2213,
+            "legacy_tokens": 1473,
+            "bytes": 5890,
+            "latency_ms": 63.46,
+            "checks": {},
+            "passed": false
+          },
+          {
+            "id": "Q4",
+            "category": "folder",
+            "title": "prepare a folder",
+            "is_error": false,
+            "served_authority": [],
+            "missing": [
+              "constraint.money-in-integer-cents",
+              "constraint.shipment-idempotency-key",
+              "decision.cancel-requires-carrier-ack",
+              "decision.dhl-sandbox-env-flag",
+              "decision.label-retry-exponential-backoff",
+              "decision.rate-cache-ttl-60s",
+              "decision.remote-zone-flat-surcharge"
+            ],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [],
+            "tokens": 419,
+            "legacy_tokens": 283,
+            "bytes": 1129,
+            "latency_ms": 108.27,
+            "checks": {},
+            "passed": false
+          },
+          {
+            "id": "Q5",
+            "category": "cross-module",
+            "title": "prepare a billing symbol that calls the shipping invariant",
+            "is_error": false,
+            "served_authority": [
+              "decision.invoice-rounding-bankers"
+            ],
+            "missing": [
+              "constraint.money-in-integer-cents"
+            ],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [],
+            "tokens": 1416,
+            "legacy_tokens": 939,
+            "bytes": 3755,
+            "latency_ms": 51.89,
+            "checks": {},
+            "passed": false
+          },
+          {
+            "id": "Q6",
+            "category": "exception",
+            "title": "prepare the secret rotation symbol with an orphaned exception",
+            "is_error": false,
+            "served_authority": [
+              "constraint.rotate-secrets-30d",
+              "exception.legacy-kms-skips-rotation"
+            ],
+            "missing": [],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [],
+            "tokens": 1581,
+            "legacy_tokens": 1048,
+            "bytes": 4192,
+            "latency_ms": 113.27,
+            "checks": {
+              "orphaned_exception_flagged": {
+                "passed": false,
+                "detail": "the orphaned exception is not flagged"
+              }
+            },
+            "passed": false
+          },
+          {
+            "id": "Q7",
+            "category": "retired-module",
+            "title": "prepare a symbol that Records of a retired module still bind",
+            "is_error": false,
+            "served_authority": [
+              "constraint.comunicaciones-template-ids-stable",
+              "decision.comunicaciones-email-via-outbox",
+              "decision.notifications-replaces-comunicaciones",
+              "decision.sms-max-160-chars"
+            ],
+            "missing": [],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [
+              "decision.sms-max-160-chars"
+            ],
+            "tokens": 2427,
+            "legacy_tokens": 1625,
+            "bytes": 6499,
+            "latency_ms": 123.05,
+            "checks": {
+              "stale_records_flagged": {
+                "passed": false,
+                "detail": "served without a stale flag: ['constraint.comunicaciones-template-ids-stable', 'decision.comunicaciones-email-via-outbox']"
+              },
+              "no_phantom_nodes": {
+                "passed": false,
+                "detail": "nodes from files that no longer exist: ['src/comunicaciones/outbox.ts']"
+              }
+            },
+            "passed": false
+          },
+          {
+            "id": "Q8",
+            "category": "folder",
+            "title": "explain a folder",
+            "is_error": false,
+            "served_authority": [],
+            "missing": [
+              "decision.notifications-replaces-comunicaciones",
+              "decision.sms-max-160-chars"
+            ],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [],
+            "tokens": 140,
+            "legacy_tokens": 94,
+            "bytes": 375,
+            "latency_ms": 1.24,
+            "checks": {},
+            "passed": false
+          },
+          {
+            "id": "Q9",
+            "category": "stale-index",
+            "title": "prepare a symbol created on the branch and missing from the index",
+            "is_error": false,
+            "served_authority": [
+              "constraint.shipment-idempotency-key",
+              "decision.cancel-requires-carrier-ack",
+              "decision.label-retry-exponential-backoff",
+              "decision.label-retry-fixed-3x"
+            ],
+            "missing": [],
+            "forbidden_served": [
+              "constraint.shipment-idempotency-key",
+              "decision.cancel-requires-carrier-ack",
+              "decision.label-retry-exponential-backoff",
+              "decision.label-retry-fixed-3x"
+            ],
+            "inactive_served": [
+              "decision.label-retry-fixed-3x"
+            ],
+            "irrelevant_served": [],
+            "tokens": 1972,
+            "legacy_tokens": 1328,
+            "bytes": 5311,
+            "latency_ms": 30.27,
+            "checks": {
+              "index_incomplete_reported": {
+                "passed": false,
+                "detail": "retrieval.status=None"
+              }
+            },
+            "passed": false
+          },
+          {
+            "id": "Q10",
+            "category": "budget",
+            "title": "prepare with a tight budget",
+            "is_error": false,
+            "served_authority": [
+              "constraint.money-in-integer-cents",
+              "decision.rate-cache-ttl-60s",
+              "decision.remote-zone-flat-surcharge"
+            ],
+            "missing": [],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [
+              "decision.remote-zone-flat-surcharge"
+            ],
+            "tokens": 1391,
+            "legacy_tokens": 907,
+            "bytes": 3625,
+            "latency_ms": 31.84,
+            "checks": {
+              "within_budget": {
+                "passed": false,
+                "detail": "1391 estimated tokens for a budget of 700"
+              }
+            },
+            "passed": false
+          },
+          {
+            "id": "Q11",
+            "category": "retired-module",
+            "title": "prepare a path of the retired module",
+            "is_error": false,
+            "served_authority": [],
+            "missing": [],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [],
+            "tokens": 316,
+            "legacy_tokens": 213,
+            "bytes": 851,
+            "latency_ms": 32.54,
+            "checks": {
+              "retired_target_explained": {
+                "passed": false,
+                "detail": "retrieval.status=None, records_bound_to_missing_path=0"
+              }
+            },
+            "passed": false
+          },
+          {
+            "id": "Q12",
+            "category": "file",
+            "title": "prepare a whole file",
+            "is_error": false,
+            "served_authority": [
+              "decision.refund-floor-rounding"
+            ],
+            "missing": [],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [],
+            "tokens": 1039,
+            "legacy_tokens": 700,
+            "bytes": 2800,
+            "latency_ms": 116.66,
+            "checks": {},
+            "passed": true
+          },
+          {
+            "id": "Q13",
+            "category": "superseded",
+            "title": "prepare a symbol whose pinned rule superseded an older rule",
+            "is_error": false,
+            "served_authority": [
+              "constraint.rotate-secrets-30d",
+              "constraint.rotate-secrets-90d",
+              "exception.legacy-kms-skips-rotation"
+            ],
+            "missing": [],
+            "forbidden_served": [
+              "constraint.rotate-secrets-90d"
+            ],
+            "inactive_served": [
+              "constraint.rotate-secrets-90d"
+            ],
+            "irrelevant_served": [],
+            "tokens": 470,
+            "legacy_tokens": 317,
+            "bytes": 1267,
+            "latency_ms": 1.12,
+            "checks": {
+              "orphaned_exception_flagged": {
+                "passed": false,
+                "detail": "the orphaned exception is not flagged"
+              }
+            },
+            "passed": false
+          },
+          {
+            "id": "Q14",
+            "category": "abstention",
+            "title": "prepare a symbol no Record governs",
+            "is_error": false,
+            "served_authority": [],
+            "missing": [],
+            "forbidden_served": [],
+            "inactive_served": [],
+            "irrelevant_served": [],
+            "tokens": 731,
+            "legacy_tokens": 485,
+            "bytes": 1940,
+            "latency_ms": 91.34,
+            "checks": {
+              "none_found_reported": {
+                "passed": false,
+                "detail": "retrieval.status=None"
+              }
+            },
+            "passed": false
+          }
+        ],
+        "warm_latency_ms": {
+          "prepare_change": {
+            "n": 200,
+            "p50": 46.19,
+            "p95": 131.9
+          },
+          "explain_target": {
+            "n": 80,
+            "p50": 1.07,
+            "p95": 2.53
+          }
+        }
+      },
+      "cold_latency_ms": {
+        "n": 5,
+        "p50": 43.3,
+        "p95": 96.55
+      },
+      "capture": {
+        "committed": [
+          "decision.split-shipment-keeps-the-parent-shipment-the"
+        ],
+        "governs_its_symbol": true,
+        "leaks_to_other_symbols": true,
+        "passed": false,
+        "binding_lines": [
+          "type: file",
+          "- type: asserted"
+        ],
+        "warnings": [
+          "el proveedor no confirmó el símbolo 'splitShipment' en 'src/shipping/service.ts' — solo se enlaza el archivo"
+        ]
+      },
+      "operations": {
+        "health_reports_open": false,
+        "abandon_supported": false,
+        "abandon_response_error": false,
+        "cli_lists_open": false,
+        "passed": false
+      },
+      "doctor": {
+        "findings": 24,
+        "detected": {
+          "orphaned_exception": false,
+          "inconsistent_supersession": false,
+          "retired_scope_grouped": false,
+          "missing_binding_paths": true
+        },
+        "detected_count": 1,
+        "expected_count": 4,
+        "check_exit_code": 1,
+        "latency_ms": 4.65
+      },
+      "repair": {
+        "supported": false,
+        "passed": false,
+        "detail": "comando desconocido: retire\n"
+      }
+    }
+  }
+}

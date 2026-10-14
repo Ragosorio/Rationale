@@ -1,0 +1,669 @@
+//! Integridad del contexto sobre el proyecto sintético `parcel`
+//! (`eval/fixtures/parcel/`): lo mismo que mide `eval/run_eval.py`, como
+//! aserciones que fallan ante una regresión.
+//!
+//! Historia del fixture: commit inicial con todo el canon; un segundo commit
+//! retira `src/comunicaciones/` sin tocar sus Records; el árbol de trabajo
+//! añade `splitShipment`, que el índice estructural (el grafo del fixture)
+//! todavía no conoce.
+
+use serde_json::{json, Value};
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
+
+const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/eval/fixtures/parcel");
+
+struct Fixture {
+    root: PathBuf,
+}
+
+impl Fixture {
+    fn project(&self) -> PathBuf {
+        self.root.join("parcel")
+    }
+
+    fn home(&self) -> PathBuf {
+        self.root.join("home")
+    }
+
+    fn graph(&self) -> PathBuf {
+        Path::new(FIXTURE).join("graph.json")
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_AUTHOR_NAME", "owner")
+        .env("GIT_AUTHOR_EMAIL", "owner@example.invalid")
+        .env("GIT_COMMITTER_NAME", "owner")
+        .env("GIT_COMMITTER_EMAIL", "owner@example.invalid")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("git debe estar disponible");
+    assert!(status.success(), "git {args:?} falló");
+}
+
+fn fixture() -> Fixture {
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let root = std::env::temp_dir().join(format!(
+        "rationale-integrity-{}-{n}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let fixture = Fixture { root };
+    let project = fixture.project();
+    copy_dir(&Path::new(FIXTURE).join("project"), &project);
+    std::fs::create_dir_all(fixture.home()).unwrap();
+    git(&project, &["init", "-q"]);
+    git(&project, &["config", "user.name", "owner"]);
+    git(&project, &["config", "user.email", "owner@example.invalid"]);
+    git(&project, &["add", "-A"]);
+    git(&project, &["commit", "-q", "-m", "initial"]);
+    std::fs::remove_dir_all(project.join("src/comunicaciones")).unwrap();
+    git(&project, &["add", "-A"]);
+    git(&project, &["commit", "-q", "-m", "retire comunicaciones"]);
+    let service = project.join("src/shipping/service.ts");
+    let mut source = std::fs::read_to_string(&service).unwrap();
+    source.push_str(
+        "\nexport function splitShipment(shipmentId: string, parts: number) {\n  return Array.from({ length: parts }, (_, i) => `${shipmentId}-${i + 1}`);\n}\n",
+    );
+    std::fs::write(service, source).unwrap();
+    fixture
+}
+
+struct Client {
+    child: Child,
+    stdin: ChildStdin,
+    reader: BufReader<std::process::ChildStdout>,
+    next_id: i64,
+}
+
+impl Client {
+    fn start(fixture: &Fixture) -> Self {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_rationale"))
+            .args(["serve", "--client", "claude-code"])
+            .current_dir(fixture.project())
+            .env("HOME", fixture.home())
+            .env(
+                "RATIONALE_PROVIDER",
+                format!("fixture:{}", fixture.graph().display()),
+            )
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("rationale serve debe arrancar");
+        let stdin = child.stdin.take().unwrap();
+        let reader = BufReader::new(child.stdout.take().unwrap());
+        let mut client = Client {
+            child,
+            stdin,
+            reader,
+            next_id: 1,
+        };
+        client.request(
+            "initialize",
+            json!({"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "0"}}),
+        );
+        client
+    }
+
+    fn request(&mut self, method: &str, params: Value) -> Value {
+        let id = self.next_id;
+        self.next_id += 1;
+        let body = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+        writeln!(self.stdin, "{body}").unwrap();
+        self.stdin.flush().unwrap();
+        let mut line = String::new();
+        self.reader.read_line(&mut line).unwrap();
+        serde_json::from_str(line.trim_end()).expect("una línea JSON por respuesta")
+    }
+
+    /// Respuesta de la herramienta: el JSON parseado y el texto completo que
+    /// recibe el agente (sobre el que se mide el presupuesto).
+    fn call(&mut self, tool: &str, arguments: Value) -> (Value, String) {
+        let response = self.request("tools/call", json!({"name": tool, "arguments": arguments}));
+        assert_eq!(response["result"]["isError"], false, "{tool}: {response}");
+        let text = response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        (serde_json::from_str(&text).unwrap(), text)
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Ids que la respuesta presenta como autoridad vigente.
+fn authority(tool: &str, response: &Value) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut collect = |list: &Value, key: &str| {
+        for item in list.as_array().into_iter().flatten() {
+            ids.push(item[key].as_str().unwrap_or_default().to_string());
+        }
+    };
+    if tool == "explain_target" {
+        collect(&response["governing_records"], "id");
+    } else {
+        let packet = &response["packet"];
+        collect(&packet["critical_constraints"], "id");
+        collect(&packet["decisions"], "id");
+        collect(&packet["relationships"], "record_id");
+        collect(&packet["inherited_constraints"], "id");
+    }
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn history_ids(tool: &str, response: &Value) -> Vec<(String, String)> {
+    let list = if tool == "explain_target" {
+        &response["history"]
+    } else {
+        &response["packet"]["history"]
+    };
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            (
+                item["id"].as_str().unwrap().to_string(),
+                item["status"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn superseded_records_are_history_never_authority() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+
+    let (explain, _) = client.call(
+        "explain_target",
+        json!({"target": "src/shipping/rates.ts::quoteRate"}),
+    );
+    let governing = authority("explain_target", &explain);
+    assert!(governing.contains(&"decision.rate-cache-ttl-60s".to_string()));
+    assert!(!governing.contains(&"decision.rate-cache-ttl-5m".to_string()));
+    let history = history_ids("explain_target", &explain);
+    assert!(history.contains(&("decision.rate-cache-ttl-5m".into(), "superseded".into())));
+    assert_eq!(
+        explain["history"][0]["replaced_by"], "decision.rate-cache-ttl-60s",
+        "{explain}"
+    );
+    assert!(explain["history"][0].get("statement").is_none());
+
+    // Reemplazado solo por el `supersedes` del Record nuevo (fusión de ramas
+    // que no actualizó el archivo viejo) y un Record revocado.
+    let (retry, _) = client.call(
+        "explain_target",
+        json!({"target": "src/shipping/service.ts::retryLabel", "include_history": true}),
+    );
+    let governing = authority("explain_target", &retry);
+    assert!(!governing.contains(&"decision.label-retry-fixed-3x".to_string()));
+    assert!(!governing.contains(&"constraint.no-weekend-pickups".to_string()));
+    let old = retry["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["id"] == "decision.label-retry-fixed-3x")
+        .expect("the replaced decision stays as history");
+    assert_eq!(old["status"], "superseded");
+    assert_eq!(
+        old["replaced_by"],
+        "decision.label-retry-exponential-backoff"
+    );
+    assert!(
+        old["statement"].is_string(),
+        "include_history returns the text"
+    );
+
+    let (prepare, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/secrets/rotation.ts::rotateKeys", "intent": "Rotate legacy KMS keys in place"}),
+    );
+    let served = authority("prepare_change", &prepare);
+    assert!(served.contains(&"constraint.rotate-secrets-30d".to_string()));
+    assert!(!served.contains(&"constraint.rotate-secrets-90d".to_string()));
+    let current = prepare["packet"]["critical_constraints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "constraint.rotate-secrets-30d")
+        .unwrap();
+    assert_eq!(
+        current["replaces"],
+        json!(["constraint.rotate-secrets-90d"])
+    );
+}
+
+#[test]
+fn a_symbol_query_sees_only_records_of_that_symbol_and_folders_see_their_contents() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+
+    let (cancel, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping/service.ts::cancelShipment", "intent": "Cancel locally when the carrier is down"}),
+    );
+    assert_eq!(
+        authority("prepare_change", &cancel),
+        ["decision.cancel-requires-carrier-ack"],
+        "Records bound to other symbols of service.ts do not govern cancelShipment"
+    );
+
+    let (folder, _) = client.call("prepare_change", json!({"target": "src/shipping"}));
+    let served = authority("prepare_change", &folder);
+    for id in [
+        "constraint.money-in-integer-cents",
+        "decision.rate-cache-ttl-60s",
+        "decision.label-retry-exponential-backoff",
+        "decision.cancel-requires-carrier-ack",
+        "constraint.shipment-idempotency-key",
+        "decision.dhl-sandbox-env-flag",
+        "decision.remote-zone-flat-surcharge",
+    ] {
+        assert!(
+            served.contains(&id.to_string()),
+            "{id} missing from {served:?}"
+        );
+    }
+    assert!(!served.contains(&"decision.rate-cache-ttl-5m".to_string()));
+}
+
+#[test]
+fn a_record_for_a_symbol_the_index_does_not_know_governs_that_symbol_only() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+    let (finalize, _) = client.call(
+        "finalize_change",
+        json!({
+            "summary": "Add splitShipment",
+            "candidates": [{
+                "kind": "decision",
+                "severity": "medium",
+                "statement": "A split shipment keeps the parent shipment id as the prefix of every part.",
+                "rationale": "Carriers reject multi-parcel labels whose parts do not share the parent reference.",
+                "durability": "durable",
+                "bindings": ["src/shipping/service.ts::splitShipment"]
+            }]
+        }),
+    );
+    let id = finalize["committed"][0]["id"].as_str().unwrap().to_string();
+    let record = std::fs::read_to_string(
+        fixture
+            .project()
+            .join(".rationale/records")
+            .join(format!("{id}.yaml")),
+    )
+    .unwrap();
+    assert!(record.contains("symbol: splitShipment"), "{record}");
+    assert!(
+        !record.contains("type: file"),
+        "no companion file binding: {record}"
+    );
+
+    let (own, _) = client.call(
+        "explain_target",
+        json!({"target": "src/shipping/service.ts::splitShipment"}),
+    );
+    assert_eq!(authority("explain_target", &own), std::slice::from_ref(&id));
+    assert_eq!(
+        own["governing_records"][0]["match_kind"],
+        "unconfirmed-symbol"
+    );
+    let (other, _) = client.call(
+        "explain_target",
+        json!({"target": "src/shipping/service.ts::createShipment"}),
+    );
+    assert!(!authority("explain_target", &other).contains(&id));
+}
+
+fn estimate(text: &str) -> usize {
+    // Misma fórmula que `src/tokens.rs` (cota superior); el código del
+    // target se recuenta aparte.
+    let ascii = text.chars().filter(char::is_ascii).count();
+    (ascii as f64 / 2.7).ceil() as usize + (text.chars().count() - ascii)
+}
+
+#[test]
+fn the_packet_says_why_it_is_incomplete_and_never_serves_deleted_code() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+
+    // Símbolo nuevo en la rama: el índice no lo conoce.
+    let (split, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping/service.ts::splitShipment"}),
+    );
+    assert_eq!(split["packet"]["retrieval"]["status"], "index_incomplete");
+    assert!(authority("prepare_change", &split).is_empty());
+
+    // El índice todavía lista `legacy.ts` (borrado) y `comunicaciones/`.
+    let (email, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/notifications/email.ts::sendEmail"}),
+    );
+    let nodes = email["packet"]["structure"]["nodes"].as_array().unwrap();
+    assert!(nodes.iter().all(|n| fixture
+        .project()
+        .join(n["file_path"].as_str().unwrap())
+        .exists()));
+    let outbox = email["packet"]["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == "decision.comunicaciones-email-via-outbox")
+        .expect("still bound to current code, so still served");
+    assert_eq!(
+        outbox["stale_bindings"],
+        json!(["src/comunicaciones/outbox.ts"])
+    );
+
+    // La ruta del módulo retirado.
+    let (retired, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/comunicaciones/outbox.ts"}),
+    );
+    assert_eq!(retired["packet"]["retrieval"]["status"], "target_missing");
+    assert!(
+        retired["packet"]["retrieval"]["records_bound_to_missing_path"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
+
+    // Nada lo gobierna, y lo dice.
+    let (cache, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shared/cache.ts::cacheGet"}),
+    );
+    assert_eq!(cache["packet"]["retrieval"]["status"], "none_found");
+}
+
+#[test]
+fn invariants_cross_modules_and_orphaned_exceptions_are_flagged() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+
+    let (invoice, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/billing/invoice.ts::issueInvoice", "intent": "Sum invoice lines as floats"}),
+    );
+    let inherited = invoice["packet"]["inherited_constraints"]
+        .as_array()
+        .unwrap();
+    let money = inherited
+        .iter()
+        .find(|c| c["id"] == "constraint.money-in-integer-cents")
+        .expect("the shipping invariant reaches billing through the observed call");
+    assert_eq!(money["via"], "issueInvoice calls toCents");
+
+    let (rotation, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/secrets/rotation.ts::rotateKeys"}),
+    );
+    let exception = rotation["packet"]["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == "exception.legacy-kms-skips-rotation")
+        .unwrap();
+    assert_eq!(exception["flags"], json!(["orphaned_exception"]));
+    assert!(exception["note"]
+        .as_str()
+        .unwrap()
+        .contains("constraint.rotate-secrets-90d (superseded, now constraint.rotate-secrets-30d)"));
+}
+
+#[test]
+fn the_budget_covers_the_whole_response() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+    let (response, text) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping/service.ts::cancelShipment", "max_tokens": 800}),
+    );
+    assert!(estimate(&text) <= 800, "{} > 800", estimate(&text));
+    assert!(
+        response.get("diagnostics").is_none(),
+        "diagnostics only with verbose"
+    );
+    let omitted = response["packet"]["omitted"].as_array().unwrap();
+    assert!(
+        !omitted.is_empty(),
+        "what was cut is listed with how to get it"
+    );
+    assert_eq!(
+        authority("prepare_change", &response),
+        ["decision.cancel-requires-carrier-ack"]
+    );
+}
+
+#[test]
+fn open_operations_are_visible_and_close_only_explicitly() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+    let mut ids = Vec::new();
+    for target in [
+        "src/shipping/service.ts::cancelShipment",
+        "src/billing/invoice.ts::issueInvoice",
+        "src/secrets/rotation.ts::rotateKeys",
+    ] {
+        let (prepared, _) = client.call("prepare_change", json!({"target": target}));
+        ids.push(prepared["operation_id"].as_str().unwrap().to_string());
+    }
+    client.call(
+        "finalize_change",
+        json!({"operation_id": ids[0], "summary": "nothing durable"}),
+    );
+    let (health, _) = client.call("health", json!({}));
+    assert_eq!(health["open_operations"]["count"], 2, "{health}");
+    assert_eq!(
+        health["open_operations"]["oldest"][0]["operation_id"],
+        ids[1]
+    );
+
+    let (abandoned, _) = client.call(
+        "finalize_change",
+        json!({"operation_id": ids[1], "abandon": true, "summary": "Only explored the invoice code."}),
+    );
+    assert_eq!(abandoned["state"], "abandoned");
+    assert_eq!(abandoned["memory_written"], false);
+    let stored: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            fixture
+                .project()
+                .join(".rationale-local/operations")
+                .join(format!("{}.json", ids[1])),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        stored.get("finalized").is_none(),
+        "abandon is never a success"
+    );
+
+    let listing = Command::new(env!("CARGO_BIN_EXE_rationale"))
+        .args(["operations", "--json"])
+        .current_dir(fixture.project())
+        .env("HOME", fixture.home())
+        .output()
+        .unwrap();
+    let listed: Value = serde_json::from_slice(&listing.stdout).unwrap();
+    assert_eq!(listed["open"], 1);
+    assert_eq!(listed["operations"][0]["operation_id"], ids[2]);
+}
+
+fn hook(fixture: &Fixture, event: &str, input: Value) -> Option<Value> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rationale"))
+        .args(["hook", event])
+        .current_dir(fixture.project())
+        .env("HOME", fixture.home())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "a hook never fails the session");
+    let text = String::from_utf8(output.stdout).unwrap();
+    (!text.trim().is_empty()).then(|| serde_json::from_str(text.trim()).unwrap())
+}
+
+#[test]
+fn claude_code_hooks_recover_context_remind_once_and_ask_to_close() {
+    let fixture = fixture();
+    let cwd = fixture.project().display().to_string();
+    let base = |extra: Value| {
+        let mut input = json!({"session_id": "sess-1", "cwd": cwd, "hook_event_name": "x"});
+        for (key, value) in extra.as_object().unwrap() {
+            input[key] = value.clone();
+        }
+        input
+    };
+
+    // Una operación abierta por una sesión anterior.
+    let mut client = Client::start(&fixture);
+    let (earlier, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/billing/refunds.ts::refund"}),
+    );
+    let earlier_id = earlier["operation_id"].as_str().unwrap().to_string();
+
+    let start = hook(
+        &fixture,
+        "session-start",
+        base(json!({"source": "startup"})),
+    )
+    .unwrap();
+    let context = start["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert_eq!(start["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert!(context.contains(&earlier_id), "{context}");
+    assert!(context.contains("CANON_FINDINGS"), "{context}");
+    assert!(context.len() < 2000, "discreet: {} chars", context.len());
+
+    let edit = json!({"tool_name": "Edit", "tool_input": {"file_path": format!("{cwd}/src/secrets/rotation.ts")}});
+    let reminder = hook(&fixture, "pre-edit", base(edit.clone())).unwrap();
+    let text = reminder["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        text.contains("constraint.rotate-secrets-30d (pinned)"),
+        "{text}"
+    );
+    assert!(
+        hook(&fixture, "pre-edit", base(edit)).is_none(),
+        "once per file"
+    );
+    let unruled = json!({"tool_name": "Write", "tool_input": {"file_path": format!("{cwd}/src/shared/cache.ts")}});
+    assert!(hook(&fixture, "pre-edit", base(unruled)).is_none());
+
+    let (prepared, raw) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping/service.ts::cancelShipment"}),
+    );
+    let op = prepared["operation_id"].as_str().unwrap().to_string();
+    hook(
+        &fixture,
+        "post-tool",
+        base(
+            json!({"tool_name": "mcp__rationale__prepare_change", "tool_response": [{"type": "text", "text": raw}]}),
+        ),
+    );
+    let stop = hook(&fixture, "stop", base(json!({"stop_hook_active": false}))).unwrap();
+    assert_eq!(stop["decision"], "block");
+    assert!(stop["reason"].as_str().unwrap().contains(&op));
+    assert!(
+        !stop["reason"].as_str().unwrap().contains(&earlier_id),
+        "only this session's operations"
+    );
+    assert!(hook(&fixture, "stop", base(json!({"stop_hook_active": true}))).is_none());
+    assert!(
+        hook(&fixture, "stop", base(json!({"stop_hook_active": false}))).is_none(),
+        "asks once per operation"
+    );
+}
+
+#[test]
+fn execution_advice_is_opt_in_explained_and_separates_effort_from_context() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+    let (plain, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shared/cache.ts::cacheGet"}),
+    );
+    assert!(plain["packet"].get("execution_advice").is_none(), "opt-in");
+
+    let (quiet, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shared/cache.ts::cacheGet", "advise": true}),
+    );
+    let advice = &quiet["packet"]["execution_advice"];
+    assert_eq!(advice["tier"], "fast");
+    assert_eq!(advice["effort"], "low");
+
+    let (risky, text) = client.call(
+        "prepare_change",
+        json!({
+            "target": "src/secrets/rotation.ts::rotateKeys",
+            "intent": "Never rotate legacy KMS keys",
+            "advise": true
+        }),
+    );
+    let advice = &risky["packet"]["execution_advice"];
+    assert_eq!(advice["tier"], "deep", "{advice}");
+    assert!(matches!(advice["effort"].as_str(), Some("high" | "xhigh")));
+    let reasons = advice["reasons"].to_string();
+    assert!(reasons.contains("pinned"), "{reasons}");
+    assert!(reasons.contains("security"), "{reasons}");
+    assert!(estimate(&text) <= 2400, "advice stays inside the budget");
+
+    let (folder, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping", "advise": true}),
+    );
+    assert_ne!(folder["packet"]["execution_advice"]["context"], "small");
+}

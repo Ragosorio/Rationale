@@ -1,0 +1,164 @@
+{
+  "repo_head": "2afcd0598ecfb0dd66b74d42d7acf517511655c1",
+  "runs": {
+    "v1.1.0": {
+      "first_call_with_cold_index_ms": 326.2,
+      "health_is_error": false,
+      "targets": [
+        {
+          "target": "src/pipeline.rs::explain",
+          "tokens": 3113,
+          "legacy_tokens": 1995,
+          "bytes": 7979,
+          "latency_ms": 131.4,
+          "governing": 1,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/pipeline.rs::prepare",
+          "tokens": 3197,
+          "legacy_tokens": 2050,
+          "bytes": 8200,
+          "latency_ms": 119.6,
+          "governing": 1,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/retrieval.rs::compile",
+          "tokens": 2245,
+          "legacy_tokens": 1410,
+          "bytes": 5638,
+          "latency_ms": 104.8,
+          "governing": 0,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/retrieval.rs::select_constraints",
+          "tokens": 2310,
+          "legacy_tokens": 1454,
+          "bytes": 5814,
+          "latency_ms": 136.7,
+          "governing": 0,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/binding_match.rs::governing",
+          "tokens": 2631,
+          "legacy_tokens": 1671,
+          "bytes": 6681,
+          "latency_ms": 119.3,
+          "governing": 0,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/canon.rs::capture_candidates",
+          "tokens": 2236,
+          "legacy_tokens": 1404,
+          "bytes": 5614,
+          "latency_ms": 155.2,
+          "governing": 0,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/providers/codebase_memory.rs::resolve_project",
+          "tokens": 3068,
+          "legacy_tokens": 1964,
+          "bytes": 7855,
+          "latency_ms": 188.3,
+          "governing": 3,
+          "nodes": 3,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/agents.rs::install",
+          "tokens": 4731,
+          "legacy_tokens": 3085,
+          "bytes": 12340,
+          "latency_ms": 113.1,
+          "governing": 5,
+          "nodes": 10,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/mcp/server.rs::handle_tools_call",
+          "tokens": 3973,
+          "legacy_tokens": 2573,
+          "bytes": 10290,
+          "latency_ms": 120.7,
+          "governing": 3,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/main.rs",
+          "tokens": 2488,
+          "legacy_tokens": 1675,
+          "bytes": 6700,
+          "latency_ms": 47.2,
+          "governing": 2,
+          "nodes": 12,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "src/providers",
+          "tokens": 418,
+          "legacy_tokens": 282,
+          "bytes": 1125,
+          "latency_ms": 36.7,
+          "governing": 0,
+          "nodes": 0,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        },
+        {
+          "target": "site/astro.config.mjs",
+          "tokens": 1156,
+          "legacy_tokens": 779,
+          "bytes": 3115,
+          "latency_ms": 50.4,
+          "governing": 1,
+          "nodes": 1,
+          "nodes_from_missing_files": [],
+          "retrieval": null,
+          "budget_overflow": null
+        }
+      ],
+      "tokens_p50": 2631,
+      "tokens_p95": 3973,
+      "tokens_max": 4731,
+      "over_default_budget": 7,
+      "warm_prepare_ms": {
+        "n": 36,
+        "p50": 121.63,
+        "p95": 151.92
+      }
+    }
+  }
+}

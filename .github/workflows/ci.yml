@@ -69,6 +69,12 @@ jobs:
       - name: Documentation checks
         if: runner.os != 'Windows'
         run: ./scripts/check-docs.sh
+      # La evaluación sintética (eval/) como regresión: cada escenario de
+      # recuperación y cada suite (captura, operaciones, doctor, retire) debe
+      # pasar con el binario que acaban de probar los tests.
+      - name: Retrieval evaluation gate
+        if: runner.os == 'Linux'
+        run: python3 -I eval/run_eval.py --binary dev=target/debug/rationale --out "$RUNNER_TEMP/eval" --warm 1 --cold 1 --check
       - name: Package smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

@@ -38,6 +38,47 @@ rationale doctor --check
 rationale migrate --dry-run
 ```
 
+## Open operations
+
+```bash
+rationale operations          # open ones, oldest first; >24h is marked stale
+rationale operations --all    # with finalized and abandoned ones
+rationale operations abandon <operation-id> --reason "only explored"
+```
+
+An open operation is a prepared change nobody closed. If the work happened,
+ask the agent to finalize it; if it did not, abandon it with the reason. It is
+never closed automatically and never recorded as finalized by abandoning.
+`health` reports the same count.
+
+## A stale structural index
+
+Two symptoms, both reported in the packet:
+
+- `retrieval.status: index_incomplete`: the file defines the symbol but the
+  provider's index does not know it (new on this branch, or not reindexed).
+  Records bound to it by file or symbol still apply; Rationale binds new
+  Records to such a symbol lexically.
+- A `stale index` warning: the provider returned nodes from files that do not
+  exist in the working tree (an old index, or another checkout indexed at the
+  same path). Those nodes are dropped from the packet.
+
+Rationale never reindexes the provider's project on its own
+(`decision.provider-owned-project-identity`). Reindex it with the provider's
+own command, for example Codebase Memory's `index_repository` tool, and call
+`prepare_change` again.
+
+## Doctor in CI
+
+```bash
+rationale doctor --update-baseline   # once, by a person; commit .rationale/doctor-baseline.json
+rationale doctor --check             # fails only on new findings at or above --fail-on (default error)
+rationale doctor --json | jq .summary
+```
+
+Known findings are still printed as `[known]`; resolved ones are listed so the
+baseline can shrink. A baseline never hides a new finding.
+
 ## Agents and skills
 
 ```bash

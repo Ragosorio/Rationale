@@ -1,0 +1,36 @@
+id: exception.legacy-kms-skips-rotation
+kind: exception
+severity: critical
+statement: "Keys held in the legacy KMS are exempt from in-place rotation until they are migrated."
+rationale: "Exception to constraint.rotate-secrets-90d: the legacy KMS cannot rotate a key in place, and migrating it needs a maintenance window."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-05-10T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.exception.legacy-kms-skips-rotation.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/secrets/rotation.ts
+  provisional: false
+- id: binding.exception.legacy-kms-skips-rotation.1
+  type: symbol
+  provider: fixture
+  structural_id: src.secrets.rotation.rotateKeys
+  path_hint: src/secrets/rotation.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-05-10T10:00:00Z

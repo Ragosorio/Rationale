@@ -16,7 +16,9 @@ root).
 | `rationale health` | The same data as the `health` tool |
 | `rationale prepare <target> --intent "<intent>"` | The packet an agent would receive, when MCP is unavailable |
 | `rationale conflicts --json` | Pending conflicts with pinned Records |
-| `rationale doctor`, `doctor --json`, `doctor --check` | Canon integrity findings; `--check` exits 1 when there are findings |
+| `rationale doctor`, `doctor --json`, `doctor --check` | Canon integrity findings with severity and fix; `--check` exits 1 on new errors not in the baseline |
+| `rationale operations [--json]` | Operations prepared and never finalized or abandoned |
+| `rationale retire <path> --reason "…"` (without `--apply`) | Plans the retirement of Records bound to removed code; writes nothing |
 | `rationale install-agent --dry-run` | What agent configuration would change |
 | `rationale migrate --dry-run --json` | What migrating pre-1.0 proposals would do |
 | `rationale <command> --help` | Usage, without side effects |
@@ -29,6 +31,7 @@ root).
 | `rationale install-agent` | Registers the MCP server per user; writes protocol blocks and skills |
 | `rationale uninstall-agent` | Reverts exactly what `install-agent` wrote; edited skills are kept |
 | `rationale migrate` | Moves pre-1.0 proposals through the capture gate |
+| `rationale operations abandon <id> --reason "…"` | Closes an operation without capture (the agent's own: prefer `finalize_change` with `abandon`) |
 | `rationale update` | Installs the latest release of the configured channel |
 | `rationale ui` | Serves the read-only Control Room on `127.0.0.1` and keeps running, so let the person start it |
 
@@ -44,6 +47,9 @@ it.
 | `rationale resolve <conflict-id> keep-pinned`, `... adopt-new` | Decides a conflict with a pinned rule |
 | `rationale review-record <record-id>` | Corrects, disputes, revokes, or supersedes a Record with an audited event |
 | `rationale doctor --repair` | Applies repairs one finding at a time, with confirmation |
+| `rationale doctor --update-baseline` | Accepts the current findings as known debt for `--check` |
+| `rationale retire <path> --apply`, `--undo <batch>` | Retires or unbinds every Record bound to removed code |
+| `rationale rule add …` | Writes a Record as `human_stated`; an agent cannot sign as a person |
 | `rationale review` | Legacy confirmation of pre-1.0 proposals |
 
 ## Environment variables

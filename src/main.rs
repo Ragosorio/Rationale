@@ -8,16 +8,20 @@
 //! assessments persistidos) pertenece a Fase E/F.
 
 mod activity;
+mod advice;
 mod agents;
 mod assessment;
 mod binding_match;
 mod cache;
 mod canon;
 mod capture;
+mod cli;
 mod configuration;
 mod context;
 mod doctor;
 mod evaluation;
+mod hooks;
+mod lifecycle;
 mod mascot;
 mod mcp;
 mod operations;
@@ -26,6 +30,7 @@ mod project;
 mod prompts;
 mod providers;
 mod relationships;
+mod retire;
 mod retrieval;
 mod review;
 mod revision;
@@ -33,6 +38,8 @@ mod signals;
 mod skill_bundle;
 mod storage;
 mod subjects;
+mod symbols;
+mod tokens;
 mod ui;
 
 use std::path::{Path, PathBuf};
@@ -71,6 +78,10 @@ fn main() {
                 | "conflicts"
                 | "resolve"
                 | "ui"
+                | "operations"
+                | "retire"
+                | "rule"
+                | "hook"
         )
     {
         print_command_help(command);
@@ -99,6 +110,10 @@ fn main() {
         "conflicts" => cmd_conflicts(command_args),
         "resolve" => cmd_resolve(command_args),
         "ui" => cmd_ui(command_args),
+        "operations" => cli::cmd_operations(command_args),
+        "retire" => cli::cmd_retire(command_args),
+        "rule" => cli::cmd_rule(command_args),
+        "hook" => std::process::exit(hooks::run(command_args)),
         _ => {
             eprintln!("comando desconocido: {command}");
             print_usage();
@@ -109,14 +124,14 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "Uso: rationale <init|health|prepare|serve|ui|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
+        "Uso: rationale <init|health|prepare|serve|ui|operations|retire|rule|hook|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
     );
     println!("  rationale --help");
     println!("  rationale --version");
     println!("  rationale init [--skip-agent-config] [--no-mascot]");
     println!("  rationale health [--project-root <path>] [--no-mascot]");
     println!(
-        "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--no-mascot]"
+        "  rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--advise] [--no-mascot]"
     );
     println!(
         "  rationale serve [--client <claude-code|codex|cursor>]   # servidor MCP (prepare_change, explain_target, health, finalize_change, resolve_conflict)"
@@ -146,14 +161,27 @@ fn print_usage() {
         "  rationale review-record <record-id> [--project-root <path>] [--no-mascot]   # lifecycle humano de un Record aprobado"
     );
     println!(
-        "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-mascot]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
+        "  rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--refresh-skills] [--no-hooks] [--stop-hook <block|remind|off>] [--no-mascot]   # registra el MCP y las instrucciones de invocación en los agentes detectados"
     );
     println!(
         "  rationale uninstall-agent [--project-root <path>] [--global-only] [--no-mascot]   # revierte exactamente lo que install-agent escribió"
     );
+    println!(
+        "  rationale operations [--all] [--json] [--project-root <path>]   # operations prepare_change opened and nobody finalized or abandoned"
+    );
+    println!(
+        "  rationale operations abandon <operation-id> --reason \"text\" [--project-root <path>]   # close one without capture; never recorded as finalized"
+    );
+    println!(
+        "  rationale retire <path> --reason \"text\" [--moved-to <path>] [--apply [--yes]] [--json]   # plan (and apply) the retirement of Records bound to removed code"
+    );
+    println!("  rationale retire --undo <batch-id> [--force] [--json]");
+    println!(
+        "  rationale rule add <kind> \"statement\" --why \"text\" --bind <path[::symbol]> [--pin] [--exception-to <id>]   # a rule stated by a person (human_stated)"
+    );
     println!("  rationale update   # descarga e instala la última Release disponible");
     println!(
-        "  rationale doctor [--project-root <path>] [--check] [--repair] [--json]   # detecta (y opcionalmente repara) defectos de integridad en el canon"
+        "  rationale doctor [--project-root <path>] [--check] [--fail-on <severity>] [--json] [--update-baseline] [--repair]   # canon integrity, with severities and a baseline for CI"
     );
 }
 
@@ -166,7 +194,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale health [--project-root <path>] [--no-mascot]\n\nReporta el estado del proyecto y del proveedor."
         ),
         "prepare" => println!(
-            "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--no-mascot]\n\nCompila un ContextPacket antes de un cambio."
+            "Uso: rationale prepare <target-spec> [--project-root <path>] [--repo-path <path>] [--intent \"texto\"] [--advise] [--no-mascot]\n\nCompila un ContextPacket antes de un cambio para un símbolo (path::symbol), un archivo o una carpeta. --advise adds execution advice (model tier, reasoning effort, context size, and reasons)."
         ),
         "serve" => println!(
             "Uso: rationale serve [--client <claude-code|codex|cursor>]\n\nInicia el servidor MCP persistente por stdin/stdout. El proceso permanece abierto esperando mensajes del agente. --client identifica al agente en la actividad local; sin él se usa el nombre que el cliente declara al conectarse, o 'unknown'."
@@ -196,7 +224,7 @@ fn print_command_help(command: &str) {
             "Uso: rationale review-record <record-id> [--project-root <path>] [--no-mascot]\n\nEjecuta lifecycle sobre un Record aprobado."
         ),
         "install-agent" => println!(
-            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--no-mascot]\n\nRegistra MCP e instrucciones de invocación de forma idempotente."
+            "Uso: rationale install-agent [--project-root <path>] [--dry-run] [--global-only] [--refresh-skills] [--no-hooks] [--stop-hook <block|remind|off>] [--no-mascot]\n\nRegistra MCP e instrucciones de invocación de forma idempotente. --refresh-skills overwrites skill files that exist without a recorded hash (never ones recorded as edited). With Claude Code it also writes Rationale's hooks to .claude/settings.local.json (local, outside Git): --no-hooks skips them, --stop-hook remind only tells the person about open operations instead of asking the agent to close them."
         ),
         "uninstall-agent" => println!(
             "Uso: rationale uninstall-agent [--project-root <path>] [--global-only] [--no-mascot]\n\nRevierte exactamente lo que install-agent escribió."
@@ -205,7 +233,19 @@ fn print_command_help(command: &str) {
             "Uso: rationale update\n\nDescarga e instala la última Release mediante el helper instalado junto al binario."
         ),
         "doctor" => println!(
-            "Uso: rationale doctor [--project-root <path>] [--check] [--repair] [--json]\n\nDetecta severidades y autoridades inválidas, Records sin bindings, path_hint rotos, Subjects colgantes y propuestas pre-vNext sin migrar. Solo lectura por defecto; --check sale con código 1 si hay hallazgos; --repair pide confirmación por hallazgo."
+            "Usage: rationale doctor [--project-root <path>] [--check] [--fail-on <error|warning|info>] [--json] [--update-baseline] [--no-baseline] [--repair]\n\nChecks the canon's integrity: invalid severities and authorities, Records without bindings, bindings to paths that no longer exist (grouped into retired scopes), superseded Records that do not say so, supersession cycles, orphaned and unlinked exceptions, lexical symbol bindings whose symbol disappeared, Subjects that do not exist, and pre-1.0 proposals. Every finding has a severity (error, warning, info) and a fix.\n\nRead-only by default. --check exits 1 when a finding at or above --fail-on (default error) is not in .rationale/doctor-baseline.json; known findings are still reported. --update-baseline records the current findings as the accepted baseline (commit it). --repair asks for confirmation per finding."
+        ),
+        "operations" => println!(
+            "Usage: rationale operations [--all] [--json] [--project-root <path>]\n       rationale operations abandon <operation-id> --reason \"text\" [--project-root <path>]\n\nLists the operations prepare_change opened that nobody finalized or abandoned (oldest first; --all includes closed ones). `abandon` closes one without capture: it writes no memory and is never recorded as finalized. Operations open for more than 24 hours are marked stale; none is ever closed automatically."
+        ),
+        "hook" => println!(
+            "Usage: rationale hook <session-start|pre-edit|post-tool|stop> [--mode block|remind|off]\n\nRuns one Claude Code hook: reads the hook's JSON on stdin and prints the hook's JSON answer. `install-agent` writes these hooks to .claude/settings.local.json when Claude Code is detected (`--no-hooks` skips them; `uninstall-agent` removes them). session-start summarizes the canon, open operations and new doctor errors; pre-edit reminds once per file to prepare a change governed by pinned, critical or high rules, or exceptions; post-tool records the operations a session opens; stop asks to finalize or abandon them (--mode remind only tells the person). A hook never blocks an edit and never fails the session."
+        ),
+        "rule" => println!(
+            "Usage: rationale rule add <constraint|decision|risk|exception> \"statement\" --why \"rationale\" --bind <path[::symbol]> [--bind …] [--severity <critical|high|medium|low>] [--pin] [--exception-to <id>] [--supersedes <id>] [--id <kind.slug>] [--json] [--project-root <path>]\n\nWrites a Record stated by a person: provenance human_stated with your Git actor, through the same gate as an agent's candidate (shape, bindings, duplicates). Bind it to a file, a symbol, or a folder (a folder binding governs everything below it, for invariants that span modules). --exception-to links an exception to the rule it relaxes. --pin, or replacing a pinned rule, needs authority declared in .rationale/config.yaml. Needs an interactive terminal: an agent cannot sign as a person."
+        ),
+        "retire" => println!(
+            "Usage: rationale retire <path> --reason \"text\" [--moved-to <path>] [--apply [--yes]] [--json] [--project-root <path>]\n       rationale retire --undo <batch-id> [--force] [--json]\n\nPlans what to do with the active Records bound to a file or folder that was removed: retire the ones bound only there, unbind the ones also bound to current code, rebind them when --moved-to names a path that exists, and leave pinned ones to a person. Without --apply nothing is written. --apply asks for confirmation in a terminal (--yes skips it; pass it only after a person approved the plan), writes one lifecycle event per Record, and keeps a local batch so --undo restores the canon byte for byte. A retirement is a revocation with a `retired` event, so earlier binaries read it as inactive."
         ),
         _ => unreachable!("solo se solicita ayuda para comandos conocidos"),
     }
@@ -222,7 +262,7 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "prepare" => validate_flags(
             command,
             args,
-            &["--no-mascot"],
+            &["--no-mascot", "--advise"],
             &["--project-root", "--repo-path", "--intent"],
         ),
         "serve" => validate_flags(command, args, &[], &["--client"]),
@@ -236,8 +276,9 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
                 "--global-only",
                 "--no-mascot",
                 "--refresh-skills",
+                "--no-hooks",
             ],
-            &["--project-root"],
+            &["--project-root", "--stop-hook"],
         ),
         "uninstall-agent" => validate_flags(
             command,
@@ -249,14 +290,47 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "doctor" => validate_flags(
             command,
             args,
-            &["--check", "--repair", "--json"],
-            &["--project-root"],
+            &[
+                "--check",
+                "--repair",
+                "--json",
+                "--update-baseline",
+                "--no-baseline",
+            ],
+            &["--project-root", "--fail-on"],
         ),
         "pin" | "unpin" => validate_flags(command, args, &[], &["--project-root", "--reason"]),
         "migrate" => validate_flags(command, args, &["--dry-run", "--json"], &["--project-root"]),
         "conflicts" => validate_flags(command, args, &["--json"], &["--project-root"]),
         "resolve" => validate_flags(command, args, &[], &["--project-root"]),
         "ui" => validate_flags(command, args, &["--no-open"], &["--port", "--project-root"]),
+        "hook" => validate_flags(command, args, &[], &["--mode"]),
+        "rule" => validate_flags(
+            command,
+            args,
+            &["--pin", "--json"],
+            &[
+                "--project-root",
+                "--why",
+                "--bind",
+                "--severity",
+                "--exception-to",
+                "--supersedes",
+                "--id",
+            ],
+        ),
+        "retire" => validate_flags(
+            command,
+            args,
+            &["--apply", "--yes", "--json", "--force"],
+            &["--project-root", "--reason", "--moved-to", "--undo"],
+        ),
+        "operations" => validate_flags(
+            command,
+            args,
+            &["--all", "--json"],
+            &["--project-root", "--reason"],
+        ),
         _ => Ok(()),
     }
 }
@@ -395,10 +469,20 @@ fn cmd_init(args: &[String]) {
         }
         Ok(report) => {
             mascot::print_stderr(args, mascot::Mood::Happy);
+            let hooks_line = report
+                .detected
+                .iter()
+                .any(|agent| agent == "claude-code")
+                .then(|| hooks::install(&cwd, &binary_path, "block", false));
             if mascot::stderr_enabled(args) {
                 eprintln!("  Avisé a: {}", report.detected.join(", "));
                 for line in &report.actions {
                     eprintln!("  - {line}");
+                }
+                match hooks_line {
+                    Some(Ok(line)) => eprintln!("  - {line}"),
+                    Some(Err(error)) => eprintln!("  - claude-code: hooks not installed: {error}"),
+                    None => {}
                 }
             }
         }
@@ -434,6 +518,8 @@ fn cmd_health(args: &[String]) {
         "project_root": outcome.project_root.display().to_string(),
         "git_revision": outcome.git_revision,
         "working_tree_dirty": outcome.working_tree_dirty,
+        "canon": outcome.canon,
+        "open_operations": outcome.open_operations,
     });
     let object = payload.as_object_mut().expect("payload es un objeto");
     match &outcome.provider_error {
@@ -494,6 +580,8 @@ fn cmd_prepare(args: &[String]) {
             budget: retrieval::Budget::default(),
             structural_budget: context::StructuralBudget::default(),
             actor: cli_actor(),
+            verbose: true,
+            advise: args.iter().any(|a| a == "--advise").then_some(true),
         },
         &mut provider,
         &recorder,
@@ -969,6 +1057,19 @@ fn cmd_install_agent(args: &[String]) {
             for line in &report.actions {
                 println!("- {line}");
             }
+            if report.detected.iter().any(|agent| agent == "claude-code")
+                && !args.iter().any(|a| a == "--no-hooks")
+            {
+                let mode =
+                    parse_string_flag(args, "--stop-hook").unwrap_or_else(|| "block".to_string());
+                if !matches!(mode.as_str(), "block" | "remind" | "off") {
+                    fail::<()>("--stop-hook must be block, remind or off");
+                }
+                match hooks::install(&project_root, &binary_path, &mode, report.dry_run) {
+                    Ok(line) => println!("- {line}"),
+                    Err(error) => println!("- claude-code: hooks not installed: {error}"),
+                }
+            }
         }
         Err(error) => {
             eprintln!("install-agent falló: {error}");
@@ -1004,6 +1105,11 @@ fn cmd_uninstall_agent(args: &[String]) {
             mascot::print_stdout(args, mascot::Mood::Happy);
             for line in &actions {
                 println!("- {line}");
+            }
+            match hooks::uninstall(&project_root) {
+                Ok(Some(line)) => println!("- {line}"),
+                Ok(None) => {}
+                Err(error) => println!("- claude-code: hooks not removed: {error}"),
             }
         }
         Err(error) => {
@@ -1065,32 +1171,93 @@ fn cmd_doctor(args: &[String]) {
     let project_root = resolve_project_root(args).unwrap_or_else(fail);
     let config = configuration::load(&project_root).unwrap_or_else(fail);
     let report = doctor::check(&config.rationale_dir, &project_root);
+    let fail_on = parse_string_flag(args, "--fail-on")
+        .map(|value| {
+            doctor::FindingSeverity::parse(&value)
+                .unwrap_or_else(|| fail("--fail-on must be error, warning or info"))
+        })
+        .unwrap_or(doctor::FindingSeverity::Error);
+
+    if args.iter().any(|a| a == "--update-baseline") {
+        let path = doctor::write_baseline(&config.rationale_dir, &report).unwrap_or_else(fail);
+        println!(
+            "Baseline written to {} with {} finding(s). Commit it: `doctor --check` now fails \
+             only on findings that are not in it, and keeps reporting the known ones.",
+            path.display(),
+            report.findings.len()
+        );
+        return;
+    }
+    let baseline = if args.iter().any(|a| a == "--no-baseline") {
+        None
+    } else {
+        doctor::load_baseline(&config.rationale_dir).unwrap_or_else(fail)
+    };
+    let (checked, summary) = doctor::classify(&report, baseline.as_ref(), fail_on);
 
     if args.iter().any(|a| a == "--json") {
         println!(
             "{}",
-            serde_json::to_string(&report)
-                .unwrap_or_else(|e| fail(format!("no se pudo serializar el reporte: {e}")))
+            serde_json::json!({
+                "schema_version": "rationale/doctor/2",
+                "fail_on": fail_on.as_str(),
+                "summary": summary,
+                "findings": checked,
+                "observations": report.observations,
+            })
         );
-    } else if report.findings.is_empty() {
+    } else if checked.is_empty() {
         println!(
-            "Sin hallazgos — el canon en {} está sano.",
+            "No findings: the canon in {} is healthy.",
             config.rationale_dir.display()
         );
+        for observation in &report.observations {
+            println!("note: {observation}");
+        }
     } else {
+        let mut ordered: Vec<&doctor::CheckedFinding> = checked.iter().collect();
+        ordered.sort_by_key(|item| std::cmp::Reverse(item.severity));
+        for item in ordered {
+            println!(
+                "{:<7} [{}] {}: {}",
+                item.severity.as_str().to_uppercase(),
+                item.baseline,
+                item.finding.kind(),
+                item.message
+            );
+            if let Some(fix) = &item.fix {
+                println!("        fix: {fix}");
+            }
+        }
         println!(
-            "{} hallazgo(s) en {}:",
-            report.findings.len(),
-            config.rationale_dir.display()
+            "\n{} error(s), {} warning(s), {} info · {} new at or above '{}' · {} known{}",
+            summary.errors,
+            summary.warnings,
+            summary.info,
+            summary.new_failing,
+            fail_on.as_str(),
+            summary.known,
+            if summary.baseline_present {
+                String::new()
+            } else {
+                " · no baseline (every finding counts as new)".to_string()
+            }
         );
-        for finding in &report.findings {
-            println!("- {}", finding.describe());
+        if !summary.fixed.is_empty() {
+            println!(
+                "{} baseline finding(s) are resolved; `rationale doctor --update-baseline` \
+                 records it.",
+                summary.fixed.len()
+            );
+        }
+        for observation in &report.observations {
+            println!("note: {observation}");
         }
     }
 
     let repair_mode = args.iter().any(|a| a == "--repair");
     if !repair_mode {
-        if args.iter().any(|a| a == "--check") && !report.findings.is_empty() {
+        if args.iter().any(|a| a == "--check") && summary.new_failing > 0 {
             std::process::exit(1);
         }
         return;

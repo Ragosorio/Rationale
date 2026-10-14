@@ -1,0 +1,43 @@
+id: decision.rationale-retire-writes-retirement-lifecycle-status
+kind: decision
+severity: high
+statement: rationale retire writes a retirement as lifecycle status revoked with a retired event, unbinds Records still bound to current code, never touches pinned Records, and keeps a local batch so undo restores every byte.
+rationale: Binaries before 1.2 only know revoked, so they must read a retirement as inactive; a retired module left 116 active Records in the reported project and a silent heuristic would have deleted valid decisions.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a13b110f6fc79effda
+  session_id: session_1a13b51b3aba9564675
+  asserted_at: 2026-10-14T16:49:33Z
+approvals: []
+binding_declarations:
+- id: binding.decision.rationale-retire-writes-retirement-lifecycle-status.symbol.0
+  type: symbol
+  provider: null
+  structural_id: null
+  path_hint: src/retire.rs
+  provisional: false
+  symbol: apply
+- id: binding.decision.rationale-retire-writes-retirement-lifecycle-status.symbol.1
+  type: symbol
+  provider: null
+  structural_id: null
+  path_hint: src/lifecycle.rs
+  provisional: false
+  symbol: is_retired
+evidence: []
+risks: []
+bound_revision: b93f9f78eadb6179beaafee57d25d3b313e6bd50
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-10-14T16:49:33Z
+    operation_id: op_1a13b110f6fc79effda

@@ -2,10 +2,11 @@
 //! el servidor MCP —canon, snapshots de operación, actividad— y nunca
 //! escriben: la UI observa, no es una segunda autoridad.
 
+use crate::lifecycle::StatusIndex;
 use crate::operations::{GraphEdge, GraphNode, Operation};
 use crate::{activity, canon, configuration, operations, relationships, revision, storage};
 use serde_json::{json, Map, Value};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 /// Techo de snapshots que recorren las vistas de detalle (el mismo que
@@ -37,17 +38,11 @@ impl Project {
     }
 }
 
-fn record_status(record: &storage::Record, superseded: &HashSet<String>) -> &'static str {
-    if storage::is_revoked(record) {
-        "revoked"
-    } else if superseded.contains(&record.id) {
-        "superseded"
-    } else {
-        "active"
-    }
+fn record_status(record: &storage::Record, status: &StatusIndex) -> &'static str {
+    status.status(record).as_str()
 }
 
-fn record_view(record: &storage::Record, superseded: &HashSet<String>, project_id: &str) -> Value {
+fn record_view(record: &storage::Record, status: &StatusIndex, project_id: &str) -> Value {
     json!({
         "id": record.id,
         "kind": record.kind,
@@ -56,9 +51,9 @@ fn record_view(record: &storage::Record, superseded: &HashSet<String>, project_i
         "rationale": record.rationale,
         "authority": storage::authority_label(record),
         "provenance": storage::provenance_kind(record).as_str(),
-        "status": record_status(record, superseded),
+        "status": record_status(record, status),
         "supersedes": record.supersedes,
-        "superseded_by": storage::superseded_by(record),
+        "superseded_by": status.replaced_by(&record.id),
         "bindings": record.binding_declarations.iter().map(|binding| json!({
             "kind": binding.kind,
             "path": binding.path_hint,
@@ -84,16 +79,11 @@ fn records_by_id(project: &Project, ids: &BTreeSet<String>) -> Map<String, Value
         return Map::new();
     }
     let records = project.records();
-    let superseded = canon::superseded_ids(&records);
+    let status = StatusIndex::build(&records);
     records
         .iter()
         .filter(|record| ids.contains(&record.id))
-        .map(|record| {
-            (
-                record.id.clone(),
-                record_view(record, &superseded, &project.id),
-            )
-        })
+        .map(|record| (record.id.clone(), record_view(record, &status, &project.id)))
         .collect()
 }
 
@@ -105,7 +95,9 @@ fn operation_summary(operation: &Operation) -> Value {
         "target": operation.target,
         "intent": operation.intent,
         "selection": operation.selection,
+        "state": operation.state().as_str(),
         "finalized": operation.finalized,
+        "abandoned": operation.abandoned,
     })
 }
 
@@ -155,18 +147,16 @@ pub fn sessions(events: &[activity::ActivityEvent]) -> Vec<Value> {
 
 pub fn meta(project: &Project) -> Value {
     let records = project.records();
-    let superseded = canon::superseded_ids(&records);
+    let status = StatusIndex::build(&records);
     let mut by_status: BTreeMap<&str, usize> = BTreeMap::new();
     for record in &records {
-        *by_status
-            .entry(record_status(record, &superseded))
-            .or_default() += 1;
+        *by_status.entry(record_status(record, &status)).or_default() += 1;
     }
     let pinned = records
         .iter()
         .filter(|record| {
             storage::record_authority(record) == storage::RecordAuthority::Pinned
-                && record_status(record, &superseded) == "active"
+                && status.is_active(record)
         })
         .count();
     let snapshot = revision::snapshot(&project.root);
@@ -181,6 +171,7 @@ pub fn meta(project: &Project) -> Value {
             "active": by_status.get("active").copied().unwrap_or(0),
             "superseded": by_status.get("superseded").copied().unwrap_or(0),
             "revoked": by_status.get("revoked").copied().unwrap_or(0),
+            "retired": by_status.get("retired").copied().unwrap_or(0),
             "pinned": pinned,
         },
         "conflicts_pending": canon::list_pending_conflicts(&project.local_dir).len(),
@@ -215,10 +206,10 @@ pub fn operation(project: &Project, operation_id: &str) -> ApiResult {
 
 pub fn records(project: &Project) -> Value {
     let records = project.records();
-    let superseded = canon::superseded_ids(&records);
+    let status = StatusIndex::build(&records);
     json!(records
         .iter()
-        .map(|record| record_view(record, &superseded, &project.id))
+        .map(|record| record_view(record, &status, &project.id))
         .collect::<Vec<_>>())
 }
 

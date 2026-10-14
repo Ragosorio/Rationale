@@ -1,0 +1,30 @@
+id: decision.notifications-replaces-comunicaciones
+kind: decision
+severity: high
+statement: "The notifications module replaces Comunicaciones for email and SMS delivery."
+rationale: "Comunicaciones depended on a vendor queue that was shut down in September."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-09-20T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.decision.notifications-replaces-comunicaciones.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/notifications/email.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-09-20T10:00:00Z

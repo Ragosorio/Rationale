@@ -8,7 +8,7 @@ Reply to the person in the language they write in. Documentation, code comments 
 
 Rationale completed phases A–G and published the stable 1.0 series: autonomous capture with human authority over pinned Records, the vNext context compiler, the normalized structural provider, local activity, the Control Room, and five MCP tools (`prepare_change`, `explain_target`, `finalize_change`, `resolve_conflict`, `health`). The real core lives in `src/`; `spikes/language/` remains throwaway research. See [`docs/architecture/code-map.md`](docs/architecture/code-map.md) and [`docs/work-items/v1.0-release-verification.md`](docs/work-items/v1.0-release-verification.md).
 
-`main` also carries unreleased work listed under *Unreleased* in [`CHANGELOG.md`](CHANGELOG.md), most notably the `rationale` Agent Skill in [`skills/rationale/`](skills/rationale/), embedded in the binary by `src/skill_bundle.rs` and installed for Claude Code and Codex.
+The `rationale` Agent Skill in [`skills/rationale/`](skills/rationale/) is embedded in the binary by `src/skill_bundle.rs` and installed for Claude Code and Codex. `main` also carries unreleased work listed under *Unreleased* in [`CHANGELOG.md`](CHANGELOG.md): the context-integrity work of [`docs/work-items/context-integrity-1.2.md`](docs/work-items/context-integrity-1.2.md) (ADR-0019, ADR-0020). Retrieval changes are measured with [`eval/`](eval/README.md); run it before and after touching `retrieval`, `binding_match`, `lifecycle`, `context`, or `canon`.
 
 The recorded ADRs include twelve proposals and one open partial decision
 (ADR-0011); none is self-approved (`evaluation.no-self-certification`). Before
@@ -198,10 +198,13 @@ Use this protocol at the start of every conversation that may change code:
    how it connects; it does not decide why the code must remain as it is.
 2. Before changing non-trivial code, call Rationale's
    `prepare_change(target, intent)` with the target you found and your actual
-   intended change. Keep the returned `operation_id`. Read the constraints
-   and decisions that govern the target, the explained relationships with
-   their structural state (`observed`, `indirect`, `orphaned`, `unknown`),
-   risks, unknowns, provider coverage, and intent conflicts.
+   intended change. Keep the returned `operation_id`. Read `retrieval.status`
+   first, then the active constraints and decisions that govern the target,
+   inherited constraints from code it depends on, the explained relationships
+   with their structural state (`observed`, `indirect`, `orphaned`,
+   `unknown`), risks, unknowns, provider coverage, and intent conflicts.
+   Records under `history` were superseded, revoked, or retired: never apply
+   them as current.
 3. If the packet reports a governing Record or a conflict with your intent,
    say so explicitly. Compare the proposed change with the Record; do not
    silently proceed and do not call an undetermined conflict a proven semantic
@@ -220,6 +223,9 @@ Use this protocol at the start of every conversation that may change code:
    noise and duplicates and writes the rest as canonical Records in the same
    call; there is no approval queue. When nothing durable was learned, send no
    candidates. Report what was written and what was discarded, with reasons.
+   If you prepared a change and did not make it, close the operation with
+   `finalize_change(operation_id, abandon: true, summary)` and the reason;
+   never leave it open, and never finalize work that did not happen.
 7. **One decision per Record.** If the work contains several independent
    decisions, send several small candidates — not one that covers everything.
    Split when the parts could be replaced or revoked separately; when they

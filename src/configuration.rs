@@ -18,6 +18,10 @@ pub struct ProjectConfig {
     pub project: ProjectSection,
     #[serde(default)]
     pub authority: BTreeMap<String, AuthorityDeclaration>,
+    /// Consejo de modelo y esfuerzo en `prepare_change` (opcional; un
+    /// binario anterior ignora la sección).
+    #[serde(default)]
+    pub advice: crate::advice::AdviceConfig,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -48,6 +52,7 @@ pub struct ResolvedConfig {
     pub rationale_dir: PathBuf,
     pub project_id: String,
     authority: BTreeMap<String, AuthorityDeclaration>,
+    pub advice: crate::advice::AdviceConfig,
 }
 
 impl ResolvedConfig {
@@ -116,6 +121,7 @@ pub fn load(start: &Path) -> Result<ResolvedConfig, ConfigError> {
         ProjectConfig {
             project: ProjectSection::default(),
             authority: BTreeMap::new(),
+            advice: Default::default(),
         }
     };
     let project_id = parsed
@@ -129,6 +135,7 @@ pub fn load(start: &Path) -> Result<ResolvedConfig, ConfigError> {
         rationale_dir,
         project_id,
         authority,
+        advice: parsed.advice,
     })
 }
 

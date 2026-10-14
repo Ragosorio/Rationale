@@ -1,0 +1,36 @@
+id: decision.sms-max-160-chars
+kind: decision
+severity: low
+statement: "SMS bodies are limited to 160 characters."
+rationale: "Longer bodies split into several billable messages."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-09-20T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.decision.sms-max-160-chars.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/notifications/email.ts
+  provisional: false
+- id: binding.decision.sms-max-160-chars.1
+  type: symbol
+  provider: fixture
+  structural_id: src.notifications.email.sendSms
+  path_hint: src/notifications/email.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-09-20T10:00:00Z

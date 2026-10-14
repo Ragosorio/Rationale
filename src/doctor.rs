@@ -10,8 +10,9 @@
 //! — `doctor` es la herramienta para encontrarlos, no una migración de
 //! versión (eso es `.rationale/migrations/`).
 
-use crate::{review, storage, subjects};
-use serde::Serialize;
+use crate::{binding_match, lifecycle, review, storage, subjects};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,7 +40,10 @@ pub enum Finding {
     /// Un Record sin ningún binding no puede gobernar ningún target —
     /// `linkage: unresolved` por diseño (Fase 1.4). Solo se reporta: un
     /// binding inventado sería peor que ninguno.
-    RecordWithoutBindings { record_id: String, path: PathBuf },
+    RecordWithoutBindings {
+        record_id: String,
+        path: PathBuf,
+    },
     /// Un `path_hint` que ya no existe en el working tree — `linkage:
     /// stale` para ese Record.
     BindingPathMissing {
@@ -69,10 +73,15 @@ pub enum Finding {
     },
     /// Propuestas de la era de aprobaciones todavía en `.rationale/proposals/`.
     /// vNext no las revisa a mano: `rationale migrate` las pasa por el gate.
-    PendingLegacyProposals { count: usize, path: PathBuf },
+    PendingLegacyProposals {
+        count: usize,
+        path: PathBuf,
+    },
     /// `.rationale/bindings/` ya no lo crea `cmd_init` (nada lo lee ni
     /// escribe) — si existe y está vacío, es seguro borrarlo a mano.
-    EmptyBindingsDirectory { path: PathBuf },
+    EmptyBindingsDirectory {
+        path: PathBuf,
+    },
     /// `schema_version` se escribe (`pipeline.rs`, `subjects.rs`) pero
     /// nunca se lee ni se compara — un Record de una versión futura se
     /// parsearía hoy en silencio como si fuera la actual. No hay
@@ -96,6 +105,83 @@ pub enum Finding {
         path: PathBuf,
         record_id: Option<String>,
     },
+    /// Un archivo de `.rationale/records/` que no se puede leer: no gobierna
+    /// nada y nadie lo ve. Antes solo aparecía como `skipped` interno.
+    UnreadableRecord {
+        path: PathBuf,
+        error: String,
+    },
+    /// Una carpeta (o un archivo) que ya no existe con Records vigentes atados
+    /// a ella: un módulo retirado cuyo canon nadie actualizó. Agrupa los
+    /// `binding-path-missing` de ese alcance en un solo hallazgo.
+    RetiredScope {
+        path: String,
+        record_ids: Vec<String>,
+        /// Fijados por una persona: `rationale retire` no los toca.
+        pinned: Vec<String>,
+        /// También atados a código vigente: se desatan, no se retiran.
+        partially_bound: Vec<String>,
+    },
+    /// Reemplazado por el `supersedes` de otro Record vigente, pero el propio
+    /// Record no lo dice: un binario anterior a 1.2 lo sigue sirviendo como
+    /// vigente.
+    InconsistentSupersession {
+        record_id: String,
+        path: PathBuf,
+        superseded_by: String,
+    },
+    SupersessionCycle {
+        record_ids: Vec<String>,
+    },
+    /// Excepción vigente cuya regla ya no gobierna.
+    OrphanedException {
+        record_id: String,
+        path: PathBuf,
+        note: String,
+    },
+    /// Excepción que no dice a qué regla exceptúa (ni `exception_to` ni un id
+    /// citado): nadie puede saber cuándo deja de aplicar.
+    UnlinkedException {
+        record_id: String,
+        path: PathBuf,
+    },
+    /// Binding léxico (`symbol`, sin identidad estructural) a un símbolo que
+    /// el archivo ya no define.
+    UnconfirmedSymbolMissing {
+        record_id: String,
+        path: PathBuf,
+        symbol: String,
+        path_hint: String,
+    },
+}
+
+/// Gravedad de un hallazgo. `error` rompe la integridad del contexto que se
+/// sirve; `warning` lo degrada; `info` es una observación.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FindingSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+impl FindingSeverity {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "info" => Some(Self::Info),
+            "warning" => Some(Self::Warning),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Warning => "warning",
+            Self::Error => "error",
+        }
+    }
 }
 
 impl Finding {
@@ -106,7 +192,111 @@ impl Finding {
                 | Finding::KindMismatch { .. }
                 | Finding::DanglingSubject { .. }
                 | Finding::OrphanedClaimedProposal { .. }
+                | Finding::InconsistentSupersession { .. }
         )
+    }
+
+    pub fn severity(&self) -> FindingSeverity {
+        match self {
+            Finding::InvalidSeverity { .. }
+            | Finding::InvalidRecordAuthority { .. }
+            | Finding::BindingPathMissing { .. }
+            | Finding::UnreadableRecord { .. }
+            | Finding::RetiredScope { .. }
+            | Finding::SupersessionCycle { .. }
+            | Finding::OrphanedException { .. } => FindingSeverity::Error,
+            Finding::KindMismatch { .. }
+            | Finding::RecordWithoutBindings { .. }
+            | Finding::DanglingSubject { .. }
+            | Finding::PendingLegacyProposals { .. }
+            | Finding::UnknownSchemaVersion { .. }
+            | Finding::OrphanedClaimedProposal { .. }
+            | Finding::InconsistentSupersession { .. }
+            | Finding::UnconfirmedSymbolMissing { .. } => FindingSeverity::Warning,
+            Finding::EmptyBindingsDirectory { .. } | Finding::UnlinkedException { .. } => {
+                FindingSeverity::Info
+            }
+        }
+    }
+
+    /// Identidad estable del hallazgo para la línea base de `--check`: el
+    /// tipo más lo que lo localiza, nunca el texto (que puede cambiar).
+    pub fn fingerprint(&self) -> String {
+        let kind = self.kind();
+        let key = match self {
+            Finding::InvalidSeverity { record_id, .. }
+            | Finding::KindMismatch { record_id, .. }
+            | Finding::RecordWithoutBindings { record_id, .. }
+            | Finding::DanglingSubject { record_id, .. }
+            | Finding::InvalidRecordAuthority { record_id, .. }
+            | Finding::UnknownSchemaVersion { record_id, .. }
+            | Finding::InconsistentSupersession { record_id, .. }
+            | Finding::OrphanedException { record_id, .. }
+            | Finding::UnlinkedException { record_id, .. } => record_id.clone(),
+            Finding::BindingPathMissing {
+                record_id,
+                path_hint,
+                ..
+            } => format!("{record_id}:{path_hint}"),
+            Finding::UnconfirmedSymbolMissing {
+                record_id, symbol, ..
+            } => format!("{record_id}:{symbol}"),
+            Finding::PendingLegacyProposals { .. } | Finding::EmptyBindingsDirectory { .. } => {
+                String::new()
+            }
+            Finding::OrphanedClaimedProposal { path, .. }
+            | Finding::UnreadableRecord { path, .. } => path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            Finding::RetiredScope { path, .. } => path.clone(),
+            Finding::SupersessionCycle { record_ids } => record_ids.join(","),
+        };
+        if key.is_empty() {
+            kind
+        } else {
+            format!("{kind}:{key}")
+        }
+    }
+
+    pub fn kind(&self) -> String {
+        serde_json::to_value(self)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("kind")
+                    .and_then(|k| k.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_default()
+    }
+
+    /// El comando o la acción que lo resuelve.
+    pub fn fix(&self) -> Option<String> {
+        match self {
+            Finding::InvalidSeverity { .. }
+            | Finding::KindMismatch { .. }
+            | Finding::DanglingSubject { .. }
+            | Finding::OrphanedClaimedProposal { .. }
+            | Finding::InconsistentSupersession { .. } => {
+                Some("rationale doctor --repair".to_string())
+            }
+            Finding::RetiredScope { path, .. } => Some(format!(
+                "rationale retire {path} --reason \"…\" (plans first; --apply writes)"
+            )),
+            Finding::PendingLegacyProposals { .. } => Some("rationale migrate".to_string()),
+            Finding::InvalidRecordAuthority { record_id, .. } => Some(format!(
+                "rationale pin {record_id} (or set authority: normal)"
+            )),
+            Finding::OrphanedException { record_id, .. } => Some(format!(
+                "ask a person: keep it for the new rule (add exception_to), or `rationale \
+                 review-record {record_id}` to revoke it"
+            )),
+            Finding::BindingPathMissing { record_id, .. } => Some(format!(
+                "rebind or revoke it: `rationale review-record {record_id}`"
+            )),
+            _ => None,
+        }
     }
 
     pub fn describe(&self) -> String {
@@ -114,8 +304,8 @@ impl Finding {
             Finding::InvalidSeverity {
                 record_id, current, ..
             } => format!(
-                "'{record_id}' tiene severity '{current}', fuera del enum ({}) — nunca decide \
-                 visibilidad, pero conviene corregirla para que el orden en retrieval sea real",
+                "'{record_id}' has severity '{current}', outside the enum ({}); it never decides \
+                 visibility, but ordering in retrieval is only real with a valid value",
                 storage::Severity::ALL.join(", ")
             ),
             Finding::KindMismatch {
@@ -124,15 +314,13 @@ impl Finding {
                 expected_kind,
                 ..
             } => format!(
-                "'{record_id}' tiene kind '{current_kind}', pero su propio id sugiere \
-                 '{expected_kind}' — un Record con el kind equivocado puede servirse como una \
-                 constraint gobernante cuando en realidad es otra cosa (el defecto real que \
-                 rompió CI)."
+                "'{record_id}' has kind '{current_kind}' but its id says '{expected_kind}'; a \
+                 Record with the wrong kind can be served as a governing constraint when it is \
+                 something else"
             ),
             Finding::RecordWithoutBindings { record_id, .. } => format!(
-                "'{record_id}' no tiene ningún binding_declaration — no puede gobernar ningún \
-                 target (linkage: unresolved). No se repara solo: inventar un binding sería \
-                 peor que no tener ninguno."
+                "'{record_id}' has no binding, so it can govern no target; it is not repaired \
+                 automatically because an invented binding is worse than none"
             ),
             Finding::BindingPathMissing {
                 record_id,
@@ -140,32 +328,28 @@ impl Finding {
                 path_hint,
                 ..
             } => format!(
-                "'{record_id}': el binding '{binding_id}' apunta a '{path_hint}', que ya no \
-                 existe en el working tree (linkage: stale)."
+                "'{record_id}': binding '{binding_id}' points at '{path_hint}', which no longer \
+                 exists in the working tree"
             ),
             Finding::DanglingSubject {
                 record_id,
                 subject_id,
                 ..
             } => format!(
-                "'{record_id}' referencia el Subject '{subject_id}', que no existe en \
-                 .rationale/subjects/ — se puede materializar un stub con review.status: \
-                 unreviewed."
+                "'{record_id}' references Subject '{subject_id}', which does not exist in \
+                 .rationale/subjects/; a stub with review.status: unreviewed can be created"
             ),
             Finding::InvalidRecordAuthority {
                 record_id, current, ..
             } => format!(
-                "'{record_id}' declara authority '{current}', que no es 'normal' ni 'pinned' — \
-                 se trata como 'normal'. Para fijarlo de verdad: 'rationale pin {record_id}'."
+                "'{record_id}' declares authority '{current}', which is neither 'normal' nor \
+                 'pinned'; it is read as 'normal'"
             ),
-            Finding::PendingLegacyProposals { count, path } => format!(
-                "{count} propuesta(s) pre-vNext pendientes en {} — 'rationale migrate' las pasa \
-                 por el gate de captura (canonizadas o archivadas, nunca borradas).",
-                path.display()
-            ),
+            Finding::PendingLegacyProposals { count, path } => {
+                format!("{count} pre-1.0 proposal(s) pending in {}", path.display())
+            }
             Finding::EmptyBindingsDirectory { path } => format!(
-                "{} existe y está vacío — nada en el código lo lee ni lo escribe; seguro de \
-                 borrar a mano.",
+                "{} exists and is empty; nothing reads or writes it, so it is safe to delete",
                 path.display()
             ),
             Finding::UnknownSchemaVersion {
@@ -173,20 +357,62 @@ impl Finding {
                 found_version,
                 ..
             } => format!(
-                "'{record_id}' declara schema_version '{found_version}', distinto de la única \
-                 versión que este binario escribe ('{CURRENT_SCHEMA_VERSION}'). No hay \
-                 migraciones implementadas todavía — revisar a mano antes de confiar en cómo \
-                 Rationale interpreta sus campos."
+                "'{record_id}' declares schema_version '{found_version}', not the version this \
+                 binary writes ('{CURRENT_SCHEMA_VERSION}'); review it by hand before trusting \
+                 how its fields are read"
             ),
             Finding::OrphanedClaimedProposal { path, record_id } => {
-                let label = record_id.as_deref().unwrap_or("desconocido");
+                let label = record_id.as_deref().unwrap_or("unknown");
                 format!(
-                    "propuesta reclamada y nunca promovida ni rechazada en {} (record: '{label}') \
-                     — un proceso murió entre el claim y la promoción. Se puede devolver a \
-                     proposals/ para que 'rationale review' vuelva a verla.",
+                    "a proposal claimed for review was never promoted or rejected: {} (Record \
+                     '{label}'); a process died between the claim and the promotion",
                     path.display()
                 )
             }
+            Finding::UnreadableRecord { path, error } => {
+                format!("{} cannot be read as a Record: {error}", path.display())
+            }
+            Finding::RetiredScope {
+                path,
+                record_ids,
+                pinned,
+                partially_bound,
+            } => format!(
+                "'{path}' no longer exists, but {} active Record(s) are still bound to it \
+                 ({} pinned, {} also bound to current code): they describe retired code as \
+                 current",
+                record_ids.len(),
+                pinned.len(),
+                partially_bound.len()
+            ),
+            Finding::InconsistentSupersession {
+                record_id,
+                superseded_by,
+                ..
+            } => format!(
+                "'{record_id}' is replaced by '{superseded_by}' (its `supersedes`), but its own \
+                 file does not say so; binaries before 1.2 still serve it as current"
+            ),
+            Finding::SupersessionCycle { record_ids } => format!(
+                "these Records supersede each other in a cycle: {}",
+                record_ids.join(" → ")
+            ),
+            Finding::OrphanedException {
+                record_id, note, ..
+            } => format!("'{record_id}': {note}"),
+            Finding::UnlinkedException { record_id, .. } => format!(
+                "exception '{record_id}' does not say which rule it excepts (no exception_to, no \
+                 cited Record id); nobody can tell when it stops applying"
+            ),
+            Finding::UnconfirmedSymbolMissing {
+                record_id,
+                symbol,
+                path_hint,
+                ..
+            } => format!(
+                "'{record_id}' is bound to '{symbol}' in '{path_hint}' (lexically, never \
+                 confirmed by the index), and the file no longer defines it"
+            ),
         }
     }
 }
@@ -208,6 +434,9 @@ fn schema_version_of(extra: &yaml_serde::Mapping) -> Option<String> {
 #[derive(Debug, Serialize)]
 pub struct DoctorReport {
     pub findings: Vec<Finding>,
+    /// Observaciones sobre el canon que no son defectos (no cuentan para
+    /// `--check`): p. ej. que ninguna regla la fijó o la declaró una persona.
+    pub observations: Vec<String>,
 }
 
 /// Solo lectura — nunca escribe nada. `project_root` es contra qué se
@@ -226,6 +455,17 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
 
     let subjects_dir = rationale_dir.join("subjects");
     let known_subjects = subjects::list_subjects(&subjects_dir).unwrap_or_default();
+    for (path, error) in &records_result.skipped {
+        findings.push(Finding::UnreadableRecord {
+            path: path.clone(),
+            error: error.to_string(),
+        });
+    }
+    let status = lifecycle::StatusIndex::build(&records_result.records);
+    // Rutas faltantes de Records vigentes, agrupadas después por alcance
+    // retirado. Un Record reemplazado o revocado puede apuntar a código que ya
+    // no existe: es historia, no un defecto.
+    let mut missing: Vec<(String, String, String, PathBuf)> = Vec::new();
 
     for record in &records_result.records {
         let path = records_dir.join(format!("{}.yaml", record.id));
@@ -257,13 +497,27 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
         } else {
             for binding in &record.binding_declarations {
                 if let Some(hint) = &binding.path_hint {
+                    if !status.is_active(record) {
+                        continue;
+                    }
                     if !project_root.join(hint).exists() {
-                        findings.push(Finding::BindingPathMissing {
-                            record_id: record.id.clone(),
-                            path: path.clone(),
-                            binding_id: binding.id.clone(),
-                            path_hint: hint.clone(),
-                        });
+                        missing.push((
+                            record.id.clone(),
+                            binding.id.clone(),
+                            hint.clone(),
+                            path.clone(),
+                        ));
+                    } else if let Some(symbol) = &binding.symbol {
+                        let source =
+                            std::fs::read_to_string(project_root.join(hint)).unwrap_or_default();
+                        if crate::symbols::find_definition(&source, symbol).is_none() {
+                            findings.push(Finding::UnconfirmedSymbolMissing {
+                                record_id: record.id.clone(),
+                                path: path.clone(),
+                                symbol: symbol.clone(),
+                                path_hint: hint.clone(),
+                            });
+                        }
                     }
                 }
             }
@@ -299,6 +553,18 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
             }
         }
     }
+
+    findings.extend(retired_scopes(
+        project_root,
+        &records_result.records,
+        &status,
+        missing,
+    ));
+    findings.extend(lifecycle_findings(
+        &records_dir,
+        &records_result.records,
+        &status,
+    ));
 
     let bindings_dir = rationale_dir.join("bindings");
     if bindings_dir.is_dir() {
@@ -343,7 +609,323 @@ pub fn check(rationale_dir: &Path, project_root: &Path) -> DoctorReport {
         }
     }
 
-    DoctorReport { findings }
+    let observations = human_authority_observation(&records_result.records, &status)
+        .into_iter()
+        .collect();
+    DoctorReport {
+        findings,
+        observations,
+    }
+}
+
+/// El ancestro más alto que tampoco existe: `src/comunicaciones/inbox.ts`
+/// borrado junto con su carpeta da `src/comunicaciones`.
+fn retired_root(project_root: &Path, missing: &str) -> String {
+    let mut root = missing.trim_end_matches('/').to_string();
+    while let Some((parent, _)) = root.rsplit_once('/') {
+        if parent.is_empty() || project_root.join(parent).exists() {
+            break;
+        }
+        root = parent.to_string();
+    }
+    root
+}
+
+/// Agrupa las rutas faltantes por alcance retirado. Una carpeta retirada, o
+/// un archivo con varios Records, es un solo hallazgo con su lista; un
+/// archivo suelto con un solo Record sigue siendo `binding-path-missing`.
+fn retired_scopes(
+    project_root: &Path,
+    records: &[storage::Record],
+    status: &lifecycle::StatusIndex,
+    missing: Vec<(String, String, String, PathBuf)>,
+) -> Vec<Finding> {
+    let mut groups: BTreeMap<String, Vec<(String, String, String, PathBuf)>> = BTreeMap::new();
+    for entry in missing {
+        groups
+            .entry(retired_root(project_root, &entry.2))
+            .or_default()
+            .push(entry);
+    }
+    let by_id: HashMap<&str, &storage::Record> =
+        records.iter().map(|r| (r.id.as_str(), r)).collect();
+    let mut findings = Vec::new();
+    for (root, entries) in groups {
+        let mut record_ids: Vec<String> = entries.iter().map(|e| e.0.clone()).collect();
+        record_ids.sort();
+        record_ids.dedup();
+        // Un solo Record conserva su hallazgo puntual, más preciso.
+        if record_ids.len() < 2 {
+            for (record_id, binding_id, path_hint, path) in entries {
+                findings.push(Finding::BindingPathMissing {
+                    record_id,
+                    path,
+                    binding_id,
+                    path_hint,
+                });
+            }
+            continue;
+        }
+        let mut pinned = Vec::new();
+        let mut partially_bound = Vec::new();
+        for id in &record_ids {
+            let Some(record) = by_id.get(id.as_str()) else {
+                continue;
+            };
+            if !status.is_active(record) {
+                continue;
+            }
+            if storage::record_authority(record) == storage::RecordAuthority::Pinned {
+                pinned.push(id.clone());
+            }
+            let outside = record.binding_declarations.iter().any(|b| {
+                b.path_hint.as_deref().is_some_and(|hint| {
+                    let hint = hint.trim_end_matches('/');
+                    hint != root && !binding_match::is_under(hint, &root)
+                })
+            });
+            if outside {
+                partially_bound.push(id.clone());
+            }
+        }
+        findings.push(Finding::RetiredScope {
+            path: root,
+            record_ids,
+            pinned,
+            partially_bound,
+        });
+    }
+    findings
+}
+
+/// Supersesiones de un solo lado, ciclos y excepciones sin regla vigente.
+fn lifecycle_findings(
+    records_dir: &Path,
+    records: &[storage::Record],
+    status: &lifecycle::StatusIndex,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let path_of = |id: &str| records_dir.join(format!("{id}.yaml"));
+    for record in records {
+        if status.status(record) == lifecycle::RecordStatus::Superseded
+            && storage::superseded_by(record).is_none()
+            && storage::lifecycle_status(record) != Some("superseded")
+        {
+            if let Some(by) = status.replaced_by(&record.id) {
+                findings.push(Finding::InconsistentSupersession {
+                    record_id: record.id.clone(),
+                    path: path_of(&record.id),
+                    superseded_by: by.to_string(),
+                });
+            }
+        }
+        if let Some(note) = lifecycle::orphaned_exception(record, status) {
+            findings.push(Finding::OrphanedException {
+                record_id: record.id.clone(),
+                path: path_of(&record.id),
+                note,
+            });
+        } else if record.kind == "exception"
+            && status.is_active(record)
+            && lifecycle::exception_targets(record).0.is_empty()
+        {
+            findings.push(Finding::UnlinkedException {
+                record_id: record.id.clone(),
+                path: path_of(&record.id),
+            });
+        }
+    }
+    // Ciclos en `supersedes`: a → b → … → a.
+    let edges: HashMap<&str, Vec<&str>> = records
+        .iter()
+        .map(|r| {
+            (
+                r.id.as_str(),
+                r.supersedes.iter().map(String::as_str).collect(),
+            )
+        })
+        .collect();
+    let mut reported: HashSet<Vec<String>> = HashSet::new();
+    for start in edges.keys() {
+        let mut path = vec![*start];
+        let mut current = *start;
+        let mut seen = HashSet::new();
+        while let Some(next) = edges.get(current).and_then(|targets| targets.first()) {
+            if *next == *start {
+                let mut cycle: Vec<String> = path.iter().map(|s| s.to_string()).collect();
+                cycle.sort();
+                if reported.insert(cycle.clone()) {
+                    findings.push(Finding::SupersessionCycle { record_ids: cycle });
+                }
+                break;
+            }
+            if !seen.insert(*next) {
+                break;
+            }
+            path.push(next);
+            current = next;
+        }
+    }
+    findings
+}
+
+/// Ninguna regla vigente la fijó ni la declaró una persona: toda la memoria
+/// es lo que afirmaron agentes. No es un defecto, pero conviene saberlo.
+fn human_authority_observation(
+    records: &[storage::Record],
+    status: &lifecycle::StatusIndex,
+) -> Option<String> {
+    let active: Vec<&storage::Record> = records.iter().filter(|r| status.is_active(r)).collect();
+    let human = active.iter().any(|r| {
+        storage::record_authority(r) == storage::RecordAuthority::Pinned
+            || storage::provenance_kind(r) == storage::ProvenanceKind::HumanStated
+    });
+    (!active.is_empty() && !human).then(|| {
+        format!(
+            "{} active Record(s), none pinned or stated by a person: every rule is what an \
+             agent asserted. People state the rules they own with `rationale rule add` or fix \
+             one with `rationale pin <id>`.",
+            active.len()
+        )
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Línea base para `--check`
+// ---------------------------------------------------------------------------
+
+const BASELINE_SCHEMA: &str = "rationale/doctor-baseline/1";
+pub const BASELINE_FILE: &str = "doctor-baseline.json";
+
+/// Deuda conocida y aceptada: los hallazgos que existían cuando una persona
+/// fijó la línea base. `--check` falla solo por lo nuevo; lo conocido se
+/// sigue reportando, nunca se oculta.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Baseline {
+    pub schema_version: String,
+    pub created_at: String,
+    pub findings: Vec<BaselineEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaselineEntry {
+    pub fingerprint: String,
+    pub severity: FindingSeverity,
+    pub summary: String,
+}
+
+pub fn load_baseline(rationale_dir: &Path) -> Result<Option<Baseline>, String> {
+    let path = rationale_dir.join(BASELINE_FILE);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|e| format!("{} is not a valid baseline: {e}", path.display()))
+}
+
+pub fn write_baseline(rationale_dir: &Path, report: &DoctorReport) -> Result<PathBuf, String> {
+    let mut entries: Vec<BaselineEntry> = report
+        .findings
+        .iter()
+        .map(|finding| BaselineEntry {
+            fingerprint: finding.fingerprint(),
+            severity: finding.severity(),
+            summary: crate::activity::bounded(&finding.describe(), 160),
+        })
+        .collect();
+    entries.sort_by(|a, b| a.fingerprint.cmp(&b.fingerprint));
+    entries.dedup_by(|a, b| a.fingerprint == b.fingerprint);
+    let baseline = Baseline {
+        schema_version: BASELINE_SCHEMA.to_string(),
+        created_at: crate::evaluation::now_iso8601(),
+        findings: entries,
+    };
+    let path = rationale_dir.join(BASELINE_FILE);
+    let mut bytes = serde_json::to_vec_pretty(&baseline).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    storage::atomic_write_bytes(&path, &bytes).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
+/// Cómo queda cada hallazgo frente a la línea base.
+#[derive(Debug, Serialize)]
+pub struct CheckedFinding<'a> {
+    #[serde(flatten)]
+    pub finding: &'a Finding,
+    pub severity: FindingSeverity,
+    pub fingerprint: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix: Option<String>,
+    /// `new` (no estaba en la línea base) o `known`.
+    pub baseline: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CheckSummary {
+    pub errors: usize,
+    pub warnings: usize,
+    pub info: usize,
+    /// Hallazgos que no estaban en la línea base, con gravedad ≥ el umbral.
+    pub new_failing: usize,
+    pub known: usize,
+    /// En la línea base y ya resueltos: la línea base puede actualizarse.
+    pub fixed: Vec<String>,
+    pub baseline_present: bool,
+}
+
+pub fn classify<'a>(
+    report: &'a DoctorReport,
+    baseline: Option<&Baseline>,
+    fail_on: FindingSeverity,
+) -> (Vec<CheckedFinding<'a>>, CheckSummary) {
+    let known: HashSet<&str> = baseline
+        .map(|b| b.findings.iter().map(|e| e.fingerprint.as_str()).collect())
+        .unwrap_or_default();
+    let current: HashSet<String> = report.findings.iter().map(Finding::fingerprint).collect();
+    let checked: Vec<CheckedFinding> = report
+        .findings
+        .iter()
+        .map(|finding| {
+            let fingerprint = finding.fingerprint();
+            CheckedFinding {
+                severity: finding.severity(),
+                baseline: if known.contains(fingerprint.as_str()) {
+                    "known"
+                } else {
+                    "new"
+                },
+                fingerprint,
+                message: finding.describe(),
+                fix: finding.fix(),
+                finding,
+            }
+        })
+        .collect();
+    let count = |severity| checked.iter().filter(|c| c.severity == severity).count();
+    let summary = CheckSummary {
+        errors: count(FindingSeverity::Error),
+        warnings: count(FindingSeverity::Warning),
+        info: count(FindingSeverity::Info),
+        new_failing: checked
+            .iter()
+            .filter(|c| c.baseline == "new" && c.severity >= fail_on)
+            .count(),
+        known: checked.iter().filter(|c| c.baseline == "known").count(),
+        fixed: baseline
+            .map(|b| {
+                b.findings
+                    .iter()
+                    .filter(|e| !current.contains(&e.fingerprint))
+                    .map(|e| e.fingerprint.clone())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        baseline_present: baseline.is_some(),
+    };
+    (checked, summary)
 }
 
 /// Repara UN hallazgo — siempre con la palabra de confirmación ya validada
@@ -427,7 +1009,21 @@ pub fn repair(
             std::fs::rename(path, &restored).map_err(|e| e.to_string())?;
             Ok(restored)
         }
-        _ => Err("este tipo de hallazgo no es reparable automáticamente — ver describe()".into()),
+        Finding::InconsistentSupersession {
+            record_id,
+            superseded_by,
+            path,
+        } => {
+            crate::canon::mark_superseded_in(
+                &rationale_dir.join("records"),
+                record_id,
+                superseded_by,
+                &format!("user:{reviewer_actor}"),
+                "both sides of the supersession recorded by rationale doctor --repair",
+            )?;
+            Ok(path.clone())
+        }
+        _ => Err("this finding is not repaired automatically; see its fix".into()),
     }
 }
 
@@ -775,6 +1371,192 @@ mod tests {
             .iter()
             .any(|f| matches!(f, Finding::EmptyBindingsDirectory { .. })));
 
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    fn bound(id: &str, kind: &str, paths: &[&str], extra: &str) -> String {
+        let bindings: String = paths
+            .iter()
+            .enumerate()
+            .map(|(i, p)| format!("  - id: b.{i}\n    type: file\n    path_hint: {p}\n"))
+            .collect();
+        format!(
+            "id: {id}\nkind: {kind}\nseverity: high\nstatement: \"s {id}\"\nrationale: \"r\"\nbinding_declarations:\n{bindings}{extra}"
+        )
+    }
+
+    #[test]
+    fn a_retired_folder_is_one_finding_and_inactive_records_are_history() {
+        let project = unique_dir("retired");
+        let rationale_dir = project.join(".rationale");
+        let records = rationale_dir.join("records");
+        std::fs::create_dir_all(project.join("src/notifications")).unwrap();
+        std::fs::write(project.join("src/notifications/email.ts"), "x\n").unwrap();
+        for (id, paths, extra) in [
+            ("decision.a", vec!["src/comms/inbox.ts"], ""),
+            (
+                "decision.b",
+                vec!["src/comms/outbox.ts", "src/notifications/email.ts"],
+                "",
+            ),
+            (
+                "constraint.c",
+                vec!["src/comms/templates.ts"],
+                "authority: pinned\n",
+            ),
+            (
+                "decision.old",
+                vec!["src/comms/inbox.ts"],
+                "lifecycle:\n  status: revoked\n",
+            ),
+        ] {
+            let kind = id.split('.').next().unwrap();
+            write_record_yaml(&records, id, &bound(id, kind, &paths, extra));
+        }
+        let report = check(&rationale_dir, &project);
+        let retired: Vec<_> = report
+            .findings
+            .iter()
+            .filter_map(|f| match f {
+                Finding::RetiredScope {
+                    path,
+                    record_ids,
+                    pinned,
+                    partially_bound,
+                } => Some((path, record_ids, pinned, partially_bound)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(retired.len(), 1, "{:?}", report.findings);
+        let (path, ids, pinned, partial) = retired[0];
+        assert_eq!(path, "src/comms");
+        assert_eq!(ids, &["constraint.c", "decision.a", "decision.b"]);
+        assert_eq!(pinned, &["constraint.c"]);
+        assert_eq!(partial, &["decision.b"]);
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| matches!(f, Finding::BindingPathMissing { .. })));
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    #[test]
+    fn one_sided_supersession_is_found_and_repaired_on_the_old_record() {
+        let project = unique_dir("one-sided");
+        let rationale_dir = project.join(".rationale");
+        let records = rationale_dir.join("records");
+        std::fs::write(project.join("README.md"), "x\n").unwrap();
+        write_record_yaml(
+            &records,
+            "decision.old",
+            &bound("decision.old", "decision", &["README.md"], ""),
+        );
+        write_record_yaml(
+            &records,
+            "decision.new",
+            &bound(
+                "decision.new",
+                "decision",
+                &["README.md"],
+                "supersedes: [decision.old]\n",
+            ),
+        );
+        let report = check(&rationale_dir, &project);
+        let finding = report
+            .findings
+            .iter()
+            .find(|f| matches!(f, Finding::InconsistentSupersession { .. }))
+            .expect("one-sided supersession");
+        assert!(finding.is_repairable());
+        repair(&rationale_dir, finding, "owner").unwrap();
+        let old = storage::read_record(&records.join("decision.old.yaml")).unwrap();
+        assert_eq!(storage::superseded_by(&old), Some("decision.new"));
+        assert_eq!(storage::lifecycle_status(&old), Some("superseded"));
+        assert!(!check(&rationale_dir, &project)
+            .findings
+            .iter()
+            .any(|f| matches!(f, Finding::InconsistentSupersession { .. })));
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    #[test]
+    fn exceptions_without_a_current_rule_are_errors_and_unlinked_ones_info() {
+        let project = unique_dir("exceptions");
+        let rationale_dir = project.join(".rationale");
+        let records = rationale_dir.join("records");
+        std::fs::write(project.join("README.md"), "x\n").unwrap();
+        write_record_yaml(
+            &records,
+            "constraint.rule",
+            &bound(
+                "constraint.rule",
+                "constraint",
+                &["README.md"],
+                "lifecycle:\n  status: revoked\n",
+            ),
+        );
+        write_record_yaml(
+            &records,
+            "exception.orphan",
+            &bound(
+                "exception.orphan",
+                "exception",
+                &["README.md"],
+                "exception_to: [constraint.rule]\n",
+            ),
+        );
+        write_record_yaml(
+            &records,
+            "exception.unlinked",
+            &bound("exception.unlinked", "exception", &["README.md"], ""),
+        );
+        let report = check(&rationale_dir, &project);
+        let orphan = report
+            .findings
+            .iter()
+            .find(|f| matches!(f, Finding::OrphanedException { .. }))
+            .unwrap();
+        assert_eq!(orphan.severity(), FindingSeverity::Error);
+        let unlinked = report
+            .findings
+            .iter()
+            .find(|f| matches!(f, Finding::UnlinkedException { .. }))
+            .unwrap();
+        assert_eq!(unlinked.severity(), FindingSeverity::Info);
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    #[test]
+    fn the_baseline_fails_only_on_new_findings_and_never_hides_known_ones() {
+        let project = unique_dir("baseline");
+        let rationale_dir = project.join(".rationale");
+        let records = rationale_dir.join("records");
+        write_record_yaml(
+            &records,
+            "constraint.legacy",
+            &bound("constraint.legacy", "constraint", &["gone.rs"], ""),
+        );
+        let report = check(&rationale_dir, &project);
+        let (_, before) = classify(&report, None, FindingSeverity::Error);
+        assert_eq!(
+            before.new_failing, 1,
+            "without a baseline everything is new"
+        );
+
+        write_baseline(&rationale_dir, &report).unwrap();
+        let baseline = load_baseline(&rationale_dir).unwrap().unwrap();
+        let (checked, known) = classify(&report, Some(&baseline), FindingSeverity::Error);
+        assert_eq!(known.new_failing, 0);
+        assert_eq!(checked[0].baseline, "known", "still reported");
+
+        write_record_yaml(
+            &records,
+            "constraint.fresh",
+            &bound("constraint.fresh", "constraint", &["also-gone.rs"], ""),
+        );
+        let report = check(&rationale_dir, &project);
+        let (_, after) = classify(&report, Some(&baseline), FindingSeverity::Error);
+        assert_eq!(after.new_failing, 1, "a new regression fails");
         std::fs::remove_dir_all(&project).ok();
     }
 

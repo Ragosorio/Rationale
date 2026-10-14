@@ -17,6 +17,7 @@ use crate::relationships::{self, RelationshipAssessment, RelationshipState};
 use crate::storage::Record;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct StructuralBudget {
@@ -104,6 +105,11 @@ pub struct StructuralContext {
     pub known_unknowns: Vec<String>,
     pub warnings: Vec<String>,
     pub truncated: bool,
+    /// Nodos que el índice devolvió y el árbol de trabajo ya no tiene
+    /// (archivo borrado o símbolo ausente): se excluyen del contexto.
+    pub stale_nodes: Vec<String>,
+    /// El archivo define el símbolo consultado pero el índice no lo conoce.
+    pub target_unindexed: bool,
 }
 
 impl StructuralContext {
@@ -243,6 +249,7 @@ fn records_for_node<'a>(node: &ContextNode, records: &[&'a Record]) -> Vec<&'a R
     let key = TargetKey {
         rel_path: Some(node.file_path.clone()),
         symbol: Some(node.name.clone()),
+        is_dir: false,
     };
     records
         .iter()
@@ -276,11 +283,21 @@ pub struct GatherInput<'a> {
     /// Records activos del canon.
     pub records: &'a [&'a Record],
     pub budget: &'a StructuralBudget,
+    /// El target es una carpeta: no hay vecindario estructural que pedir.
+    pub target_is_dir: bool,
 }
 
 pub fn gather(provider: &mut ProviderHandle, input: GatherInput) -> StructuralContext {
     let mut context = StructuralContext::default();
     let mut nodes: HashMap<String, ContextNode> = HashMap::new();
+    if input.target_is_dir {
+        context.known_unknowns.push(
+            "folder target: no structural neighborhood is gathered for a folder; the Records \
+             below are the ones bound to code inside it"
+                .to_string(),
+        );
+        return context;
+    }
     match (provider.as_provider(), input.target_file) {
         (None, _) => context.known_unknowns.push(
             "sin proveedor estructural: vecindario, relaciones y código relevante no \
@@ -321,6 +338,7 @@ pub fn gather(provider: &mut ProviderHandle, input: GatherInput) -> StructuralCo
     // sin proveedor, con estado `unknown`: una explicación nunca desaparece
     // del contexto porque la estructura no se pudo verificar.
     overlay_explained_relationships(provider, &input, &mut context, &mut nodes);
+    verify_against_working_tree(&input, &mut context, &mut nodes);
     select(&input, nodes, &mut context);
     annotate_records(&mut context, input.records);
     context
@@ -338,11 +356,21 @@ fn gather_symbol(
     let resolved = client.resolve_node(input.repo_path, file, symbol);
     context.warnings.extend(resolved.warnings.clone());
     let Some(mut target_node) = resolved.data else {
+        let defined = crate::symbols::WorkingTree::new(Path::new(input.repo_path))
+            .find_definition(file, symbol)
+            .is_some();
+        context.target_unindexed = defined && resolved.status == ProviderStatus::Successful;
         context.known_unknowns.push(match resolved.status {
-            ProviderStatus::Successful => format!(
-                "'{symbol}' no está en el índice del proveedor para '{file}' — no implica que no exista"
+            ProviderStatus::Successful if defined => format!(
+                "'{file}' defines '{symbol}', but the structural index does not know it yet \
+                 (stale index or a symbol new on this branch): its callers, callees, and \
+                 relationships are not verified"
             ),
-            _ => "el proveedor no pudo resolver el target".to_string(),
+            ProviderStatus::Successful => format!(
+                "'{symbol}' is not in the structural index for '{file}' — that does not mean it \
+                 does not exist"
+            ),
+            _ => "the structural provider could not resolve the target".to_string(),
         });
         return;
     };
@@ -408,6 +436,70 @@ fn gather_symbol(
     context.target_node = Some(target_node);
 }
 
+/// Descarta lo que el índice afirma y el árbol de trabajo desmiente: nodos de
+/// archivos borrados o símbolos que ya no aparecen en su archivo (índice
+/// atrasado, u otro checkout indexado en la misma ruta). Visto en vivo: el
+/// packet de `src/pipeline.rs::explain` traía como `observed` llamadas a
+/// `src/providers/native/*`, archivos que no existían en ese clon. El target
+/// y los extremos que el canon explica se conservan: su ausencia la reporta
+/// el estado de la relación.
+fn verify_against_working_tree(
+    input: &GatherInput,
+    context: &mut StructuralContext,
+    nodes: &mut HashMap<String, ContextNode>,
+) {
+    // Sin árbol de trabajo (tests con un grafo en memoria) no hay contra qué
+    // contrastar.
+    if input.repo_path.is_empty() || !Path::new(input.repo_path).is_dir() {
+        return;
+    }
+    let mut tree = crate::symbols::WorkingTree::new(Path::new(input.repo_path));
+    let mut stale: Vec<String> = Vec::new();
+    let mut missing_files: Vec<String> = Vec::new();
+    nodes.retain(|key, node| {
+        if matches!(node.role, NodeRole::Target) {
+            return true;
+        }
+        let explained = context.relationships.iter().any(|relationship| {
+            relationship.source.qualified_name == node.qualified_name
+                || relationship.target.qualified_name == node.qualified_name
+        });
+        if explained {
+            return true;
+        }
+        match tree.check_node(&node.file_path, &node.name, node.start_line) {
+            crate::symbols::NodeCheck::Present => true,
+            check => {
+                if check == crate::symbols::NodeCheck::MissingFile
+                    && !missing_files.contains(&node.file_path)
+                {
+                    missing_files.push(node.file_path.clone());
+                }
+                stale.push(key.clone());
+                false
+            }
+        }
+    });
+    if stale.is_empty() {
+        return;
+    }
+    context
+        .edges
+        .retain(|edge| !stale.contains(&edge.source) && !stale.contains(&edge.target));
+    missing_files.sort();
+    context.warnings.push(format!(
+        "stale index: {} node(s) not in the working tree were left out{}",
+        stale.len(),
+        if missing_files.is_empty() {
+            String::new()
+        } else {
+            format!(" (deleted: {})", missing_files.join(", "))
+        }
+    ));
+    context.index_state = Some("stale".to_string());
+    context.stale_nodes = stale;
+}
+
 fn overlay_explained_relationships(
     provider: &mut ProviderHandle,
     input: &GatherInput,
@@ -424,6 +516,7 @@ fn overlay_explained_relationships(
             .target_symbol
             .filter(|s| !s.is_empty())
             .map(str::to_string),
+        is_dir: false,
     };
     for record in input.records {
         for binding in &record.relationship_bindings {
@@ -581,6 +674,7 @@ mod tests {
                 target_symbol: Some("create_link"),
                 records,
                 budget: &budget,
+                target_is_dir: false,
             },
         )
     }
@@ -677,6 +771,7 @@ mod tests {
                 target_symbol: Some("create_link"),
                 records: &[],
                 budget: &StructuralBudget::default(),
+                target_is_dir: false,
             },
         );
         assert!(context.nodes.is_empty());
@@ -713,6 +808,7 @@ mod tests {
                 target_symbol: symbol,
                 records,
                 budget: &StructuralBudget::default(),
+                target_is_dir: false,
             },
         )
     }

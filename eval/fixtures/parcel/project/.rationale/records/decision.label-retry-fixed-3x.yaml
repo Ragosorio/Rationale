@@ -1,0 +1,36 @@
+id: decision.label-retry-fixed-3x
+kind: decision
+severity: medium
+statement: "Label purchase retries exactly 3 times with no delay between attempts."
+rationale: "The first carrier integration failed transiently and recovered within a second."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-06-02T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.decision.label-retry-fixed-3x.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/shipping/service.ts
+  provisional: false
+- id: binding.decision.label-retry-fixed-3x.1
+  type: symbol
+  provider: fixture
+  structural_id: src.shipping.service.retryLabel
+  path_hint: src/shipping/service.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-06-02T10:00:00Z

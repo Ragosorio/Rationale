@@ -1,0 +1,13 @@
+# Targets in Rationale's own repository (symbol, file and folder queries).
+src/pipeline.rs::explain
+src/pipeline.rs::prepare
+src/retrieval.rs::compile
+src/retrieval.rs::select_constraints
+src/binding_match.rs::governing
+src/canon.rs::capture_candidates
+src/providers/codebase_memory.rs::resolve_project
+src/agents.rs::install
+src/mcp/server.rs::handle_tools_call
+src/main.rs
+src/providers
+site/astro.config.mjs

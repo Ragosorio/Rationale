@@ -1,0 +1,45 @@
+
+== existing install: the previous binary
+rationale v1.1.0
+
+== project initialized by the previous binary
+{"path":"<work>/install-test/proj/.rationale","status":"initialized"}
+previous binary wrote: decision.quotes-are-computed-integer-cents-end-end
+
+== upgrade from a release mirror (installer)
+Rationale 1.2.0-dev instalado en <work>/install-test/home/.local/bin/rationale
+Versión verificada: rationale 1.2.0-dev
+Ejecuta 'rationale init' dentro de un proyecto: crea .rationale/ y avisa
+automáticamente a los agentes de código presentes (usa --skip-agent-config para omitirlo).
+rationale 1.2.0-dev
+claude user MCP after install: {'args': ['serve', '--client', 'claude-code'], 'command': '<work>/install-test/home/.local/bin/rationale'}
+
+== install-agent with the new binary
+Agentes detectados: claude-code
+- claude-code: hooks (session-start, pre-edit, post-tool, stop) in .claude/settings.local.json, a local file outside Git; `rationale uninstall-agent` removes them
+canon unchanged by upgrade: yes
+hook commands: ['<work>/install-test/home/.local/bin/rationale hook post-tool', '<work>/install-test/home/.local/bin/rationale hook pre-edit', '<work>/install-test/home/.local/bin/rationale hook session-start', '<work>/install-test/home/.local/bin/rationale hook stop']
+
+== new binary on the old canon
+No findings: the canon in <work>/install-test/proj/.rationale is healthy.
+note: 1 active Record(s), none pinned or stated by a person: every rule is what an agent asserted. People state the rules they own with `rationale rule add` or fix one with `rationale pin <id>`.
+retrieval: found | decisions: ['decision.quotes-are-computed-integer-cents-end-end'] | tokens: {'max_tokens': 2400, 'estimated_tokens': 809, 'estimator': 'upper-bound'}
+session-start hook: Rationale keeps this repository's decisions in .rationale/ (1 active Record(s), 0 pinned by people). Before a non-trivial change call prepare_change(target, int
+
+== uninstall-agent
+- claude-code: revertido <work>/install-test/proj/CLAUDE.md
+- claude-code: eliminado <work>/install-test/proj/.claude/skills/rationale-preflight/SKILL.md
+- claude-code: eliminado <work>/install-test/proj/.claude/skills/rationale-explain/SKILL.md
+- claude-code: eliminado <work>/install-test/proj/.claude/skills/rationale-capture/SKILL.md
+- claude-code: eliminado <work>/install-test/proj/.claude/skills/rationale-conflicts/SKILL.md
+- claude-code: eliminado <work>/install-test/proj/.claude/skills/rationale-health/SKILL.md
+settings.local.json removed
+CLAUDE.md block removed
+
+== uninstall script
+No se modificó ningún directorio .rationale/.
+Si 'rationale init' avisó a algún agente en un proyecto, corre
+'rationale uninstall-agent' dentro de ese proyecto para revertirlo.
+binary removed
+canon untouched by uninstall: yes
+claude user MCP after uninstall: file removed

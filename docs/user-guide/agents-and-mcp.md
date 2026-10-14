@@ -16,7 +16,7 @@ rationale install-agent
 
 | Agent | MCP registration (per user) | In the project |
 |---|---|---|
-| Claude Code | `~/.claude.json` | Block in `CLAUDE.md`, the `rationale` skill in `.claude/skills/rationale/`, and five shortcuts in `.claude/skills/rationale-*/` |
+| Claude Code | `~/.claude.json` | Block in `CLAUDE.md`, the `rationale` skill in `.claude/skills/rationale/`, five shortcuts in `.claude/skills/rationale-*/`, and hooks in `.claude/settings.local.json` ([Claude Code](claude-code.md)) |
 | Codex | `codex mcp add` | Block in `AGENTS.md` and the `rationale` skill in `.agents/skills/rationale/` |
 | Cursor | `~/.cursor/mcp.json` | `.cursor/rules/rationale.mdc` |
 
@@ -89,13 +89,41 @@ in plain language:
 
 ## MCP tools
 
-The server exposes five tools:
+The server exposes five tools.
 
-- `health`
-- `prepare_change`
-- `explain_target`
-- `finalize_change`
-- `resolve_conflict` — only with the person's literal answer (`human_answer`)
+| Tool | Arguments | Returns |
+|---|---|---|
+| `prepare_change` | `target` (`path::symbol`, a file, or a folder), `intent`, `max_tokens` (default 2400, a ceiling for the whole response), `max_nodes`, `max_relationships`, `max_critical_constraints`, `max_risks`, `advise`, `verbose`, `project_root`, `repo_path` | `operation_id`, the `packet`, a compact `assessment`, `latency_ms`; `diagnostics` only with `verbose` |
+| `explain_target` | `target`, `include_history` | `governing_records` (active only, with `why`), `history` (superseded, revoked, retired, with replacement), `subject`, `known`, `unknown` |
+| `finalize_change` | `operation_id`, `summary`, `candidates` (each may carry `exception_to`), `base_revision`, `abandon` | Committed, discarded, conflicts, superseded; with `abandon: true`, the operation is closed without memory |
+| `resolve_conflict` | `conflict_id`, `decision`, `human_answer` (the person's literal words) | The resolution |
+| `health` | `project_root` | Git state, provider status and coverage, `canon` counts, `open_operations` |
+
+The packet in detail:
+
+- `retrieval.status` says what kind of answer it is: `found`, `none_found`,
+  `index_incomplete` (the file defines the symbol but the structural index does
+  not know it), or `target_missing` (with the count of active Records still
+  bound to the missing path). `retrieval.scope` is `symbol`, `file`, or
+  `folder`.
+- `critical_constraints` and `decisions` hold only active Records, each with
+  `why` it was selected, the Records it `replaces`, its active `exceptions`,
+  and caveats (`stale_bindings`, `flags: ["orphaned_exception"]`, `note`).
+- `inherited_constraints` are critical, high, or pinned constraints of code the
+  target uses (or critical and pinned ones of code that uses it), each with the
+  observed edge that brought it (`via`).
+- `history` lists Records bound to the target that no longer govern.
+- `omitted` lists what did not fit the budget, with the call that returns it;
+  `budget` reports the ceiling and the upper-bound estimate of the whole
+  response. Governing knowledge is never cut; `budget_overflow` says when it
+  alone exceeds the ceiling.
+- `execution_advice` appears only with `advise: true` (or `advice.enabled` in
+  the config): a model tier, reasoning effort, context size, and reasons.
+
+Responses from 1.2 are smaller and stricter than 1.1: `diagnostics` and the
+per-binding assessment need `verbose: true`, and `intent_conflicts` no longer
+repeat each Record's statement (it is in the lists above). See the
+[changelog](../../CHANGELOG.md) for every contract change.
 
 It also exposes six prompts: `preflight`, `explain`, `capture`, `conflicts`,
 `health`, and `protocol`, from the same source as the Claude Code shortcuts.

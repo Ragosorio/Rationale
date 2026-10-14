@@ -26,6 +26,21 @@ for script in scripts/*.sh; do
   bash -n "$script"
 done
 
+# Cada `rationale <comando> --flag` documentado debe existir en el binario
+# construido (el mismo que acaban de probar los tests). Sin binario, se avisa:
+# la verificación no se salta en silencio.
+doc_binary="${RATIONALE_BIN:-}"
+for candidate in target/debug/rationale target/release/rationale; do
+  if [[ -z "$doc_binary" && -x "$candidate" ]]; then
+    doc_binary="$candidate"
+  fi
+done
+if [[ -n "$doc_binary" ]]; then
+  python3 -I scripts/check-doc-commands.py "$doc_binary"
+else
+  echo "check-doc-commands: no built binary (build first or set RATIONALE_BIN); documented commands NOT verified" >&2
+fi
+
 # This command used to appear in installation guidance but only works before
 # packaging. Keep the public instructions on the installed CLI path.
 if rg -n 'target/release/rationale health' README.md docs; then

@@ -1,0 +1,35 @@
+id: decision.the-landing-demo-shows-abridged-responses-produced
+kind: decision
+severity: medium
+statement: The landing demo shows abridged responses produced by the development binary on the invented eval/fixtures/parcel project and labels them as a simulated example; it never shows a real team's canon, and its numbers are not presented as customer results.
+rationale: The demo exists to show what an agent receives in each failure case. Excerpts from a real team's canon would expose their data and read as customer results; the evaluation fixture keeps every excerpt reproducible with eval/run_eval.py, so the label can be literal.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a13b60ff6969b43473
+  session_id: session_1a13b6e0cd4ecc8639d
+  asserted_at: 2026-10-14T17:20:30Z
+approvals: []
+binding_declarations:
+- id: binding.decision.the-landing-demo-shows-abridged-responses-produced.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: site/src/components/DemoScenarios.astro
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 31f28c8276ff2139a52c49c2334325a71a8aa500
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-10-14T17:20:30Z
+    operation_id: op_1a13b60ff6969b43473
