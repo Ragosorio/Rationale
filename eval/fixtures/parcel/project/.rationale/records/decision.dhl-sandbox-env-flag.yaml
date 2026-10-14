@@ -1,0 +1,30 @@
+id: decision.dhl-sandbox-env-flag
+kind: decision
+severity: low
+statement: "The DHL adapter selects its sandbox only through the DHL_SANDBOX environment flag."
+rationale: "A hard-coded sandbox switch shipped to production once; an environment flag keeps builds identical."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-08-01T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.decision.dhl-sandbox-env-flag.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/shipping/carriers/dhl.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-08-01T10:00:00Z

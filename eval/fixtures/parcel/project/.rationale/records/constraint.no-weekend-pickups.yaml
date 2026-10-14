@@ -1,0 +1,39 @@
+id: constraint.no-weekend-pickups
+kind: constraint
+severity: medium
+statement: "Shipments created on weekends must not request a pickup before Monday."
+rationale: "The original carrier contract excluded weekend pickups."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-05-01T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.constraint.no-weekend-pickups.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/shipping/service.ts
+  provisional: false
+- id: binding.constraint.no-weekend-pickups.1
+  type: symbol
+  provider: fixture
+  structural_id: src.shipping.service.createShipment
+  path_hint: src/shipping/service.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: revoked
+  events:
+  - type: asserted
+    timestamp: 2026-05-01T10:00:00Z
+  - type: revoked
+    reason: The carrier contract changed.
+    timestamp: 2026-07-01T10:00:00Z

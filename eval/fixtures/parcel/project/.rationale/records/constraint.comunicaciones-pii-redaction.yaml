@@ -1,0 +1,36 @@
+id: constraint.comunicaciones-pii-redaction
+kind: constraint
+severity: critical
+statement: "Comunicaciones redacts personal data before a message is persisted."
+rationale: "Messages were stored with customer phone numbers in clear text."
+epistemic_status: stated
+authority: pinned
+provenance:
+  kind: human_stated
+  actor: 'user:owner <owner@example.invalid>'
+  stated_at: 2026-03-01T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.constraint.comunicaciones-pii-redaction.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/comunicaciones/inbox.ts
+  provisional: false
+- id: binding.constraint.comunicaciones-pii-redaction.1
+  type: symbol
+  provider: fixture
+  structural_id: src.comunicaciones.inbox.inboxHandler
+  path_hint: src/comunicaciones/inbox.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-03-01T10:00:00Z

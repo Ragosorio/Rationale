@@ -1,0 +1,190 @@
+{
+  "nodes": [
+    {
+      "file_path": "src/shipping/rates.ts",
+      "qualified_name": "src.shipping.rates.toCents",
+      "label": "function",
+      "start_line": 4,
+      "end_line": 6,
+      "source": "export function toCents(amount: number): number {\n  return Math.round(amount * 100);\n}"
+    },
+    {
+      "file_path": "src/shipping/rates.ts",
+      "qualified_name": "src.shipping.rates.quoteRate",
+      "label": "function",
+      "start_line": 8,
+      "end_line": 16,
+      "source": "export function quoteRate(origin: string, destination: string, weightKg: number): number {\n  const key = `${origin}:${destination}:${weightKg}`;\n  const cached = cacheGet(key); // entries expire after 60 seconds\n  if (cached !== undefined) return cached;\n  const base = 4.5 + weightKg * 1.2;\n  const cents = toCents(base);\n  cacheSet(key, cents);\n  return cents;\n}"
+    },
+    {
+      "file_path": "src/shipping/rates.ts",
+      "qualified_name": "src.shipping.rates.applySurcharge",
+      "label": "function",
+      "start_line": 18,
+      "end_line": 20,
+      "source": "export function applySurcharge(cents: number, zone: string): number {\n  return zone === \"remote\" ? cents + 250 : cents;\n}"
+    },
+    {
+      "file_path": "src/shipping/service.ts",
+      "qualified_name": "src.shipping.service.createShipment",
+      "label": "function",
+      "start_line": 5,
+      "end_line": 8,
+      "source": "export function createShipment(order: { id: string; idempotencyKey: string }) {\n  const price = applySurcharge(quoteRate(\"GT\", \"MX\", 2), \"remote\");\n  return { id: order.id, key: order.idempotencyKey, price };\n}"
+    },
+    {
+      "file_path": "src/shipping/service.ts",
+      "qualified_name": "src.shipping.service.cancelShipment",
+      "label": "function",
+      "start_line": 10,
+      "end_line": 13,
+      "source": "export function cancelShipment(shipmentId: string, carrierAck: boolean) {\n  if (!carrierAck) throw new Error(\"carrier must acknowledge before cancelling\");\n  return { shipmentId, cancelled: true };\n}"
+    },
+    {
+      "file_path": "src/shipping/service.ts",
+      "qualified_name": "src.shipping.service.retryLabel",
+      "label": "function",
+      "start_line": 15,
+      "end_line": 22,
+      "source": "export async function retryLabel(shipmentId: string) {\n  for (let attempt = 0; attempt < 5; attempt++) {\n    const label = await buyLabel(shipmentId);\n    if (label) return label;\n    await new Promise((r) => setTimeout(r, 2 ** attempt * 100));\n  }\n  return null;\n}"
+    },
+    {
+      "file_path": "src/shipping/carriers/dhl.ts",
+      "qualified_name": "src.shipping.carriers.dhl.buyLabel",
+      "label": "function",
+      "start_line": 4,
+      "end_line": 6,
+      "source": "export async function buyLabel(shipmentId: string): Promise<string | null> {\n  return SANDBOX ? `sandbox-${shipmentId}` : `label-${shipmentId}`;\n}"
+    },
+    {
+      "file_path": "src/billing/invoice.ts",
+      "qualified_name": "src.billing.invoice.issueInvoice",
+      "label": "function",
+      "start_line": 4,
+      "end_line": 7,
+      "source": "export function issueInvoice(lines: { amount: number }[]) {\n  const total = lines.reduce((sum, line) => sum + toCents(line.amount), 0);\n  return { total, rounding: \"bankers\" };\n}"
+    },
+    {
+      "file_path": "src/billing/refunds.ts",
+      "qualified_name": "src.billing.refunds.refund",
+      "label": "function",
+      "start_line": 2,
+      "end_line": 4,
+      "source": "export function refund(invoiceTotalCents: number, ratio: number): number {\n  return Math.floor(invoiceTotalCents * ratio);\n}"
+    },
+    {
+      "file_path": "src/secrets/rotation.ts",
+      "qualified_name": "src.secrets.rotation.rotateKeys",
+      "label": "function",
+      "start_line": 3,
+      "end_line": 6,
+      "source": "export function rotateKeys(keyIds: string[], legacyKms: boolean): string[] {\n  if (legacyKms) return keyIds; // legacy KMS cannot rotate in place\n  return keyIds.map((id) => `${id}-rotated`);\n}"
+    },
+    {
+      "file_path": "src/shared/cache.ts",
+      "qualified_name": "src.shared.cache.cacheGet",
+      "label": "function",
+      "start_line": 4,
+      "end_line": 6,
+      "source": "export function cacheGet(key: string): number | undefined {\n  return store.get(key);\n}"
+    },
+    {
+      "file_path": "src/shared/cache.ts",
+      "qualified_name": "src.shared.cache.cacheSet",
+      "label": "function",
+      "start_line": 8,
+      "end_line": 10,
+      "source": "export function cacheSet(key: string, value: number): void {\n  store.set(key, value);\n}"
+    },
+    {
+      "file_path": "src/notifications/email.ts",
+      "qualified_name": "src.notifications.email.sendEmail",
+      "label": "function",
+      "start_line": 2,
+      "end_line": 4,
+      "source": "export function sendEmail(to: string, template: string): boolean {\n  return to.includes(\"@\") && template.length > 0;\n}"
+    },
+    {
+      "file_path": "src/notifications/email.ts",
+      "qualified_name": "src.notifications.email.sendSms",
+      "label": "function",
+      "start_line": 6,
+      "end_line": 8,
+      "source": "export function sendSms(to: string, body: string): boolean {\n  return to.startsWith(\"+\") && body.length <= 160;\n}"
+    },
+    {
+      "file_path": "src/comunicaciones/inbox.ts",
+      "qualified_name": "src.comunicaciones.inbox.inboxHandler",
+      "label": "function",
+      "start_line": 3,
+      "end_line": 5,
+      "source": "export function inboxHandler(message: string): string {\n  return message.trim();\n}"
+    },
+    {
+      "file_path": "src/comunicaciones/outbox.ts",
+      "qualified_name": "src.comunicaciones.outbox.outboxHandler",
+      "label": "function",
+      "start_line": 3,
+      "end_line": 5,
+      "source": "export function outboxHandler(message: string): string {\n  return message.trim();\n}"
+    },
+    {
+      "file_path": "src/comunicaciones/templates.ts",
+      "qualified_name": "src.comunicaciones.templates.templatesHandler",
+      "label": "function",
+      "start_line": 3,
+      "end_line": 5,
+      "source": "export function templatesHandler(message: string): string {\n  return message.trim();\n}"
+    },
+    {
+      "file_path": "src/shipping/legacy.ts",
+      "qualified_name": "src.shipping.legacy.oldQuote",
+      "label": "function",
+      "start_line": 3,
+      "end_line": 9,
+      "source": "export function oldQuote() { return 0; }"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "src.shipping.service.createShipment",
+      "kind": "calls",
+      "target": "src.shipping.rates.quoteRate"
+    },
+    {
+      "source": "src.shipping.service.createShipment",
+      "kind": "calls",
+      "target": "src.shipping.rates.applySurcharge"
+    },
+    {
+      "source": "src.shipping.rates.quoteRate",
+      "kind": "calls",
+      "target": "src.shipping.rates.toCents"
+    },
+    {
+      "source": "src.shipping.rates.quoteRate",
+      "kind": "calls",
+      "target": "src.shared.cache.cacheGet"
+    },
+    {
+      "source": "src.shipping.rates.quoteRate",
+      "kind": "calls",
+      "target": "src.shipping.legacy.oldQuote"
+    },
+    {
+      "source": "src.shipping.service.retryLabel",
+      "kind": "calls",
+      "target": "src.shipping.carriers.dhl.buyLabel"
+    },
+    {
+      "source": "src.billing.invoice.issueInvoice",
+      "kind": "calls",
+      "target": "src.shipping.rates.toCents"
+    },
+    {
+      "source": "src.notifications.email.sendEmail",
+      "kind": "calls",
+      "target": "src.comunicaciones.outbox.outboxHandler"
+    }
+  ]
+}

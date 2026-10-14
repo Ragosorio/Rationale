@@ -1,0 +1,48 @@
+id: decision.comunicaciones-email-via-outbox
+kind: decision
+severity: high
+statement: "All outbound email goes through the Comunicaciones outbox queue."
+rationale: "Comunicaciones owns delivery retries; sending directly bypassed the retry queue."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-03-01T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.decision.comunicaciones-email-via-outbox.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/comunicaciones/outbox.ts
+  provisional: false
+- id: binding.decision.comunicaciones-email-via-outbox.1
+  type: symbol
+  provider: fixture
+  structural_id: src.comunicaciones.outbox.outboxHandler
+  path_hint: src/comunicaciones/outbox.ts
+  provisional: false
+- id: binding.decision.comunicaciones-email-via-outbox.2
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/notifications/email.ts
+  provisional: false
+- id: binding.decision.comunicaciones-email-via-outbox.3
+  type: symbol
+  provider: fixture
+  structural_id: src.notifications.email.sendEmail
+  path_hint: src/notifications/email.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-03-01T10:00:00Z

@@ -1,0 +1,36 @@
+id: decision.comunicaciones-inbox-trims-whitespace
+kind: decision
+severity: medium
+statement: "Comunicaciones inbox trims whitespace."
+rationale: "Decided while Comunicaciones was the messaging module (inbox-trims-whitespace)."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-03-01T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.decision.comunicaciones-inbox-trims-whitespace.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/comunicaciones/inbox.ts
+  provisional: false
+- id: binding.decision.comunicaciones-inbox-trims-whitespace.1
+  type: symbol
+  provider: fixture
+  structural_id: src.comunicaciones.inbox.inboxHandler
+  path_hint: src/comunicaciones/inbox.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-03-01T10:00:00Z

@@ -1,0 +1,20 @@
+# Synthetic evaluation project. Every Record here is invented; none comes
+# from a real repository.
+schema_version: rationale/0.1
+
+project:
+  id: parcel
+
+authority:
+  "user:owner <owner@example.invalid>":
+    role: architecture-owner
+
+providers:
+  structural:
+    - name: fixture
+      status: primary
+
+policy:
+  blocking_enabled: false
+  embeddings_enabled: false
+  llm_required: false

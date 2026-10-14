@@ -1,0 +1,36 @@
+id: decision.cancel-requires-carrier-ack
+kind: decision
+severity: high
+statement: "A shipment is cancelled only after the carrier acknowledges the cancellation."
+rationale: "Cancelling locally without the carrier's acknowledgement left paid labels in transit with no record."
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  asserted_at: 2026-08-01T10:00:00Z
+approvals: []
+binding_declarations:
+- id: binding.decision.cancel-requires-carrier-ack.0
+  type: file
+  provider: null
+  structural_id: null
+  path_hint: src/shipping/service.ts
+  provisional: false
+- id: binding.decision.cancel-requires-carrier-ack.1
+  type: symbol
+  provider: fixture
+  structural_id: src.shipping.service.cancelShipment
+  path_hint: src/shipping/service.ts
+  provisional: false
+evidence: []
+risks: []
+bound_revision: 0000000000000000000000000000000000000001
+subject: null
+schema_version: rationale/0.1
+project_id: parcel
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    timestamp: 2026-08-01T10:00:00Z
