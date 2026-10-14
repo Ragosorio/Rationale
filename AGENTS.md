@@ -8,7 +8,7 @@ Reply to the person in the language they write in. Documentation, code comments 
 
 Rationale completed phases A–G and published the stable 1.0 series: autonomous capture with human authority over pinned Records, the vNext context compiler, the normalized structural provider, local activity, the Control Room, and five MCP tools (`prepare_change`, `explain_target`, `finalize_change`, `resolve_conflict`, `health`). The real core lives in `src/`; `spikes/language/` remains throwaway research. See [`docs/architecture/code-map.md`](docs/architecture/code-map.md) and [`docs/work-items/v1.0-release-verification.md`](docs/work-items/v1.0-release-verification.md).
 
-`main` also carries unreleased work listed under *Unreleased* in [`CHANGELOG.md`](CHANGELOG.md), most notably the `rationale` Agent Skill in [`skills/rationale/`](skills/rationale/), embedded in the binary by `src/skill_bundle.rs` and installed for Claude Code and Codex.
+The `rationale` Agent Skill in [`skills/rationale/`](skills/rationale/) is embedded in the binary by `src/skill_bundle.rs` and installed for Claude Code and Codex. `main` also carries unreleased work listed under *Unreleased* in [`CHANGELOG.md`](CHANGELOG.md): the context-integrity work of [`docs/work-items/context-integrity-1.2.md`](docs/work-items/context-integrity-1.2.md) (ADR-0019, ADR-0020). Retrieval changes are measured with [`eval/`](eval/README.md); run it before and after touching `retrieval`, `binding_match`, `lifecycle`, `context`, or `canon`.
 
 The recorded ADRs include twelve proposals and one open partial decision
 (ADR-0011); none is self-approved (`evaluation.no-self-certification`). Before

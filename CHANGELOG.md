@@ -3,6 +3,104 @@
 Notable changes are recorded here by release. The technical detail of each
 change lives in the linked commits, ADRs, and work items.
 
+## Unreleased
+
+Rationale serves only the context that applies, says what kind of answer it
+is, stays inside its budget, and gives people and agents the tools to keep the
+canon true when code moves. The work, its evidence, and what is pending are in
+`docs/work-items/context-integrity-1.2.md`; the decisions in ADR-0019 and
+ADR-0020 (proposed). A canon written by 1.1 keeps working without migration.
+
+**Only active Records are authority.** One status view (`active`,
+`superseded`, `revoked`, `retired`) derived from both sides of every
+supersession is used by `prepare_change`, `explain_target`, doctor, and the
+Control Room. Records that no longer govern are served as `history`, with their
+status and current replacement; `explain_target` returns their text with
+`include_history`. Before, `explain_target` served superseded Records as
+current, and a Record replaced only through the new Record's `supersedes` stayed
+current everywhere.
+
+**Scope follows the binding.** A symbol query no longer returns every Record of
+the file: a file binding that accompanies a symbol binding stays with its
+symbol, and new captures stop writing such companions. A file declared on its
+own (or marked `scope: file`) still governs the whole file. Folders are targets
+(`prepare_change src/billing`) and bindings (an invariant for everything
+below). A symbol the structural index does not know yet is bound lexically,
+after checking the file defines it, instead of falling back to the whole file.
+
+**The packet explains itself.** `retrieval.status` (`found`, `none_found`,
+`index_incomplete`, `target_missing`) and `retrieval.scope`; a `why` for every
+Record; `rationale` on constraints; the Records each one `replaces` and the
+active `exceptions` that relax it; `stale_bindings` for Records bound to
+removed code; `orphaned_exception` for an exception whose rule was replaced.
+`inherited_constraints` bring critical, high, or pinned constraints across
+observed dependency edges, with the edge. Structural nodes the working tree no
+longer has are dropped and reported as a stale index.
+
+**The budget covers the whole response.** `max_tokens` caps everything the
+agent receives, measured with an upper-bound estimate (the bytes/4 proxy
+undercounted Claude's current tokenizer). Regenerable content is cut first and
+listed in `omitted` with the call that returns it; governing knowledge is never
+cut. `diagnostics` and the per-binding assessment need `verbose: true`;
+`intent_conflicts` no longer repeat statements; `primary_reason` appears only
+when it is not already in an entry.
+
+**Operations close explicitly.** `finalize_change` with `abandon: true` closes
+an operation without memory and never records it as finalized.
+`rationale operations` lists open ones (stale after 24 hours, never closed
+automatically), `rationale operations abandon` closes one, `health` counts them,
+and pruning no longer deletes open operations.
+
+**Doctor for CI.** Every finding has a severity, a fingerprint, and a fix.
+`--update-baseline` records accepted debt in `.rationale/doctor-baseline.json`;
+`--check` fails only on new findings at or above `--fail-on`. New checks:
+retired scopes (one finding per removed folder, with pinned and partially
+bound Records), one-sided supersessions (repairable), supersession cycles,
+orphaned and unlinked exceptions, lexical bindings whose symbol disappeared,
+and unreadable Records. A canon with no rule pinned or stated by a person gets
+an observation.
+
+**Repairing a removed module.** `rationale retire <path> --reason "…"` plans:
+retire Records bound only there, unbind Records also bound to current code,
+rebind with `--moved-to`, and leave pinned Records to a person. `--apply`
+writes after confirmation and keeps a batch for `--undo`, which restores every
+byte. A retirement is a revocation with a `retired` event, so earlier binaries
+read it as inactive.
+
+**Rules stated by people.** `rationale rule add` writes a Record as
+`human_stated` with the person's Git actor (interactive terminal only;
+`--pin` needs declared authority). Candidates and rules take `exception_to`.
+
+**Claude Code hooks.** `install-agent` and `init` write SessionStart,
+PreToolUse, PostToolUse, and Stop hooks to `.claude/settings.local.json`
+(local, outside Git, removed by `uninstall-agent`; `--no-hooks`,
+`--stop-hook remind|off`). They recover context at session start and after
+compaction, remind once before editing a file governed by pinned or grave rules,
+and ask once to close an operation the session left open. They never block an
+edit and never fail a session.
+
+**Execution advice (opt-in).** `prepare_change` with `advise: true`, or
+`advice.enabled` in the config, suggests a model tier mapped to Claude Code
+aliases, a reasoning effort, and a context size, with reasons. A heuristic,
+never applied by Rationale.
+
+**Performance.** With 5,000 extra Records (synthetic): `prepare_change` on a
+symbol 549 → 68 ms, `explain_target` 117 → 26 ms, a folder 1,644 → 97 ms. The
+FTS index is rebuilt only for `verbose` diagnostics, the server keeps parsed
+Records keyed by file time and size, and folder trimming is a single pass.
+
+**Evaluation.** `eval/` reproduces the reported failure modes on a synthetic
+project and measures any binary (retrieval, tokens, latency, capture,
+operations, doctor, repair, compatibility); CI runs it as a gate.
+`scripts/check-doc-commands.py` fails CI when a documented command or flag does
+not exist in the binary, and found `install-agent --refresh-skills` missing from
+its help. The shell installer accepts `RATIONALE_DOWNLOAD_BASE` for mirrors and
+for testing an artifact before publishing it (`eval/install_lifecycle.sh`).
+
+**Upgrading.** Run `rationale install-agent` in each project to update the
+protocol and skill and add the hooks. To return to 1.1 in a project with hooks,
+run `rationale uninstall-agent` first.
+
 ## v1.1.0
 
 Rationale ships an Agent Skill that teaches coding agents every operation, and

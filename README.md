@@ -31,6 +31,15 @@ while they answer in your language. What changed is in
 [`CHANGELOG.md`](CHANGELOG.md); how 1.0 was verified is in
 [`docs/work-items/v1.0-release-verification.md`](docs/work-items/v1.0-release-verification.md).
 
+`main` carries unreleased work for the next release
+([evidence](docs/work-items/context-integrity-1.2.md)): only active Records are
+served as authority, with history beside them; symbol, file, and folder
+queries return what governs that scope; a stale index is detected; the budget
+covers the whole response; operations close explicitly; `doctor` has
+severities and a CI baseline; `rationale retire` repairs the canon after a
+module is removed; `rationale rule add` lets people state rules in their own
+name; and Claude Code gets hooks that recover context and close operations.
+
 ## Quick install
 
 ### macOS and Linux
@@ -73,7 +82,8 @@ updating or uninstalling. The full guide is in
 3. **Restart your agent.** In Claude Code, run `/rationale-health`. In Codex,
    ask "Check Rationale health."
 4. **Ask for a real change.** The agent prepares with `prepare_change`, makes the
-   change, and captures what stays true with `finalize_change`.
+   change, and captures what stays true with `finalize_change` (or closes the
+   operation with `abandon` when the change did not happen).
 5. **Pin the rules that must not move** with `rationale pin <record-id>`.
 6. **Watch it happen** with `rationale ui`.
 
@@ -149,15 +159,19 @@ its own what a statement means.
 |---|---|---|
 | Initialize | `rationale init` | — |
 | Health | `rationale health` | `health` |
-| Prepare context | `rationale prepare <target>` | `prepare_change` |
-| Explain a target | — | `explain_target` |
-| Capture knowledge | — | `finalize_change` |
+| Prepare context (symbol, file, or folder) | `rationale prepare <target>` | `prepare_change` |
+| Explain a target, with history | — | `explain_target` |
+| Capture knowledge, or abandon an operation | — | `finalize_change` |
+| Open operations | `rationale operations` | `health` |
+| State a rule as a person | `rationale rule add` | — |
+| Repair after removing a module | `rationale retire <path>` | — |
+| Claude Code hooks | `rationale hook <event>` (wired by `install-agent`) | — |
 | Watch work live | `rationale ui` | — |
 | Pin / unpin a rule | `rationale pin` / `unpin` | — |
 | Decide a conflict | `rationale conflicts` / `resolve` | `resolve_conflict` (with the person's literal answer) |
 | Record lifecycle | `rationale review-record <id>` | — |
 | Migrate pre-1.0 proposals | `rationale migrate` | — |
-| Canon integrity | `rationale doctor` | — |
+| Canon integrity, with a CI baseline | `rationale doctor` / `doctor --check` | — |
 | Register / revert agents | `install-agent` / `uninstall-agent` | — |
 
 Agents write memory; people keep authority. Pinning, unpinning, and replacing a
@@ -184,6 +198,7 @@ under human authority over pinned rules; the details are in
 |---|---|---|
 | Records, Subjects, and configuration | `<project>/.rationale/` | Yes |
 | Protocol blocks and skills | `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/`, `.claude/skills/`, `.agents/skills/` | Yes |
+| Claude Code hooks | `.claude/settings.local.json` | No (machine-local) |
 | Activity, operations, and pending conflicts | `<project>/.rationale-local/` | No (excluded automatically) |
 | SQLite search cache | `~/.cache/rationale/projects/<id>/` | No |
 | Binary | `~/.local/bin/rationale` or the configured directory | No |
