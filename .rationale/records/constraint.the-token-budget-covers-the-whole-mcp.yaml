@@ -1,0 +1,43 @@
+id: constraint.the-token-budget-covers-the-whole-mcp
+kind: constraint
+severity: high
+statement: The token budget covers the whole MCP response with an upper-bound estimate; governing knowledge is never cut, what is cut is listed in omitted with how to get it, and an overflow is declared.
+rationale: The budget used to cover only the packet with a bytes/4 proxy that undercounts Claude's current tokenizer, so responses exceeded the budget they declared.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a13b110f6fc79effda
+  session_id: session_1a13b51b3aba9564675
+  asserted_at: 2026-10-14T16:49:33Z
+approvals: []
+binding_declarations:
+- id: binding.constraint.the-token-budget-covers-the-whole-mcp.symbol.0
+  type: symbol
+  provider: null
+  structural_id: null
+  path_hint: src/retrieval.rs
+  provisional: false
+  symbol: compile
+- id: binding.constraint.the-token-budget-covers-the-whole-mcp.symbol.1
+  type: symbol
+  provider: null
+  structural_id: null
+  path_hint: src/tokens.rs
+  provisional: false
+  symbol: estimate
+evidence: []
+risks: []
+bound_revision: b93f9f78eadb6179beaafee57d25d3b313e6bd50
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-10-14T16:49:33Z
+    operation_id: op_1a13b110f6fc79effda

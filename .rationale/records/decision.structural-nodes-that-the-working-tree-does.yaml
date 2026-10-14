@@ -1,0 +1,36 @@
+id: decision.structural-nodes-that-the-working-tree-does
+kind: decision
+severity: medium
+statement: Structural nodes that the working tree does not contain are dropped from the packet and reported as a stale index, unless the canon explains them.
+rationale: Codebase Memory served nodes from files of another checkout at the same path as observed calls; serving them as structure is false context.
+epistemic_status: stated
+authority: normal
+provenance:
+  kind: agent_asserted
+  client: claude-code
+  client_source: flag
+  operation_id: op_1a13b110f6fc79effda
+  session_id: session_1a13b51b3aba9564675
+  asserted_at: 2026-10-14T16:49:33Z
+approvals: []
+binding_declarations:
+- id: binding.decision.structural-nodes-that-the-working-tree-does.symbol.0
+  type: symbol
+  provider: null
+  structural_id: null
+  path_hint: src/context.rs
+  provisional: false
+  symbol: verify_against_working_tree
+evidence: []
+risks: []
+bound_revision: b93f9f78eadb6179beaafee57d25d3b313e6bd50
+subject: null
+schema_version: rationale/0.1
+project_id: rationale
+lifecycle:
+  status: active
+  events:
+  - type: asserted
+    actor: agent:claude-code
+    timestamp: 2026-10-14T16:49:33Z
+    operation_id: op_1a13b110f6fc79effda
