@@ -123,6 +123,10 @@ pub struct Candidate {
     pub evidence: Vec<CandidateEvidence>,
     #[serde(default)]
     pub subject: Option<CandidateSubject>,
+    /// Solo para `kind: exception`: los Records cuya regla relaja. Sin este
+    /// vínculo nadie puede saber cuándo la excepción deja de aplicar.
+    #[serde(default)]
+    pub exception_to: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -459,6 +463,12 @@ struct PreparedCandidate {
     risks: Vec<String>,
     evidence: Vec<CandidateEvidence>,
     subject: Option<CandidateSubject>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    exception_to: Vec<String>,
+    /// Una persona declaró esta regla (`rationale rule add`): procedencia
+    /// `human_stated` con su actor, nunca la de un agente.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stated_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -910,6 +920,13 @@ fn prepare_candidate(
             .collect(),
         evidence: candidate.evidence,
         subject: candidate.subject,
+        exception_to: candidate
+            .exception_to
+            .into_iter()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+            .collect(),
+        stated_by: None,
     })
 }
 
@@ -1245,7 +1262,16 @@ fn build_record(
         rationale: Some(prepared.rationale.clone()),
         epistemic_status: EpistemicStatus::Stated,
         authority: Some(authority.as_str().to_string()),
-        provenance: Some(provenance_for(ctx, ProvenanceKind::AgentAsserted)),
+        provenance: Some(match &prepared.stated_by {
+            Some(actor) => {
+                let mut provenance = provenance_for(ctx, ProvenanceKind::HumanStated);
+                provenance
+                    .extra
+                    .insert(string_value("actor"), string_value(actor.clone()));
+                provenance
+            }
+            None => provenance_for(ctx, ProvenanceKind::AgentAsserted),
+        }),
         supersedes: superseded.to_vec(),
         approvals: vec![],
         binding_declarations,
@@ -1259,11 +1285,30 @@ fn build_record(
         }),
         extra,
     };
-    let mut event = vec![
-        ("type", "asserted".to_string()),
-        ("actor", ctx.actor.agent_label()),
-        ("timestamp", evaluation::now_iso8601()),
-    ];
+    if !prepared.exception_to.is_empty() {
+        record.extra.insert(
+            string_value("exception_to"),
+            yaml_serde::Value::Sequence(
+                prepared
+                    .exception_to
+                    .iter()
+                    .map(|id| string_value(id.clone()))
+                    .collect(),
+            ),
+        );
+    }
+    let mut event = match &prepared.stated_by {
+        Some(actor) => vec![
+            ("type", "stated".to_string()),
+            ("actor", actor.clone()),
+            ("timestamp", evaluation::now_iso8601()),
+        ],
+        None => vec![
+            ("type", "asserted".to_string()),
+            ("actor", ctx.actor.agent_label()),
+            ("timestamp", evaluation::now_iso8601()),
+        ],
+    };
     if let Some(operation_id) = &ctx.actor.operation_id {
         event.push(("operation_id", operation_id.clone()));
     }
@@ -1633,6 +1678,66 @@ pub fn capture_candidates(
     outcome
 }
 
+/// Una regla declarada por una persona (`rationale rule add`): pasa por el
+/// mismo gate que un candidato de agente (forma, bindings, duplicados), pero
+/// se escribe con procedencia `human_stated` y su actor. Fijarla, o reemplazar
+/// una regla fijada, exige autoridad declarada en `.rationale/config.yaml`.
+pub fn state_rule(
+    ctx: &CanonContext,
+    candidate: Candidate,
+    pin: bool,
+    human: &HumanDecision,
+    provider: &mut ProviderHandle,
+) -> CaptureOutcome {
+    let mut outcome = CaptureOutcome::default();
+    if pin && !human.declared {
+        outcome.discarded.push(discard(
+            0,
+            DiscardReason::WriteFailed,
+            format!(
+                "pinning needs authority declared for '{}' in .rationale/config.yaml",
+                human.actor
+            ),
+            &candidate.statement,
+        ));
+        return outcome;
+    }
+    let mut prepared = match prepare_candidate(ctx, 0, candidate, provider, &mut outcome.warnings) {
+        Ok(prepared) => prepared,
+        Err(discarded) => {
+            outcome.discarded.push(discarded);
+            return outcome;
+        }
+    };
+    prepared.stated_by = Some(human.actor.clone());
+    let _lock = match CanonLock::acquire(ctx.local_dir) {
+        Ok(lock) => lock,
+        Err(error) => {
+            outcome.discarded.push(discard(
+                0,
+                DiscardReason::WriteFailed,
+                error,
+                &prepared.statement,
+            ));
+            return outcome;
+        }
+    };
+    let mut records = storage::list_records(&records_dir(ctx)).unwrap_or_default();
+    commit_one(
+        ctx,
+        prepared,
+        &mut records,
+        &mut outcome,
+        if pin {
+            RecordAuthority::Pinned
+        } else {
+            RecordAuthority::Normal
+        },
+        human.declared.then_some(human),
+    );
+    outcome
+}
+
 /// Decide y escribe un candidato ya preparado. `records` es el canon vivo
 /// bajo el lock y se actualiza con cada commit para que el siguiente
 /// candidato del mismo lote vea lo recién escrito.
@@ -1693,6 +1798,31 @@ fn commit_one(
         }
     }
 
+    let mut candidate = candidate;
+    if !candidate.exception_to.is_empty() {
+        if candidate.kind != "exception" {
+            outcome.warnings.push(format!(
+                "candidate {}: exception_to only applies to kind exception — ignored",
+                candidate.index
+            ));
+            candidate.exception_to.clear();
+        } else {
+            let (known, unknown): (Vec<String>, Vec<String>) = candidate
+                .exception_to
+                .iter()
+                .cloned()
+                .partition(|id| records.iter().any(|r| &r.id == id));
+            if !unknown.is_empty() {
+                outcome.warnings.push(format!(
+                    "candidate {}: exception_to names Records that do not exist ({}) — dropped",
+                    candidate.index,
+                    unknown.join(", ")
+                ));
+            }
+            candidate.exception_to = known;
+        }
+    }
+
     let active_pinned: Vec<&Record> = records
         .iter()
         .filter(|r| {
@@ -1732,7 +1862,7 @@ fn commit_one(
         subject_id.clone(),
         &effective_supersedes,
     );
-    if let Some(decision) = human_override {
+    if let Some(decision) = human_override.filter(|_| candidate.stated_by.is_none()) {
         push_lifecycle_event(
             &mut record,
             None,
@@ -2175,6 +2305,7 @@ fn migration_verdict(
         risks: vec![],
         evidence: vec![],
         subject: None,
+        exception_to: vec![],
     };
     validate_shape(0, &candidate).map_err(|d| (d.reason, d.detail))?;
     let any_binding_exists = proposal.binding_declarations.iter().any(|binding| {
@@ -2292,6 +2423,7 @@ mod tests {
             risks: vec![],
             evidence: vec![],
             subject: None,
+            exception_to: vec![],
         }
     }
 
@@ -2627,6 +2759,66 @@ mod tests {
             relayed_by: Some("claude-code".to_string()),
             human_answer: Some("la nueva gobierna".to_string()),
         }
+    }
+
+    #[test]
+    fn a_person_states_rules_and_links_exceptions_without_agent_provenance() {
+        let fixture = Fixture::new();
+        let mut provider = ProviderHandle::Unavailable("test".to_string());
+        let undeclared = state_rule(
+            &fixture.ctx(),
+            durable(EXPIRY, EXPIRY_WHY),
+            true,
+            &human(false),
+            &mut provider,
+        );
+        assert!(
+            undeclared.committed.is_empty(),
+            "pinning needs declared authority"
+        );
+
+        let stated = state_rule(
+            &fixture.ctx(),
+            durable(EXPIRY, EXPIRY_WHY),
+            true,
+            &human(true),
+            &mut provider,
+        );
+        let id = stated.committed[0].id.clone();
+        let record = fixture.records().into_iter().find(|r| r.id == id).unwrap();
+        assert_eq!(
+            storage::provenance_kind(&record),
+            ProvenanceKind::HumanStated
+        );
+        assert_eq!(storage::record_authority(&record), RecordAuthority::Pinned);
+        let yaml =
+            std::fs::read_to_string(fixture.root.join(format!(".rationale/records/{id}.yaml")))
+                .unwrap();
+        assert!(yaml.contains("actor: user:owner"), "{yaml}");
+        assert!(yaml.contains("type: stated"), "{yaml}");
+        assert!(!yaml.contains("pinned-by-conflict-resolution"), "{yaml}");
+
+        let mut exception = durable(
+            "Payment links for B2B invoices may live for 24 hours.",
+            "Purchasing departments approve invoices the next business day.",
+        );
+        exception.kind = "exception".to_string();
+        exception.exception_to = vec![id.clone(), "constraint.missing".to_string()];
+        let linked = capture(&fixture, vec![exception]);
+        let exception_id = linked.committed[0].id.clone();
+        assert!(linked
+            .warnings
+            .iter()
+            .any(|w| w.contains("constraint.missing")));
+        let record = fixture
+            .records()
+            .into_iter()
+            .find(|r| r.id == exception_id)
+            .unwrap();
+        assert_eq!(
+            crate::lifecycle::exception_targets(&record),
+            (vec![id], true)
+        );
     }
 
     #[test]

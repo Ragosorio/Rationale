@@ -78,6 +78,7 @@ fn main() {
                 | "ui"
                 | "operations"
                 | "retire"
+                | "rule"
         )
     {
         print_command_help(command);
@@ -108,6 +109,7 @@ fn main() {
         "ui" => cmd_ui(command_args),
         "operations" => cli::cmd_operations(command_args),
         "retire" => cli::cmd_retire(command_args),
+        "rule" => cli::cmd_rule(command_args),
         _ => {
             eprintln!("comando desconocido: {command}");
             print_usage();
@@ -118,7 +120,7 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "Uso: rationale <init|health|prepare|serve|ui|operations|retire|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
+        "Uso: rationale <init|health|prepare|serve|ui|operations|retire|rule|pin|unpin|conflicts|resolve|migrate|review|review-record|install-agent|uninstall-agent|update|doctor> [opciones]"
     );
     println!("  rationale --help");
     println!("  rationale --version");
@@ -170,6 +172,9 @@ fn print_usage() {
         "  rationale retire <path> --reason \"text\" [--moved-to <path>] [--apply [--yes]] [--json]   # plan (and apply) the retirement of Records bound to removed code"
     );
     println!("  rationale retire --undo <batch-id> [--force] [--json]");
+    println!(
+        "  rationale rule add <kind> \"statement\" --why \"text\" --bind <path[::symbol]> [--pin] [--exception-to <id>]   # a rule stated by a person (human_stated)"
+    );
     println!("  rationale update   # descarga e instala la última Release disponible");
     println!(
         "  rationale doctor [--project-root <path>] [--check] [--fail-on <severity>] [--json] [--update-baseline] [--repair]   # canon integrity, with severities and a baseline for CI"
@@ -228,6 +233,9 @@ fn print_command_help(command: &str) {
         ),
         "operations" => println!(
             "Usage: rationale operations [--all] [--json] [--project-root <path>]\n       rationale operations abandon <operation-id> --reason \"text\" [--project-root <path>]\n\nLists the operations prepare_change opened that nobody finalized or abandoned (oldest first; --all includes closed ones). `abandon` closes one without capture: it writes no memory and is never recorded as finalized. Operations open for more than 24 hours are marked stale; none is ever closed automatically."
+        ),
+        "rule" => println!(
+            "Usage: rationale rule add <constraint|decision|risk|exception> \"statement\" --why \"rationale\" --bind <path[::symbol]> [--bind …] [--severity <critical|high|medium|low>] [--pin] [--exception-to <id>] [--supersedes <id>] [--id <kind.slug>] [--json] [--project-root <path>]\n\nWrites a Record stated by a person: provenance human_stated with your Git actor, through the same gate as an agent's candidate (shape, bindings, duplicates). Bind it to a file, a symbol, or a folder (a folder binding governs everything below it, for invariants that span modules). --exception-to links an exception to the rule it relaxes. --pin, or replacing a pinned rule, needs authority declared in .rationale/config.yaml. Needs an interactive terminal: an agent cannot sign as a person."
         ),
         "retire" => println!(
             "Usage: rationale retire <path> --reason \"text\" [--moved-to <path>] [--apply [--yes]] [--json] [--project-root <path>]\n       rationale retire --undo <batch-id> [--force] [--json]\n\nPlans what to do with the active Records bound to a file or folder that was removed: retire the ones bound only there, unbind the ones also bound to current code, rebind them when --moved-to names a path that exists, and leave pinned ones to a person. Without --apply nothing is written. --apply asks for confirmation in a terminal (--yes skips it; pass it only after a person approved the plan), writes one lifecycle event per Record, and keeps a local batch so --undo restores the canon byte for byte. A retirement is a revocation with a `retired` event, so earlier binaries read it as inactive."
@@ -288,6 +296,20 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
         "conflicts" => validate_flags(command, args, &["--json"], &["--project-root"]),
         "resolve" => validate_flags(command, args, &[], &["--project-root"]),
         "ui" => validate_flags(command, args, &["--no-open"], &["--port", "--project-root"]),
+        "rule" => validate_flags(
+            command,
+            args,
+            &["--pin", "--json"],
+            &[
+                "--project-root",
+                "--why",
+                "--bind",
+                "--severity",
+                "--exception-to",
+                "--supersedes",
+                "--id",
+            ],
+        ),
         "retire" => validate_flags(
             command,
             args,

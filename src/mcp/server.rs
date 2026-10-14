@@ -337,6 +337,7 @@ fn tool_definitions() -> Value {
                                 "bindings": {"type": "array", "items": {"type": "string"}, "description": "Code the Record governs: 'src/x.rs' or 'src/x.rs::symbol'"},
                                 "relationships": {"type": "array", "description": "Relationships this Record explains, as path::symbol endpoints; kind is calls, uses, writes, imports, defines, implements, tests, configures, depends_on, http_calls, contains, or decorates. A resolved relationship also anchors the Record", "items": {"type": "object", "required": ["source", "kind", "target"], "properties": {"source": {"type": "string"}, "kind": {"type": "string"}, "target": {"type": "string"}}}},
                                 "supersedes": {"type": "array", "items": {"type": "string"}, "description": "ids of active Records this one explicitly replaces"},
+                                "exception_to": {"type": "array", "items": {"type": "string"}, "description": "For kind exception: ids of the Records whose rule it relaxes. Without it nobody can tell when the exception stops applying"},
                                 "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
                                 "id": {"type": "string", "description": "Optional: '<kind>.<slug>'; generated when absent"},
                                 "risks": {"type": "array", "items": {"type": "string"}},

@@ -284,3 +284,124 @@ fn print_plan(plan: &crate::retire::RetirePlan) {
         );
     }
 }
+
+/// Valores de un flag repetible (`--bind a --bind b`).
+fn repeated_flag(args: &[String], flag: &str) -> Vec<String> {
+    args.iter()
+        .enumerate()
+        .filter(|(_, arg)| arg.as_str() == flag)
+        .filter_map(|(index, _)| args.get(index + 1).cloned())
+        .collect()
+}
+
+/// `rationale rule add <kind> "<statement>" --why "…" --bind <path[::symbol]>…`
+///
+/// La vía para que una persona declare una regla, un invariante o una
+/// excepción sin pasar por un agente: el Record queda `human_stated` con su
+/// actor de Git. Exige una terminal interactiva, igual que `pin`: un agente no
+/// puede firmar como persona.
+pub fn cmd_rule(args: &[String]) {
+    const VALUE_FLAGS: [&str; 7] = [
+        "--project-root",
+        "--why",
+        "--bind",
+        "--severity",
+        "--exception-to",
+        "--supersedes",
+        "--id",
+    ];
+    let positionals: Vec<&String> = {
+        let mut found = Vec::new();
+        let mut index = 0;
+        while index < args.len() {
+            if VALUE_FLAGS.contains(&args[index].as_str()) {
+                index += 2;
+                continue;
+            }
+            if !args[index].starts_with('-') {
+                found.push(&args[index]);
+            }
+            index += 1;
+        }
+        found
+    };
+    let usage = "usage: rationale rule add <constraint|decision|risk|exception> \"statement\" --why \"rationale\" --bind <path[::symbol]> [--bind …] [--severity <critical|high|medium|low>] [--pin] [--exception-to <id>] [--supersedes <id>] [--id <kind.slug>]";
+    let (Some(action), Some(kind), Some(statement)) =
+        (positionals.first(), positionals.get(1), positionals.get(2))
+    else {
+        fail::<()>(usage);
+        return;
+    };
+    if action.as_str() != "add" {
+        fail::<()>(usage);
+        return;
+    }
+    let rationale = parse_string_flag(args, "--why")
+        .unwrap_or_else(|| fail("--why is required: the reason is what makes a rule durable"));
+    let bindings = repeated_flag(args, "--bind");
+    if bindings.is_empty() {
+        fail::<()>("at least one --bind is required: a rule bound to no code is never retrieved");
+    }
+    let project_root = resolve_project_root(args).unwrap_or_else(fail);
+    let config = configuration::load(&project_root).unwrap_or_else(fail);
+    crate::require_interactive_terminal("rule add");
+    let local_dir = configuration::find_rationale_local(&config.project_root);
+    let actor = git_reviewer_actor(&config.project_root);
+    let declared = config.authority_for_actor(&actor).declared;
+    let candidate = crate::canon::Candidate {
+        id: parse_string_flag(args, "--id"),
+        kind: kind.to_string(),
+        statement: statement.to_string(),
+        rationale,
+        durability: Some("durable".to_string()),
+        severity: Some(parse_string_flag(args, "--severity").unwrap_or_else(|| "high".to_string())),
+        bindings: bindings
+            .into_iter()
+            .map(crate::canon::CandidateBinding::Spec)
+            .collect(),
+        relationships: vec![],
+        supersedes: repeated_flag(args, "--supersedes"),
+        risks: vec![],
+        evidence: vec![],
+        subject: None,
+        exception_to: repeated_flag(args, "--exception-to"),
+    };
+    let mut provider = crate::providers::ProviderHandle::spawn();
+    let outcome = crate::canon::state_rule(
+        &crate::canon_context_for_cli(&config, &local_dir),
+        candidate,
+        args.iter().any(|a| a == "--pin"),
+        &crate::canon::HumanDecision {
+            actor: actor.clone(),
+            declared,
+            relayed_by: None,
+            human_answer: None,
+        },
+        &mut provider,
+    );
+    if args.iter().any(|a| a == "--json") {
+        println!("{}", json!(outcome));
+    } else {
+        for committed in &outcome.committed {
+            println!(
+                "Stated {} ({}) as {actor}. Commit .rationale/ so the team and its agents get it.",
+                committed.id, committed.authority
+            );
+        }
+        for discarded in &outcome.discarded {
+            println!("Not written: {}", discarded.detail);
+        }
+        for conflict in &outcome.conflicts {
+            println!(
+                "Conflict with pinned {}: decide it with `rationale resolve {}`.",
+                conflict.pinned_record_id, conflict.conflict_id
+            );
+        }
+        for warning in &outcome.warnings {
+            println!("warning: {warning}");
+        }
+    }
+    if outcome.committed.is_empty() {
+        std::process::exit(1);
+    }
+}
