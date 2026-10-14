@@ -458,6 +458,7 @@ fn select_constraints<'a>(
     intent: Option<&str>,
     budget: &Budget,
     status: &StatusIndex,
+    common: &HashSet<String>,
 ) -> ConstraintSelection<'a> {
     // Un Record revocado o reemplazado sigue en el canon como historia, pero
     // ya no es una regla vigente: nunca se presenta como constraint.
@@ -485,7 +486,7 @@ fn select_constraints<'a>(
         Some(text) => constraints()
             .filter(|r| !governing.contains_key(&r.id) && is_active(r))
             .filter_map(|r| {
-                let overlap = shared_terms(text, &r.statement).len();
+                let overlap = significant_shared_terms(text, &r.statement, common).len();
                 (overlap >= 2).then_some((r, overlap))
             })
             .collect(),
@@ -540,6 +541,39 @@ fn normalized_terms(text: &str) -> std::collections::HashSet<String> {
 /// (statement en inglés, intención en español comparten pocos tokens
 /// literales incluso cuando sí hay conflicto — confirmado con el propio
 /// canon de este repo: constraint.no-provider-internal-access).
+/// Términos que aparecen en una cuarta parte o más de los Records vigentes
+/// (mínimo cuatro): el nombre del proyecto, el del dominio. Compartirlos no
+/// relaciona una intención con una regla. Visto en el propio canon: «rationale»
+/// e «interactive» bastaban para traer tres constraints ajenas a una consulta
+/// sobre `site/` y desplazar a las que sí la gobernaban.
+pub(crate) fn common_terms(records: &[Record], status: &StatusIndex) -> HashSet<String> {
+    let active: Vec<&Record> = records.iter().filter(|r| status.is_active(r)).collect();
+    let threshold = (active.len() / 4).max(4);
+    let mut frequency: HashMap<String, usize> = HashMap::new();
+    for record in &active {
+        for term in normalized_terms(&record.statement) {
+            *frequency.entry(term).or_default() += 1;
+        }
+    }
+    frequency
+        .into_iter()
+        .filter(|(_, count)| *count >= threshold)
+        .map(|(term, _)| term)
+        .collect()
+}
+
+/// `shared_terms` sin los términos comunes del canon.
+pub(crate) fn significant_shared_terms(
+    intent: &str,
+    statement: &str,
+    common: &HashSet<String>,
+) -> Vec<String> {
+    shared_terms(intent, statement)
+        .into_iter()
+        .filter(|term| !common.contains(term))
+        .collect()
+}
+
 pub(crate) fn shared_terms(intent: &str, statement: &str) -> Vec<String> {
     let intent_terms = normalized_terms(intent);
     let statement_terms = normalized_terms(statement);
@@ -753,12 +787,13 @@ fn folder_priority(record: &Record) -> u8 {
     (pinned as u8) * 100 + kind * 10 + severity
 }
 
-/// Un Record de carpeta que nunca se recorta: lo fijado por una persona, las
-/// constraints `critical`/`high` y las excepciones vigentes.
+/// Un Record de carpeta que nunca se recorta: lo fijado por una persona y lo
+/// `critical`. Una carpeta es una vista general (en la raíz de este repositorio
+/// protegía 14 Records y 6.000 tokens); lo demás se lista en `omitted` con la
+/// consulta más estrecha que lo trae.
 fn folder_protected(record: &Record) -> bool {
     crate::storage::record_authority(record) == crate::storage::RecordAuthority::Pinned
-        || record.kind == "exception"
-        || (record.kind == "constraint" && matches!(record.severity.as_str(), "critical" | "high"))
+        || record.severity == "critical"
 }
 
 fn inherited_protected(record: &Record) -> bool {
@@ -958,6 +993,10 @@ impl Trimmed {
 /// principal antes que miembros de menor prioridad.
 fn trimmed_before_members(packet: &ContextPacket, trimmable_inherited: &[String]) -> bool {
     !packet.affected_targets.is_empty()
+        || packet
+            .critical_constraints
+            .iter()
+            .any(|c| !c.governs_target)
         || !packet.history.is_empty()
         || packet.structure.is_some()
         || packet.relevant_code.is_some()
@@ -1059,7 +1098,9 @@ fn fit_members(
             );
         }
     }
-    members.clear();
+    // Los que entraron siguen recortables, por si las estimaciones por
+    // elemento se quedaron cortas frente al packet serializado.
+    members.retain(|id| keep.contains(id));
 }
 
 /// Recorta un elemento regenerable o de menor prioridad, en este orden:
@@ -1078,6 +1119,24 @@ fn trim_one(
     // `affected_targets` son las rutas de los Records servidos: recortarlas
     // no pierde nada que el agente no pueda leer en esos Records.
     if packet.affected_targets.pop().is_some() {
+        return true;
+    }
+    // Una constraint que no gobierna el target (solo comparte términos con la
+    // intención) es una pista: cede antes que cualquier contexto que sí aplica.
+    if let Some(index) = packet
+        .critical_constraints
+        .iter()
+        .rposition(|c| !c.governs_target)
+    {
+        let removed = packet.critical_constraints.remove(index);
+        packet
+            .intent_conflicts
+            .retain(|c| c.record_id != removed.id);
+        trimmed.add(
+            "related_constraints",
+            Some(removed.id),
+            "explain_target on the code they govern",
+        );
         return true;
     }
     if let Some(entry) = packet.history.pop() {
@@ -1168,7 +1227,11 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
     let mut tree = repo_path.map(crate::symbols::WorkingTree::new);
     let by_id: HashMap<&str, &Record> = records.iter().map(|r| (r.id.as_str(), r)).collect();
 
-    let selection = select_constraints(records, governing, intent, budget, status);
+    let common = common_terms(records, status);
+    // En una carpeta el contexto son los Records atados dentro de ella: las
+    // pistas léxicas de fuera solo competirían con ellos por el presupuesto.
+    let lexical_intent = intent.filter(|_| scope != TargetScope::Folder);
+    let selection = select_constraints(records, governing, lexical_intent, budget, status, &common);
     let selected = selection.constraints;
     let (decision_records, inactive_decisions) = select_decisions(records, governing, status);
     let replaces = |record: &Record| -> Vec<String> {
@@ -1263,7 +1326,7 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
             .chain(decision_records.iter())
             .filter_map(|r| {
                 let governs = governing.contains_key(&r.id);
-                let shared = shared_terms(text, &r.statement);
+                let shared = significant_shared_terms(text, &r.statement, &common);
                 let detection = if governs {
                     ConflictDetection::GovernsTarget
                 } else if shared.len() >= 2 {
@@ -1362,8 +1425,11 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
             .any(|r| r.rationale.as_deref() == Some(reason.as_str()))
     });
 
+    // Los riesgos de una constraint traída solo por solapamiento léxico no son
+    // riesgos del target.
     let mut known_risks: Vec<String> = selected
         .iter()
+        .filter(|r| governing.contains_key(&r.id))
         .chain(decision_records.iter())
         .flat_map(|r| r.risks.iter().map(|risk| risk.statement.clone()))
         .collect();
@@ -1788,9 +1854,16 @@ mod tests {
     /// el techo; las que no caben se cuentan como historia expandible.
     #[test]
     fn lexically_related_constraints_respect_the_ceiling() {
-        let records: Vec<Record> = (0..10)
+        // Diez relacionadas entre otras cincuenta: sus términos no son comunes
+        // a todo el canon (ver `common_terms`).
+        let mut records: Vec<Record> = (0..10)
             .map(|i| fixed_record(&format!("constraint.related-{i}"), true))
             .collect();
+        records.extend((0..50).map(|i| {
+            let mut filler = fixed_record(&format!("constraint.filler-{i}"), true);
+            filler.statement = format!("Unrelated logging rule {i}.");
+            filler
+        }));
         let budget = Budget {
             max_critical_constraints: 3,
             ..Budget::default()
@@ -1813,6 +1886,52 @@ mod tests {
             .iter()
             .all(|c| c.detection == ConflictDetection::LexicalOverlap));
         assert_eq!(packet.additional_history_available, 7);
+    }
+
+    /// Un término que comparte una cuarta parte del canon (el nombre del
+    /// proyecto) no relaciona una intención con una regla.
+    #[test]
+    fn terms_common_to_the_canon_are_not_a_lexical_signal() {
+        let mut records: Vec<Record> = (0..8)
+            .map(|i| {
+                let mut r = fixed_record(&format!("constraint.common-{i}"), true);
+                r.statement = format!("Rationale interactive rule number {i}.");
+                r
+            })
+            .collect();
+        let mut specific = fixed_record("constraint.specific", true);
+        specific.statement = "Checkout totals are rounded with banker's rounding.".to_string();
+        records.push(specific);
+        let packet = compile_packet(
+            None,
+            Consistency::Unresolved,
+            ProviderStatus::Unavailable,
+            Coverage::Unknown,
+            &records,
+            Some("make the rationale interactive demo"),
+            None,
+            vec![],
+            &Budget::default(),
+            &HashMap::new(),
+        );
+        assert!(
+            packet.critical_constraints.is_empty(),
+            "{:?}",
+            packet.critical_constraints
+        );
+        let packet = compile_packet(
+            None,
+            Consistency::Unresolved,
+            ProviderStatus::Unavailable,
+            Coverage::Unknown,
+            &records,
+            Some("change checkout totals rounding"),
+            None,
+            vec![],
+            &Budget::default(),
+            &HashMap::new(),
+        );
+        assert_eq!(packet.critical_constraints[0].id, "constraint.specific");
     }
 
     /// Un Record revocado o reemplazado con binding al target es historia:

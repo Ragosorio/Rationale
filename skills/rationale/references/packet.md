@@ -119,11 +119,15 @@ Report them rather than hiding them.
 `max_tokens` (default 2400) caps **the whole response**, measured with an
 upper-bound estimate (`budget.estimated_tokens`, `budget.estimator:
 upper-bound`). It is a ceiling, not a target. When the response would exceed
-it, Rationale drops regenerable content first (affected targets, history,
-structure, code, non-critical inherited constraints, low-priority folder
-Records) and lists each section in `omitted` with `count`, `ids`, and
-`expand`: the call that brings it back. Governing knowledge is never dropped;
-when it alone exceeds the ceiling, `budget_overflow` says so.
+it, Rationale drops content in this order: affected targets, constraints that
+only share words with your intent, history, structure, code, inherited
+constraints that are not critical or pinned, and — in a folder query — folder
+Records that are not critical or pinned, lowest priority first. Each dropped
+section is listed in `omitted` with `count`, `ids`, and `expand`: the call that
+brings it back. What governs a symbol or file is never dropped, nor are pinned
+and critical Records; when they alone exceed the ceiling, `budget_overflow`
+says so. A folder query is an overview: drill into a subfolder or file for the
+rest.
 
 ## Execution advice
 

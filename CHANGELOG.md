@@ -40,8 +40,12 @@ longer has are dropped and reported as a stale index.
 **The budget covers the whole response.** `max_tokens` caps everything the
 agent receives, measured with an upper-bound estimate (the bytes/4 proxy
 undercounted Claude's current tokenizer). Regenerable content is cut first and
-listed in `omitted` with the call that returns it; governing knowledge is never
-cut. `diagnostics` and the per-binding assessment need `verbose: true`;
+listed in `omitted` with the call that returns it. What governs a symbol or a
+file is never cut, nor are pinned or critical Records; a folder query is an
+overview that lists the rest of its Records in `omitted`. Constraints that only
+share words with the intent are hints: they are cut first, never used in a
+folder query, and words common to a quarter of the canon (such as the project's
+name) no longer count as shared. `diagnostics` and the per-binding assessment need `verbose: true`;
 `intent_conflicts` no longer repeat statements; `primary_reason` appears only
 when it is not already in an entry.
 

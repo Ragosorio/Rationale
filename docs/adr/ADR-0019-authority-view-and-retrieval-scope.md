@@ -71,8 +71,12 @@ The causes, read in the code at v1.1.0:
 5. **The budget covers the whole response** with an upper-bound estimate
    (`src/tokens.rs`): ASCII at 2.7 characters per token, code at 2.0, non-ASCII
    at one each. Diagnostics and the per-binding assessment need `verbose`.
-   Governing knowledge is never cut; what is cut is listed in `omitted` with
-   the call that returns it; an overflow is declared.
+   What governs a symbol or file is never cut, nor are pinned or critical
+   Records; a folder query is an overview whose other Records may be cut by
+   priority. Constraints that only share words with the intent are cut first,
+   and words common to a quarter of the canon do not count as shared. What is
+   cut is listed in `omitted` with the call that returns it; an overflow is
+   declared.
 
 ## Evidence
 
