@@ -473,7 +473,7 @@ fn cmd_init(args: &[String]) {
                 .detected
                 .iter()
                 .any(|agent| agent == "claude-code")
-                .then(|| hooks::install(&cwd, "block", false));
+                .then(|| hooks::install(&cwd, &binary_path, "block", false));
             if mascot::stderr_enabled(args) {
                 eprintln!("  Avisé a: {}", report.detected.join(", "));
                 for line in &report.actions {
@@ -1065,7 +1065,7 @@ fn cmd_install_agent(args: &[String]) {
                 if !matches!(mode.as_str(), "block" | "remind" | "off") {
                     fail::<()>("--stop-hook must be block, remind or off");
                 }
-                match hooks::install(&project_root, &mode, report.dry_run) {
+                match hooks::install(&project_root, &binary_path, &mode, report.dry_run) {
                     Ok(line) => println!("- {line}"),
                     Err(error) => println!("- claude-code: hooks not installed: {error}"),
                 }

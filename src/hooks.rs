@@ -30,8 +30,6 @@ use std::path::{Path, PathBuf};
 
 const MAX_STDIN: u64 = 4 * 1024 * 1024;
 const SETTINGS_FILE: &str = ".claude/settings.local.json";
-/// Prefijo que identifica una entrada de hook propia.
-const COMMAND_PREFIX: &str = "rationale hook ";
 const EDIT_MATCHER: &str = "Edit|Write|MultiEdit|NotebookEdit";
 const PREPARE_MATCHER: &str = "mcp__.*rationale.*__prepare_change";
 
@@ -417,8 +415,28 @@ fn stop(input: &HookInput, mode: &str) -> Option<Value> {
 // Instalación en `.claude/settings.local.json`
 // ---------------------------------------------------------------------------
 
+/// Una entrada propia: `<…>/rationale hook <evento>`, con o sin comillas y
+/// con o sin `.exe`.
 fn our_entry(command: &str) -> bool {
-    command.starts_with(COMMAND_PREFIX) || command.contains("/rationale hook ")
+    let Some((program, _)) = command.split_once(" hook ") else {
+        return false;
+    };
+    let program = program.trim().trim_matches('"');
+    Path::new(program)
+        .file_stem()
+        .is_some_and(|stem| stem == "rationale")
+}
+
+/// El ejecutable instalado, con ruta absoluta: igual que el registro MCP por
+/// usuario (`decision.user-scoped-agent-mcp-registration`), el archivo es
+/// local a la máquina y un hook no debe depender del PATH que vea el cliente.
+fn hook_command(binary: &Path, event: &str) -> String {
+    let program = binary.display().to_string();
+    if program.contains(' ') {
+        format!("\"{program}\" hook {event}")
+    } else {
+        format!("{program} hook {event}")
+    }
 }
 
 fn hook_group(matcher: Option<&str>, command: &str, timeout: u64) -> Value {
@@ -484,7 +502,12 @@ fn read_settings(path: &Path) -> Result<Option<Value>, String> {
 
 /// Escribe (o actualiza) las entradas propias. Idempotente: quita las
 /// anteriores y escribe las actuales, conservando todo lo demás del archivo.
-pub fn install(project_root: &Path, stop_mode: &str, dry_run: bool) -> Result<String, String> {
+pub fn install(
+    project_root: &Path,
+    binary: &Path,
+    stop_mode: &str,
+    dry_run: bool,
+) -> Result<String, String> {
     let path = project_root.join(SETTINGS_FILE);
     let existing = read_settings(&path)?;
     let mut settings = existing.clone().unwrap_or_else(|| json!({}));
@@ -501,26 +524,22 @@ pub fn install(project_root: &Path, stop_mode: &str, dry_run: bool) -> Result<St
         return Err(format!("{}: `hooks` is not an object", path.display()));
     };
     let stop_command = if stop_mode == "block" {
-        format!("{COMMAND_PREFIX}stop")
+        hook_command(binary, "stop")
     } else {
-        format!("{COMMAND_PREFIX}stop --mode {stop_mode}")
+        hook_command(binary, &format!("stop --mode {stop_mode}"))
     };
     for (event, group) in [
         (
             "SessionStart",
-            hook_group(None, &format!("{COMMAND_PREFIX}session-start"), 10),
+            hook_group(None, &hook_command(binary, "session-start"), 10),
         ),
         (
             "PreToolUse",
-            hook_group(Some(EDIT_MATCHER), &format!("{COMMAND_PREFIX}pre-edit"), 5),
+            hook_group(Some(EDIT_MATCHER), &hook_command(binary, "pre-edit"), 5),
         ),
         (
             "PostToolUse",
-            hook_group(
-                Some(PREPARE_MATCHER),
-                &format!("{COMMAND_PREFIX}post-tool"),
-                5,
-            ),
+            hook_group(Some(PREPARE_MATCHER), &hook_command(binary, "post-tool"), 5),
         ),
         ("Stop", hook_group(None, &stop_command, 10)),
     ] {
@@ -600,8 +619,9 @@ mod tests {
             "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "./notify.sh"}]}]}
         });
         std::fs::write(&path, foreign.to_string()).unwrap();
-        install(&project, "block", false).unwrap();
-        install(&project, "block", false).unwrap();
+        let binary = Path::new("/home/me/.local/bin/rationale");
+        install(&project, binary, "block", false).unwrap();
+        install(&project, binary, "block", false).unwrap();
         let settings: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(settings["permissions"], foreign["permissions"]);
@@ -620,17 +640,43 @@ mod tests {
     fn a_file_we_created_is_removed_and_invalid_json_is_never_rewritten() {
         let project = dir();
         let path = project.join(SETTINGS_FILE);
-        install(&project, "remind", false).unwrap();
+        install(
+            &project,
+            Path::new("/opt/my tools/rationale"),
+            "remind",
+            false,
+        )
+        .unwrap();
         assert!(std::fs::read_to_string(&path)
             .unwrap()
-            .contains("rationale hook stop --mode remind"));
+            .contains(r#"\"/opt/my tools/rationale\" hook stop --mode remind"#));
         uninstall(&project).unwrap();
         assert!(!path.exists());
 
         std::fs::write(&path, "{ not json").unwrap();
-        assert!(install(&project, "block", false).is_err());
+        assert!(install(&project, Path::new("rationale"), "block", false).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not json");
         std::fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn our_entries_are_recognized_in_every_form_and_others_are_not() {
+        for command in [
+            "rationale hook stop",
+            "/home/me/.local/bin/rationale hook pre-edit",
+            "\"/opt/my tools/rationale\" hook stop --mode remind",
+            "C:/tools/rationale.exe hook session-start",
+        ] {
+            assert!(our_entry(command), "{command}");
+        }
+        for command in [
+            "./notify.sh",
+            "other hook stop",
+            "rationale serve",
+            "my-rationale hook x",
+        ] {
+            assert!(!our_entry(command), "{command}");
+        }
     }
 
     #[test]
