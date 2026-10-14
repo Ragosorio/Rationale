@@ -805,9 +805,11 @@ fn finalize_change_commits_durable_candidates_without_approval() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|w| w.as_str().unwrap().contains("no confirmó el símbolo")),
-        "sin proveedor, el símbolo nunca se sintetiza: {outcome}"
+            .any(|w| w.as_str().unwrap().contains("does not know")),
+        "sin proveedor, el símbolo nunca recibe identidad estructural: {outcome}"
     );
+    assert!(content.contains("symbol: resolveEntityRole"), "{content}");
+    assert!(!content.contains("structural_id: src"), "{content}");
 
     std::fs::remove_dir_all(&dir).ok();
 }

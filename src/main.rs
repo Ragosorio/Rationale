@@ -34,6 +34,8 @@ mod signals;
 mod skill_bundle;
 mod storage;
 mod subjects;
+mod symbols;
+mod tokens;
 mod ui;
 
 use std::path::{Path, PathBuf};
@@ -495,6 +497,7 @@ fn cmd_prepare(args: &[String]) {
             budget: retrieval::Budget::default(),
             structural_budget: context::StructuralBudget::default(),
             actor: cli_actor(),
+            verbose: true,
         },
         &mut provider,
         &recorder,

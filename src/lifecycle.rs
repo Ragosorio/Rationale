@@ -166,6 +166,99 @@ impl StatusIndex {
     }
 }
 
+/// Prefijos de id de Record según el schema (`<kind>.<slug>`).
+const RECORD_KINDS: [&str; 4] = ["constraint.", "decision.", "risk.", "exception."];
+
+/// Ids de Record citados en un texto (`constraint.rotate-secrets-90d`).
+pub fn mentioned_ids(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for kind in RECORD_KINDS {
+        let mut rest = text;
+        while let Some(at) = rest.find(kind) {
+            let boundary = rest[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '.' || c == '-'));
+            let tail = &rest[at + kind.len()..];
+            let slug: String = tail
+                .chars()
+                .take_while(|c| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-' || *c == '.'
+                })
+                .collect();
+            let slug = slug.trim_end_matches(['.', '-']);
+            if boundary && !slug.is_empty() {
+                let id = format!("{kind}{slug}");
+                if !found.contains(&id) {
+                    found.push(id);
+                }
+            }
+            rest = &rest[at + kind.len()..];
+        }
+    }
+    found
+}
+
+/// Los Records a los que una excepción se aplica: `exception_to` explícito
+/// o, en Records escritos antes de que existiera el campo, los ids que cita
+/// su texto. `true` cuando el vínculo es explícito.
+pub fn exception_targets(record: &Record) -> (Vec<String>, bool) {
+    let explicit: Vec<String> = match record
+        .extra
+        .get(yaml_serde::Value::String("exception_to".to_string()))
+    {
+        Some(yaml_serde::Value::Sequence(items)) => items
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect(),
+        Some(yaml_serde::Value::String(id)) => vec![id.clone()],
+        _ => Vec::new(),
+    };
+    if !explicit.is_empty() {
+        return (explicit, true);
+    }
+    let mut text = record.statement.clone();
+    if let Some(rationale) = &record.rationale {
+        text.push(' ');
+        text.push_str(rationale);
+    }
+    let cited = mentioned_ids(&text)
+        .into_iter()
+        .filter(|id| id != &record.id && !id.starts_with("exception."))
+        .collect();
+    (cited, false)
+}
+
+/// Una excepción vigente cuya regla ya no gobierna: todos los Records a los
+/// que se aplica están reemplazados, revocados o no existen. Devuelve la nota
+/// para el agente, nunca una conclusión: la persona decide si la excepción
+/// sigue aplicando a la regla nueva.
+pub fn orphaned_exception(record: &Record, status: &StatusIndex) -> Option<String> {
+    if record.kind != "exception" || !status.is_active(record) {
+        return None;
+    }
+    let (targets, _) = exception_targets(record);
+    if targets.is_empty() {
+        return None;
+    }
+    let mut described = Vec::new();
+    for target in &targets {
+        match status.status_of(target) {
+            Some(state) if state.is_active() => return None,
+            Some(state) => described.push(match status.current_replacement(target) {
+                Some(replacement) => format!("{target} ({}, now {replacement})", state.as_str()),
+                None => format!("{target} ({})", state.as_str()),
+            }),
+            None => described.push(format!("{target} (not in the canon)")),
+        }
+    }
+    Some(format!(
+        "orphaned exception: it excepts {} — confirm with a person whether it still applies \
+         before relying on it",
+        described.join(", ")
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,6 +325,46 @@ mod tests {
         assert!(
             storage::is_revoked(&records[0]),
             "older binaries see a revocation"
+        );
+    }
+
+    #[test]
+    fn an_exception_whose_rule_was_replaced_is_orphaned() {
+        let old = base(
+            "constraint.rotate-90d",
+            "applicability_policy:\n  superseded_by: constraint.rotate-30d\nlifecycle:\n  status: superseded\n",
+        );
+        let new = base(
+            "constraint.rotate-30d",
+            "supersedes: [constraint.rotate-90d]\n",
+        );
+        let mut cited = base("exception.legacy", "");
+        cited.kind = "exception".to_string();
+        cited.rationale = Some("Exception to constraint.rotate-90d: legacy KMS.".to_string());
+        let mut explicit = base(
+            "exception.explicit",
+            "exception_to: [constraint.rotate-30d]\n",
+        );
+        explicit.kind = "exception".to_string();
+        let records = vec![old, new, cited, explicit];
+        let index = StatusIndex::build(&records);
+        let note = orphaned_exception(&records[2], &index).expect("orphaned");
+        assert!(note.contains("constraint.rotate-90d (superseded, now constraint.rotate-30d)"));
+        assert!(orphaned_exception(&records[3], &index).is_none());
+        assert_eq!(
+            exception_targets(&records[3]),
+            (vec!["constraint.rotate-30d".to_string()], true)
+        );
+    }
+
+    #[test]
+    fn mentioned_ids_respect_word_boundaries() {
+        assert_eq!(
+            mentioned_ids("See constraint.money-in-cents. Not xconstraint.fake, but decision.a-b."),
+            vec![
+                "constraint.money-in-cents".to_string(),
+                "decision.a-b".to_string()
+            ]
         );
     }
 

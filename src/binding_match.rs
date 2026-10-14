@@ -28,28 +28,59 @@ use std::path::Path;
 pub struct TargetKey {
     pub rel_path: Option<String>,
     pub symbol: Option<String>,
+    /// El target es una carpeta: la consulta abarca lo que hay debajo.
+    pub is_dir: bool,
 }
 
 /// Orden = precedencia: el último variant es el más específico.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MatchKind {
+    /// Consulta de carpeta: el Record está atado a código dentro de ella.
+    DirectoryMember,
+    /// El Record declara un alcance de carpeta que contiene el target.
+    DirectoryScope,
     FileExact,
+    /// Un Record de archivo (sin símbolo propio en ese archivo) gobierna
+    /// todos sus símbolos.
     FileContainsSymbol,
     /// El target es un extremo de una relación que el Record explica
     /// (`relationship_bindings`, vNext): cambiar ese nodo puede romper el
     /// porqué de la relación.
     RelationshipEndpoint,
+    /// El símbolo coincide con un binding que el proveedor todavía no
+    /// confirmó (índice atrasado): verificado solo léxicamente.
+    UnconfirmedSymbol,
     Structural,
 }
 
 impl MatchKind {
     pub fn as_str(self) -> &'static str {
         match self {
+            MatchKind::DirectoryMember => "directory-member",
+            MatchKind::DirectoryScope => "directory-scope",
             MatchKind::FileExact => "file-exact",
             MatchKind::FileContainsSymbol => "file-contains-symbol",
             MatchKind::RelationshipEndpoint => "relationship-endpoint",
+            MatchKind::UnconfirmedSymbol => "unconfirmed-symbol",
             MatchKind::Structural => "structural",
+        }
+    }
+
+    /// Por qué el Record entra en la respuesta, en una frase para el agente.
+    pub fn reason(self) -> &'static str {
+        match self {
+            MatchKind::DirectoryMember => "bound to code inside the queried folder",
+            MatchKind::DirectoryScope => "its folder scope contains the target",
+            MatchKind::FileExact => "bound to this file",
+            MatchKind::FileContainsSymbol => "file-level rule: applies to every symbol in the file",
+            MatchKind::RelationshipEndpoint => {
+                "the target is an endpoint of a relationship it explains"
+            }
+            MatchKind::UnconfirmedSymbol => {
+                "bound to this symbol (lexically verified; the index does not know it yet)"
+            }
+            MatchKind::Structural => "bound to this symbol",
         }
     }
 }
@@ -59,16 +90,27 @@ pub struct GovernanceMatch<'a> {
     pub kind: MatchKind,
 }
 
-/// Repo-relativo, separadores `/`, sin `./` inicial. `path_hint` nunca se
-/// exige que exista en disco para poder compararlo — un binding hacia un
-/// archivo borrado o renombrado debe poder seguir matcheando por texto; que
-/// ya no exista es un problema de `linkage` (Fase 1.4), no de matching.
+/// Repo-relativo, separadores `/`, sin `./` inicial ni `/` final. `path_hint`
+/// nunca se exige que exista en disco para poder compararlo — un binding
+/// hacia un archivo borrado o renombrado debe poder seguir matcheando por
+/// texto; que ya no exista es un problema de `linkage`, no de matching.
 fn clean_rel(raw: &str) -> String {
     let normalized = raw.replace('\\', "/");
-    normalized
-        .strip_prefix("./")
-        .unwrap_or(&normalized)
-        .to_string()
+    let trimmed = normalized.strip_prefix("./").unwrap_or(&normalized);
+    let trimmed = trimmed.trim_end_matches('/');
+    if trimmed == "." {
+        String::new()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// `path` está dentro de `dir` (la raíz `""` contiene todo).
+pub fn is_under(path: &str, dir: &str) -> bool {
+    dir.is_empty()
+        || path
+            .strip_prefix(dir)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// El target de `project::resolve_target` ya viene canonicalizado y
@@ -91,6 +133,7 @@ pub fn target_key(repo_root: &Path, target: &Target) -> TargetKey {
     TargetKey {
         rel_path: target_rel_path(repo_root, target),
         symbol: target.symbol.clone(),
+        is_dir: target.path.is_dir(),
     }
 }
 
@@ -110,46 +153,110 @@ fn ends_with_symbol_at_boundary(structural_id: &str, symbol: &str) -> bool {
     }
 }
 
-/// Compara un solo binding contra el target. Pública también para
-/// `rationale doctor` (Fase 1.5), que la usa para diagnosticar por qué un
-/// binding concreto no resuelve.
-pub fn match_one(key: &TargetKey, binding: &BindingDeclaration) -> Option<MatchKind> {
+/// Un binding de símbolo: confirmado por el proveedor (`structural_id`) o
+/// verificado solo léxicamente (`symbol`, índice atrasado).
+fn is_symbol_binding(binding: &BindingDeclaration) -> bool {
+    binding.structural_id.is_some() || binding.symbol.is_some()
+}
+
+/// Un binding de archivo declarado explícitamente como alcance de archivo
+/// completo (`scope: file`), aunque el Record también nombre un símbolo de
+/// ese archivo.
+fn is_explicit_file_scope(binding: &BindingDeclaration) -> bool {
+    binding
+        .extra
+        .get(yaml_serde::Value::String("scope".to_string()))
+        .and_then(|value| value.as_str())
+        == Some("file")
+}
+
+fn has_symbol_binding_in(record: &Record, path: &str) -> bool {
+    record.binding_declarations.iter().any(|binding| {
+        is_symbol_binding(binding)
+            && binding.path_hint.as_deref().map(clean_rel).as_deref() == Some(path)
+    })
+}
+
+/// `symbol_scoped_file`: el Record tiene bindings de símbolo en el archivo de
+/// este binding. Hasta v1.1 cada binding `archivo::símbolo` escribía además
+/// un binding de archivo «acompañante»; tratarlo como alcance de archivo hacía
+/// que un Record de `cancelShipment` gobernara `createShipment` y todo lo
+/// demás del archivo.
+fn match_binding(
+    key: &TargetKey,
+    binding: &BindingDeclaration,
+    symbol_scoped_file: bool,
+) -> Option<MatchKind> {
     let hint = binding.path_hint.as_deref().map(clean_rel);
+    let target = key.rel_path.as_deref();
 
-    if let (Some(symbol), Some(structural_id)) = (&key.symbol, &binding.structural_id) {
-        if ends_with_symbol_at_boundary(structural_id, symbol) {
-            // Si el binding también declara path_hint, debe coincidir con
-            // el target — nunca se acepta un símbolo de un archivo distinto
-            // solo porque el nombre coincide.
-            let path_ok = match (&hint, &key.rel_path) {
-                (Some(h), Some(t)) => h == t,
-                (None, _) => true,
-                (Some(_), None) => false,
-            };
-            if path_ok {
-                return Some(MatchKind::Structural);
+    if binding.kind == "directory" {
+        let (dir, target) = (hint?, target?);
+        if is_under(target, &dir) || target == dir {
+            return Some(MatchKind::DirectoryScope);
+        }
+        return (key.is_dir && is_under(&dir, target)).then_some(MatchKind::DirectoryMember);
+    }
+
+    if key.is_dir {
+        let (hint, target) = (hint?, target?);
+        return is_under(&hint, target).then_some(MatchKind::DirectoryMember);
+    }
+
+    if is_symbol_binding(binding) {
+        let path_ok = match (&hint, target) {
+            (Some(h), Some(t)) => h == t,
+            (None, _) => true,
+            (Some(_), None) => false,
+        };
+        return match &key.symbol {
+            Some(symbol) => {
+                if let Some(structural_id) = &binding.structural_id {
+                    (path_ok && ends_with_symbol_at_boundary(structural_id, symbol))
+                        .then_some(MatchKind::Structural)
+                } else {
+                    let lexical = binding.symbol.as_deref().unwrap_or_default();
+                    (path_ok && ends_with_symbol_at_boundary(lexical, short_symbol(symbol)))
+                        .then_some(MatchKind::UnconfirmedSymbol)
+                }
             }
-        }
+            // Consulta de archivo: todo Record atado a un símbolo del archivo
+            // pertenece al archivo.
+            None => (hint.is_some() && hint.as_deref() == target).then_some(MatchKind::FileExact),
+        };
     }
 
-    if let (Some(hint), Some(rel_path)) = (&hint, &key.rel_path) {
-        if hint == rel_path {
-            return Some(if key.symbol.is_some() {
-                MatchKind::FileContainsSymbol
-            } else {
-                MatchKind::FileExact
-            });
-        }
+    let (hint, target) = (hint?, target?);
+    if hint != target {
+        return None;
     }
+    match &key.symbol {
+        None => Some(MatchKind::FileExact),
+        Some(_) if symbol_scoped_file && !is_explicit_file_scope(binding) => None,
+        Some(_) => Some(MatchKind::FileContainsSymbol),
+    }
+}
 
-    None
+/// Último segmento de un símbolo calificado (`Type::method` → `method`).
+fn short_symbol(symbol: &str) -> &str {
+    symbol
+        .rsplit([':', '.'])
+        .find(|s| !s.is_empty())
+        .unwrap_or(symbol)
 }
 
 /// Un extremo de relación gobierna el target cuando coincide el archivo y,
 /// si la consulta trae símbolo, el nombre calificado termina en ese símbolo
-/// en un límite de token (`Tipo::metodo` se compara como `Tipo.metodo`).
+/// en un límite de token (`Tipo::metodo` se compara como `Tipo.metodo`). En
+/// una consulta de carpeta, cuando un extremo está dentro de ella.
 pub fn match_relationship(key: &TargetKey, binding: &RelationshipBinding) -> Option<MatchKind> {
     let rel_path = key.rel_path.as_deref()?;
+    if key.is_dir {
+        return [&binding.source, &binding.target]
+            .into_iter()
+            .any(|endpoint| is_under(&clean_rel(&endpoint.file_path), rel_path))
+            .then_some(MatchKind::DirectoryMember);
+    }
     [&binding.source, &binding.target]
         .into_iter()
         .any(|endpoint| {
@@ -165,6 +272,28 @@ pub fn match_relationship(key: &TargetKey, binding: &RelationshipBinding) -> Opt
         .then_some(MatchKind::RelationshipEndpoint)
 }
 
+/// Cómo gobierna un Record el target, o `None`.
+pub fn match_record(key: &TargetKey, record: &Record) -> Option<MatchKind> {
+    record
+        .binding_declarations
+        .iter()
+        .filter_map(|binding| {
+            let symbol_scoped = binding
+                .path_hint
+                .as_deref()
+                .map(clean_rel)
+                .is_some_and(|path| has_symbol_binding_in(record, &path));
+            match_binding(key, binding, symbol_scoped)
+        })
+        .chain(
+            record
+                .relationship_bindings
+                .iter()
+                .filter_map(|binding| match_relationship(key, binding)),
+        )
+        .max()
+}
+
 /// Todos los Records que gobiernan el target — uno por Record (el binding
 /// de mejor `MatchKind` cuando varios matchean), ordenados por
 /// especificidad, luego autoridad aprobada primero, luego `id` ascendente
@@ -175,35 +304,10 @@ pub fn governing<'a>(key: &TargetKey, records: &'a [Record]) -> Vec<GovernanceMa
     if key.rel_path.is_none() && key.symbol.is_none() {
         return Vec::new();
     }
-
-    let mut best_per_record: std::collections::HashMap<&str, GovernanceMatch<'a>> =
-        std::collections::HashMap::new();
-    for record in records {
-        let kinds = record
-            .binding_declarations
-            .iter()
-            .filter_map(|binding| match_one(key, binding))
-            .chain(
-                record
-                    .relationship_bindings
-                    .iter()
-                    .filter_map(|binding| match_relationship(key, binding)),
-            );
-        for kind in kinds {
-            match best_per_record.entry(record.id.as_str()) {
-                std::collections::hash_map::Entry::Occupied(mut existing) => {
-                    if kind > existing.get().kind {
-                        existing.insert(GovernanceMatch { record, kind });
-                    }
-                }
-                std::collections::hash_map::Entry::Vacant(slot) => {
-                    slot.insert(GovernanceMatch { record, kind });
-                }
-            }
-        }
-    }
-
-    let mut matches: Vec<GovernanceMatch<'a>> = best_per_record.into_values().collect();
+    let mut matches: Vec<GovernanceMatch<'a>> = records
+        .iter()
+        .filter_map(|record| match_record(key, record).map(|kind| GovernanceMatch { record, kind }))
+        .collect();
     matches.sort_by(|a, b| {
         b.kind
             .cmp(&a.kind)
@@ -248,6 +352,7 @@ mod tests {
             structural_id: None,
             path_hint: Some(path_hint.to_string()),
             provisional: false,
+            symbol: None,
             extra: yaml_serde::Mapping::new(),
         }
     }
@@ -260,6 +365,7 @@ mod tests {
             structural_id: Some(structural_id.to_string()),
             path_hint: path_hint.map(|p| p.to_string()),
             provisional: false,
+            symbol: None,
             extra: yaml_serde::Mapping::new(),
         }
     }
@@ -276,6 +382,7 @@ mod tests {
         let key = TargetKey {
             rel_path: Some("src/upload.rs".to_string()),
             symbol: Some("submit_file".to_string()),
+            ..Default::default()
         };
         let matches = governing(&key, &records);
         assert_eq!(matches.len(), 2);
@@ -298,6 +405,7 @@ mod tests {
             let key = TargetKey {
                 rel_path: Some("app/upload.tsx".to_string()),
                 symbol: Some(symbol.to_string()),
+                ..Default::default()
             };
             let matches = governing(&key, &records);
             assert_eq!(
@@ -318,6 +426,7 @@ mod tests {
         let key = TargetKey {
             rel_path: Some("app/upload.tsx".to_string()),
             symbol: None,
+            ..Default::default()
         };
         let matches = governing(&key, &records);
         assert_eq!(matches.len(), 1);
@@ -335,6 +444,7 @@ mod tests {
         let key = TargetKey {
             rel_path: None,
             symbol: Some("Role".to_string()),
+            ..Default::default()
         };
         assert!(
             governing(&key, &records).is_empty(),
@@ -344,6 +454,7 @@ mod tests {
         let real_key = TargetKey {
             rel_path: None,
             symbol: Some("resolveEntityRole".to_string()),
+            ..Default::default()
         };
         assert_eq!(governing(&real_key, &records).len(), 1);
     }
@@ -360,6 +471,7 @@ mod tests {
         let key = TargetKey {
             rel_path: Some("src/upload.rs".to_string()),
             symbol: Some("submit_file".to_string()),
+            ..Default::default()
         };
         assert!(
             governing(&key, &records).is_empty(),
@@ -378,6 +490,7 @@ mod tests {
         let key = TargetKey {
             rel_path: Some("src/upload.rs".to_string()),
             symbol: Some("submit_file".to_string()),
+            ..Default::default()
         };
         assert!(governing(&key, &records).is_empty());
     }
@@ -416,6 +529,7 @@ mod tests {
         let query = |path: &str, symbol: Option<&str>| TargetKey {
             rel_path: Some(path.to_string()),
             symbol: symbol.map(str::to_string),
+            ..Default::default()
         };
 
         let source = governing(
@@ -447,6 +561,116 @@ mod tests {
         assert_eq!(clean_rel("src/foo.rs"), "src/foo.rs");
     }
 
+    fn key(path: &str, symbol: Option<&str>, is_dir: bool) -> TargetKey {
+        TargetKey {
+            rel_path: Some(path.to_string()),
+            symbol: symbol.map(str::to_string),
+            is_dir,
+        }
+    }
+
+    /// Hasta v1.1 cada `archivo::símbolo` escribía también un binding de
+    /// archivo acompañante: el Record de `cancelShipment` gobernaba
+    /// `createShipment` (el «contexto de todo el archivo» del reporte).
+    #[test]
+    fn a_companion_file_binding_does_not_spread_a_symbol_record_over_the_file() {
+        let mut record = record_with_binding("decision.cancel", file_binding("src/service.ts"));
+        record.binding_declarations.push(structural_binding(
+            "src.service.cancelShipment",
+            Some("src/service.ts"),
+        ));
+        let records = vec![record];
+        let own = governing(
+            &key("src/service.ts", Some("cancelShipment"), false),
+            &records,
+        );
+        assert_eq!(own[0].kind, MatchKind::Structural);
+        assert!(governing(
+            &key("src/service.ts", Some("createShipment"), false),
+            &records
+        )
+        .is_empty());
+        assert_eq!(
+            governing(&key("src/service.ts", None, false), &records)[0].kind,
+            MatchKind::FileExact,
+            "a file query still sees every Record bound inside the file"
+        );
+    }
+
+    #[test]
+    fn an_explicit_file_scope_still_governs_every_symbol() {
+        let mut file = file_binding("src/service.ts");
+        file.extra.insert(
+            yaml_serde::Value::String("scope".to_string()),
+            yaml_serde::Value::String("file".to_string()),
+        );
+        let mut record = record_with_binding("constraint.file-wide", file);
+        record.binding_declarations.push(structural_binding(
+            "src.service.cancelShipment",
+            Some("src/service.ts"),
+        ));
+        let records = vec![record];
+        let other = governing(
+            &key("src/service.ts", Some("createShipment"), false),
+            &records,
+        );
+        assert_eq!(other[0].kind, MatchKind::FileContainsSymbol);
+    }
+
+    #[test]
+    fn a_lexical_symbol_binding_governs_only_its_symbol() {
+        let mut binding = file_binding("src/service.ts");
+        binding.kind = "symbol".to_string();
+        binding.symbol = Some("splitShipment".to_string());
+        let records = vec![record_with_binding("decision.split", binding)];
+        let own = governing(
+            &key("src/service.ts", Some("splitShipment"), false),
+            &records,
+        );
+        assert_eq!(own[0].kind, MatchKind::UnconfirmedSymbol);
+        assert!(governing(
+            &key("src/service.ts", Some("createShipment"), false),
+            &records
+        )
+        .is_empty());
+        assert_eq!(
+            governing(&key("src/service.ts", None, false), &records).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn folder_queries_and_folder_scopes() {
+        let mut scope = file_binding("src/billing");
+        scope.kind = "directory".to_string();
+        let records = vec![
+            record_with_binding("constraint.inside", file_binding("src/shipping/rates.ts")),
+            record_with_binding(
+                "constraint.deeper",
+                file_binding("src/shipping/carriers/dhl.ts"),
+            ),
+            record_with_binding("constraint.outside", file_binding("src/shippingx/a.ts")),
+            record_with_binding("constraint.billing-scope", scope),
+        ];
+        let folder = governing(&key("src/shipping", None, true), &records);
+        let ids: Vec<_> = folder.iter().map(|m| m.record.id.as_str()).collect();
+        assert_eq!(ids, ["constraint.deeper", "constraint.inside"]);
+        assert!(folder.iter().all(|m| m.kind == MatchKind::DirectoryMember));
+
+        let in_scope = governing(
+            &key("src/billing/invoice.ts", Some("issueInvoice"), false),
+            &records,
+        );
+        assert_eq!(in_scope[0].record.id, "constraint.billing-scope");
+        assert_eq!(in_scope[0].kind, MatchKind::DirectoryScope);
+        assert!(governing(&key("src/billing-old/x.ts", None, false), &records).is_empty());
+        assert_eq!(
+            governing(&key("src", None, true), &records).len(),
+            4,
+            "an ancestor folder contains a folder scope"
+        );
+    }
+
     #[test]
     fn governing_deduplicates_multiple_bindings_on_the_same_record() {
         let mut record = record_with_binding("constraint.dual", file_binding("src/upload.rs"));
@@ -457,6 +681,7 @@ mod tests {
         let key = TargetKey {
             rel_path: Some("src/upload.rs".to_string()),
             symbol: Some("submit_file".to_string()),
+            ..Default::default()
         };
         let matches = governing(&key, std::slice::from_ref(&record));
         assert_eq!(

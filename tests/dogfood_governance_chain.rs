@@ -206,7 +206,10 @@ fn governance_chain_survives_uncommitted_work_and_a_new_session() {
             .expect("vNext: el Record es canónico en la misma llamada, sin revisión humana");
         assert!(content.contains("authority: normal"));
         assert!(content.contains("approvals: []"));
-        assert!(content.contains("type: file"));
+        // Sin proveedor que lo confirme, el símbolo existe en el archivo:
+        // queda atado léxicamente a `submitFile` (no a todo el archivo).
+        assert!(content.contains("type: symbol"), "{content}");
+        assert!(content.contains("symbol: submitFile"), "{content}");
         assert!(
             content.contains("provisional: true"),
             "el binding de un archivo sin commitear debe declararse provisional: {content}"
@@ -240,6 +243,9 @@ fn governance_chain_survives_uncommitted_work_and_a_new_session() {
             "target": TARGET,
             "intent": "allow sending the challenge immediately even if the upload is still pending",
             "mode": "intent-aware",
+            // La resolución por binding del assessment solo viaja con
+            // `verbose` desde que el presupuesto cubre la respuesta completa.
+            "verbose": true,
             "project_root": dir.to_string_lossy(),
             "repo_path": dir.to_string_lossy(),
         }),
@@ -261,15 +267,15 @@ fn governance_chain_survives_uncommitted_work_and_a_new_session() {
     assert_eq!(governing_constraint["severity"], "medium");
 
     // Defectos 1, 2, 7 (bindings, Subject, propagación archivo->símbolo).
-    // `match_kind` puede ser "file-contains-symbol" (sin proveedor
-    // estructural, solo el binding de archivo) o "structural" (con
-    // Codebase Memory disponible, que confirmó el símbolo de verdad) —
-    // ambos casos son correctos; el test no debe depender de si la
-    // máquina que lo corre tiene el proveedor instalado.
+    // `match_kind` puede ser "unconfirmed-symbol" (sin proveedor
+    // estructural: el símbolo se verificó léxicamente en el archivo) o
+    // "structural" (con Codebase Memory disponible, que confirmó el símbolo
+    // de verdad) — ambos casos son correctos; el test no debe depender de si
+    // la máquina que lo corre tiene el proveedor instalado.
     assert_eq!(governing_constraint["governs_target"], true);
     let match_kind = governing_constraint["match_kind"].as_str().unwrap();
     assert!(
-        matches!(match_kind, "structural" | "file-contains-symbol"),
+        matches!(match_kind, "structural" | "unconfirmed-symbol"),
         "match_kind inesperado: {match_kind}"
     );
 
@@ -343,6 +349,9 @@ fn governance_chain_survives_uncommitted_work_and_a_new_session() {
             "target": "README.md",
             "intent": "allow sending the challenge immediately even if the upload is still pending",
             "mode": "intent-aware",
+            // La resolución por binding del assessment solo viaja con
+            // `verbose` desde que el presupuesto cubre la respuesta completa.
+            "verbose": true,
             "project_root": dir.to_string_lossy(),
             "repo_path": dir.to_string_lossy(),
         }),

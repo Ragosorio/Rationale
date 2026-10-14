@@ -132,6 +132,18 @@ def check(name: str, response: dict, project: Path, scenario: dict) -> tuple[boo
     if name == "within_budget":
         limit = scenario["args"]["max_tokens"]
         return response["tokens"] <= limit, f"{response['tokens']} estimated tokens for a budget of {limit}"
+    if name == "budget_respected":
+        # Within budget, or over it only with governing knowledge left: the
+        # overflow is declared and nothing trimmable remains.
+        limit = scenario["args"]["max_tokens"]
+        if response["tokens"] <= limit:
+            return True, f"{response['tokens']} estimated tokens for a budget of {limit}"
+        trimmable = [k for k in ("structure", "relevant_code", "history", "known_risks", "affected_targets")
+                     if packet.get(k)]
+        declared = bool(packet.get("budget_overflow"))
+        ok = declared and not trimmable
+        return ok, (f"{response['tokens']} > {limit}; overflow declared={declared}; "
+                    f"trimmable left={trimmable}")
     raise ValueError(name)
 
 
@@ -458,7 +470,10 @@ def main() -> int:
     parser.add_argument("--cold", type=int, default=5, help="cold process starts")
     args = parser.parse_args()
 
-    binaries = [tuple(item.split("=", 1)) for item in args.binary]
+    binaries = [
+        (label, str(Path(path).resolve()))
+        for label, path in (item.split("=", 1) for item in args.binary)
+    ]
     old_binary = binaries[0][1] if len(binaries) > 1 else None
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)

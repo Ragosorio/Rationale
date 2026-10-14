@@ -433,6 +433,12 @@ struct PreparedBinding {
     structural_id: Option<String>,
     provider: Option<String>,
     provisional: bool,
+    /// Símbolo verificado solo léxicamente (el proveedor no lo confirmó).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    symbol: Option<String>,
+    /// El agente declaró el archivo entero, no solo un símbolo suyo.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    file_scope: bool,
 }
 
 /// Un candidato que ya pasó las verificaciones que no dependen del estado
@@ -602,8 +608,15 @@ fn is_schema_id(id: &str) -> bool {
 
 /// Resuelve los bindings contra el árbol de trabajo real y, cuando hay
 /// símbolo, contra el proveedor estructural. Un símbolo que el proveedor no
-/// confirma nunca se sintetiza (`policy.no-inferred-blocks`): queda solo el
-/// binding de archivo y una advertencia.
+/// confirma nunca recibe identidad estructural (`policy.no-inferred-blocks`):
+/// si el archivo lo define, queda atado léxicamente (`symbol`, provisional)
+/// para que gobierne ese símbolo y no todo el archivo; si tampoco aparece en
+/// el archivo, queda el binding de archivo y una advertencia.
+///
+/// Un `path::symbol` ya no escribe además un binding de archivo acompañante:
+/// ese acompañante hacía que el Record gobernara todos los símbolos del
+/// archivo. Un archivo declarado sin símbolo es alcance de archivo completo, y
+/// una carpeta, alcance de carpeta.
 fn resolve_bindings(
     ctx: &CanonContext,
     bindings: &[CandidateBinding],
@@ -611,55 +624,84 @@ fn resolve_bindings(
     warnings: &mut Vec<String>,
 ) -> Vec<PreparedBinding> {
     let mut resolved: Vec<PreparedBinding> = Vec::new();
+    let mut tree = crate::symbols::WorkingTree::new(ctx.repo_path);
     for binding in bindings {
         let spec = binding.spec();
         let target = match project::resolve_target(ctx.repo_path, &spec) {
-            Ok(target) if target.path.is_file() => target,
-            Ok(_) => {
-                warnings.push(format!(
-                    "binding '{spec}' no apunta a un archivo — ignorado"
-                ));
-                continue;
-            }
+            Ok(target) => target,
             Err(error) => {
-                warnings.push(format!("binding '{spec}' ignorado: {error}"));
+                warnings.push(format!("binding '{spec}' ignored: {error}"));
                 continue;
             }
         };
         let Some(rel_path) = binding_match::target_rel_path(ctx.repo_path, &target) else {
             warnings.push(format!(
-                "binding '{spec}' no es relativo al repositorio — ignorado"
+                "binding '{spec}' is not inside the repository — ignored"
             ));
             continue;
         };
         // El canon y los datos locales no son código: un Record atado a
         // `.rationale/` se gobernaría a sí mismo.
-        if rel_path.starts_with(".rationale/") || rel_path.starts_with(".rationale-local/") {
+        let rationale_data = [".rationale", ".rationale-local"]
+            .iter()
+            .any(|dir| rel_path == *dir || binding_match::is_under(&rel_path, dir));
+        if rationale_data || rel_path.is_empty() {
             warnings.push(format!(
-                "binding '{spec}' apunta a datos de Rationale, no a código — ignorado"
+                "binding '{spec}' points at Rationale data or the whole repository, not code — \
+                 ignored"
+            ));
+            continue;
+        }
+        let symbol = target.symbol.as_deref().filter(|s| !s.is_empty());
+        if target.path.is_dir() {
+            if symbol.is_some() {
+                warnings.push(format!(
+                    "binding '{spec}' names a symbol inside a folder — ignored"
+                ));
+            } else if !resolved
+                .iter()
+                .any(|b| b.kind == "directory" && b.path_hint == rel_path)
+            {
+                resolved.push(PreparedBinding {
+                    kind: "directory".to_string(),
+                    path_hint: rel_path.clone(),
+                    structural_id: None,
+                    provider: None,
+                    provisional: false,
+                    symbol: None,
+                    file_scope: false,
+                });
+            }
+            continue;
+        }
+        if !target.path.is_file() {
+            warnings.push(format!(
+                "binding '{spec}' is not a file or folder — ignored"
             ));
             continue;
         }
         let provisional = ctx.uncommitted_paths.contains(&rel_path);
+        let file_binding = |file_scope: bool| PreparedBinding {
+            kind: "file".to_string(),
+            path_hint: rel_path.clone(),
+            structural_id: None,
+            provider: None,
+            provisional,
+            symbol: None,
+            file_scope,
+        };
 
-        if !resolved
-            .iter()
-            .any(|b| b.kind == "file" && b.path_hint == rel_path)
-        {
-            resolved.push(PreparedBinding {
-                kind: "file".to_string(),
-                path_hint: rel_path.clone(),
-                structural_id: None,
-                provider: None,
-                provisional,
-            });
-        }
-
-        let Some(symbol) = target.symbol.as_deref().filter(|s| !s.is_empty()) else {
+        let Some(symbol) = symbol else {
+            match resolved
+                .iter_mut()
+                .find(|b| b.kind == "file" && b.path_hint == rel_path)
+            {
+                Some(existing) => existing.file_scope = true,
+                None => resolved.push(file_binding(true)),
+            }
             continue;
         };
-        let confirmed = resolve_symbol(ctx, provider, &rel_path, symbol);
-        match confirmed {
+        match resolve_symbol(ctx, provider, &rel_path, symbol) {
             Some((node, provider_name)) => {
                 if !resolved
                     .iter()
@@ -671,13 +713,45 @@ fn resolve_bindings(
                         structural_id: Some(node.qualified_name),
                         provider: Some(provider_name),
                         provisional,
+                        symbol: None,
+                        file_scope: false,
                     });
                 }
             }
-            _ => warnings.push(format!(
-                "el proveedor no confirmó el símbolo '{symbol}' en '{rel_path}' — solo se enlaza \
-                 el archivo"
-            )),
+            None if tree.find_definition(&rel_path, symbol).is_some() => {
+                warnings.push(format!(
+                    "the structural index does not know '{symbol}' in '{rel_path}' yet (stale \
+                     index or a symbol new on this branch): bound to the symbol after checking \
+                     that the file defines it, without a structural identity; `rationale doctor` \
+                     confirms it once the index catches up"
+                ));
+                if !resolved
+                    .iter()
+                    .any(|b| b.path_hint == rel_path && b.symbol.as_deref() == Some(symbol))
+                {
+                    resolved.push(PreparedBinding {
+                        kind: "symbol".to_string(),
+                        path_hint: rel_path.clone(),
+                        structural_id: None,
+                        provider: None,
+                        provisional,
+                        symbol: Some(symbol.to_string()),
+                        file_scope: false,
+                    });
+                }
+            }
+            None => {
+                warnings.push(format!(
+                    "'{symbol}' is neither confirmed by the structural provider nor defined in \
+                     '{rel_path}': the Record is bound to the whole file"
+                ));
+                if !resolved
+                    .iter()
+                    .any(|b| b.kind == "file" && b.path_hint == rel_path)
+                {
+                    resolved.push(file_binding(true));
+                }
+            }
         }
     }
     resolved
@@ -1065,6 +1139,20 @@ fn provenance_for(ctx: &CanonContext, kind: ProvenanceKind) -> Provenance {
     }
 }
 
+/// `scope: file` solo cuando hace falta: un archivo declarado entero en un
+/// Record que también nombra un símbolo de ese archivo. Sin la marca, el
+/// binding de archivo se leería como acompañante del símbolo.
+fn file_scope_extra(binding: &PreparedBinding, all: &[PreparedBinding]) -> yaml_serde::Mapping {
+    let mut extra = yaml_serde::Mapping::new();
+    let shares_file_with_a_symbol = all
+        .iter()
+        .any(|other| other.kind == "symbol" && other.path_hint == binding.path_hint);
+    if binding.kind == "file" && binding.file_scope && shares_file_with_a_symbol {
+        extra.insert(string_value("scope"), string_value("file"));
+    }
+    extra
+}
+
 fn build_record(
     ctx: &CanonContext,
     prepared: &PreparedCandidate,
@@ -1088,7 +1176,8 @@ fn build_record(
             structural_id: binding.structural_id.clone(),
             path_hint: Some(binding.path_hint.clone()),
             provisional: binding.provisional,
-            extra: yaml_serde::Mapping::new(),
+            symbol: binding.symbol.clone(),
+            extra: file_scope_extra(binding, &prepared.bindings),
         })
         .collect();
     let risks = prepared
@@ -2401,7 +2490,7 @@ mod tests {
         assert!(outcome
             .warnings
             .iter()
-            .any(|w| w.contains("datos de Rationale")));
+            .any(|w| w.contains("Rationale data")));
     }
 
     #[test]

@@ -172,6 +172,13 @@ pub struct BindingDeclaration {
     /// pretender la misma certeza que un binding sobre HEAD.
     #[serde(default)]
     pub provisional: bool,
+    /// Símbolo verificado solo léxicamente: existía en el archivo pero el
+    /// proveedor estructural todavía no lo indexaba (rama nueva, índice
+    /// atrasado). Sin `structural_id`. `rationale doctor` lo confirma cuando
+    /// el índice lo alcanza. Un binario anterior lo lee como binding de
+    /// archivo (`path_hint`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
     /// Campos reales no modelados (p. ej. `scope`) — ver doc del módulo.
     #[serde(flatten)]
     pub extra: yaml_serde::Mapping,

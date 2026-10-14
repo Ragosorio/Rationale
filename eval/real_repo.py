@@ -104,6 +104,7 @@ def main() -> int:
               "runs": {}}
     for item in args.binary:
         label, binary = item.split("=", 1)
+        binary = str(Path(binary).resolve())
         report["runs"][label] = run(binary, Path(args.repo), targets, args.warm)
         summary = {k: v for k, v in report["runs"][label].items() if k != "targets"}
         print(label, json.dumps(summary), file=sys.stderr)

@@ -345,6 +345,7 @@ mod tests {
             structural_id: None,
             path_hint: Some(path_hint.to_string()),
             provisional: false,
+            symbol: None,
             extra: yaml_serde::Mapping::new(),
         }
     }
@@ -607,6 +608,7 @@ mod tests {
             structural_id: Some("function:typescript:foo".to_string()),
             path_hint: None,
             provisional: false,
+            symbol: None,
             extra: yaml_serde::Mapping::new(),
         };
         let record = record_with_bindings(true, "abc123", vec![symbol_binding]);

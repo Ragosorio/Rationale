@@ -273,12 +273,13 @@ fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "target": {"type": "string", "description": "path or path::symbol inside the project, e.g. src/main.rs::cmd_prepare"},
+                    "target": {"type": "string", "description": "path::symbol, a file, or a folder inside the project, e.g. src/main.rs::cmd_prepare or src/providers"},
                     "intent": {"type": "string", "description": "The change you actually intend. When present, intent-conflict detection runs automatically"},
                     "mode": {"type": "string", "enum": ["baseline", "intent-aware"], "description": "Usually unnecessary: the mode follows from whether 'intent' is present. Pass 'baseline' to force plain retrieval even with an intent."},
                     "project_root": {"type": "string", "description": "Default: the Rationale project that contains the server's working directory"},
                     "repo_path": {"type": "string"},
-                    "max_tokens": {"type": "integer"},
+                    "max_tokens": {"type": "integer", "description": "Ceiling for this whole response, as an upper-bound token estimate (default 2400). Governing knowledge is never cut; what does not fit is listed in packet.omitted with the call that returns it"},
+                    "verbose": {"type": "boolean", "description": "Also return pipeline diagnostics and the per-binding assessment (debugging only)"},
                     "max_critical_constraints": {"type": "integer"},
                     "max_risks": {"type": "integer"},
                     "max_nodes": {"type": "integer", "description": "Ceiling for structural nodes in the packet (default 12)"},
@@ -511,7 +512,12 @@ fn call_prepare_change(
             .and_then(|v| v.as_u64())
             .map(|n| n as usize)
             .unwrap_or(default_budget.max_risks),
+        overhead_tokens: 0,
     };
+    let verbose = args
+        .get("verbose")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     let structural_default = context::StructuralBudget::default();
     let arg_usize = |field: &str| args.get(field).and_then(Value::as_u64).map(|n| n as usize);
@@ -531,18 +537,23 @@ fn call_prepare_change(
             budget,
             structural_budget,
             actor: session.actor.clone(),
+            verbose,
         },
         provider,
         &session.recorder,
     )?;
 
-    let response = json!({
+    // `packet.budget` cubre esta respuesta completa: el pipeline descontó el
+    // `operation_id`, el `assessment` compacto y la latencia del techo.
+    let mut response = json!({
         "operation_id": outcome.operation.operation_id,
         "packet": outcome.packet,
-        "assessment": outcome.assessment,
-        "diagnostics": outcome.diagnostics,
+        "assessment": outcome.assessment_view,
         "latency_ms": outcome.latency_ms,
     });
+    if verbose {
+        response["diagnostics"] = json!(outcome.diagnostics);
+    }
     session.recorder.emit(
         &outcome.activity,
         "packet.delivered",

@@ -18,9 +18,14 @@ use std::collections::{HashMap, HashSet};
 /// Budget explícito de la consulta (Rationale_v0.5.md §18).
 #[derive(Debug, Clone)]
 pub struct Budget {
+    /// Techo de la respuesta completa que recibe el agente, no solo del
+    /// packet (estimación de `tokens`, cota superior).
     pub max_tokens: usize,
     pub max_critical_constraints: usize,
     pub max_risks: usize,
+    /// Tokens de la respuesta fuera del packet (`operation_id`,
+    /// `assessment`…): el packet recibe `max_tokens - overhead_tokens`.
+    pub overhead_tokens: usize,
 }
 
 impl Default for Budget {
@@ -33,6 +38,7 @@ impl Default for Budget {
             max_tokens: 2400,
             max_critical_constraints: 5,
             max_risks: 3,
+            overhead_tokens: 0,
         }
     }
 }
@@ -49,6 +55,10 @@ pub struct Snapshot {
 pub struct CriticalConstraint {
     pub id: String,
     pub statement: String,
+    /// El porqué de la regla — antes solo llegaba el del primer Record, como
+    /// `primary_reason`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
     pub authority: String,
     /// `agent_asserted | human_stated | migrated` — quién afirmó esto.
     pub provenance: String,
@@ -63,9 +73,30 @@ pub struct CriticalConstraint {
     /// presupuesto ni por severidad cuando es `true`.
     pub governs_target: bool,
     pub match_kind: Option<String>,
+    /// Por qué entra en el packet, en una frase.
+    pub why: String,
     /// Records que este reemplazó: la historia que el agente no debe aplicar.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub replaces: Vec<String>,
+    /// Excepciones vigentes a esta regla.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub exceptions: Vec<String>,
+    #[serde(flatten)]
+    pub caveats: Caveats,
+}
+
+/// Advertencias sobre un Record servido que el agente debe ver junto a él.
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct Caveats {
+    /// Bindings a rutas que ya no existen en el árbol de trabajo: el Record
+    /// puede describir código retirado (`rationale retire` lo resuelve).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stale_bindings: Vec<String>,
+    /// `orphaned_exception` cuando la regla que exceptuaba ya no gobierna.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub flags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Cómo se determinó que un `IntentConflict` merece mostrarse. Nunca una
@@ -100,7 +131,10 @@ pub enum Polarity {
 #[derive(Debug, Serialize, Clone)]
 pub struct IntentConflict {
     pub record_id: String,
-    pub statement: String,
+    /// Solo cuando el Record no aparece ya en el packet: repetir el texto de
+    /// cada Record gobernante duplicaba el packet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statement: Option<String>,
     pub authority: String,
     pub severity: String,
     pub governs_target: bool,
@@ -116,6 +150,7 @@ pub struct IntentConflict {
 #[derive(Debug, Serialize)]
 pub struct ContextPacket {
     pub snapshot: Snapshot,
+    pub retrieval: RetrievalSummary,
     /// Operación que `prepare_change` abrió: enlaza este contexto con el
     /// trabajo del agente, `finalize_change` y la actividad de la UI.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -142,6 +177,10 @@ pub struct ContextPacket {
     /// en el packet (solo aparecía en el assessment).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub decisions: Vec<GoverningDecision>,
+    /// Constraints de código del que el target depende (o que depende de
+    /// él) por una arista observada.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inherited_constraints: Vec<InheritedConstraint>,
     /// Records atados al target que ya no gobiernan, con su estado y su
     /// reemplazo. `explain_target` con `include_history` devuelve su texto.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -174,10 +213,12 @@ pub struct ContextPacket {
     /// `protected_context` cuando lo que excede es otro contenido protegido.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub budget_overflow: Option<String>,
-    /// Proxy de tokens (chars/4) del contenido de texto incluido —
-    /// instrumentación, no una medición exacta de tokenizer real
-    /// (Arquitectura §20.3: "si los tokens no están disponibles, se
-    /// registrarán proxies").
+    /// Lo relevante que no cupo, con la llamada que lo trae.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub omitted: Vec<Omission>,
+    pub budget: BudgetReport,
+    /// Estimación (cota superior, `tokens`) de la respuesta completa que
+    /// recibe el agente — igual a `budget.estimated_tokens`.
     pub token_estimate: usize,
 }
 
@@ -202,8 +243,66 @@ pub struct GoverningDecision {
     pub authority: String,
     pub provenance: String,
     pub match_kind: String,
+    pub why: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub replaces: Vec<String>,
+    #[serde(flatten)]
+    pub caveats: Caveats,
+}
+
+/// Una constraint que no está atada al target pero gobierna código del que
+/// depende o que depende de él por una arista observada (llamada, uso,
+/// import): el invariante cruza el módulo. Solo constraints `critical`/`high`
+/// o fijadas; nunca por similitud ni por aristas inferidas.
+#[derive(Debug, Serialize, Clone)]
+pub struct InheritedConstraint {
+    pub id: String,
+    pub statement: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+    pub authority: String,
+    pub provenance: String,
+    pub severity: String,
+    /// La arista que la trae: `issueInvoice calls toCents`.
+    pub via: String,
+    pub why: String,
+    #[serde(flatten)]
+    pub caveats: Caveats,
+}
+
+/// Qué se encontró y con qué alcance. Distingue «nada gobierna esto» de «el
+/// índice no lo conoce» y de «la ruta ya no existe».
+#[derive(Debug, Serialize, Clone)]
+pub struct RetrievalSummary {
+    /// `found | none_found | index_incomplete | target_missing`.
+    pub status: String,
+    /// `symbol | file | folder`.
+    pub scope: String,
+    pub detail: String,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub records_bound_to_missing_path: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
+
+/// Algo relevante que no cupo en el presupuesto, y cómo pedirlo.
+#[derive(Debug, Serialize, Clone)]
+pub struct Omission {
+    pub section: String,
+    pub count: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ids: Vec<String>,
+    pub expand: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct BudgetReport {
+    pub max_tokens: usize,
+    /// Estimación de la respuesta completa que recibe el agente.
+    pub estimated_tokens: usize,
+    pub estimator: &'static str,
 }
 
 /// Un Record que estuvo atado al target y ya no gobierna: reemplazado,
@@ -288,13 +387,16 @@ pub struct RelevantCode {
     pub truncated: bool,
 }
 
-/// Tokens estimados del packet tal como lo recibe el agente: bytes del JSON
-/// serializado / 4. Un proxy (Arquitectura §20.3), no un tokenizer real,
-/// pero cuenta también la estructura JSON que el agente sí paga.
+/// Tokens estimados del packet serializado, tal como viaja (JSON compacto),
+/// con el código del target recontado como código (`tokens`).
 fn estimate_tokens(packet: &ContextPacket) -> usize {
-    serde_json::to_vec(packet)
-        .map(|bytes| bytes.len().div_ceil(4))
-        .unwrap_or(0)
+    let json = serde_json::to_string(packet).unwrap_or_default();
+    let code = packet
+        .relevant_code
+        .as_ref()
+        .map(|code| code.source.as_str())
+        .unwrap_or_default();
+    crate::tokens::estimate(&json, code)
 }
 
 fn provenance_label(record: &Record) -> String {
@@ -592,25 +694,22 @@ fn explained_relationships(
         .collect()
 }
 
-/// Recorta un elemento regenerable o de menor prioridad, en este orden:
-/// targets afectados, nodos estructurales de menor rol (nunca el target ni
-/// los extremos explicados), el código relevante (el agente puede leer el
-/// archivo) y, al final, riesgos. Devuelve `false` cuando solo queda
-/// contenido protegido.
-fn trim_one(packet: &mut ContextPacket, structure: Option<&mut StructuralContext>) -> bool {
-    if packet.affected_targets.pop().is_some() {
-        return true;
-    }
-    if let Some(context) = structure {
-        if context.drop_lowest_priority_node() {
-            packet.structure = Some(packet_structure(context));
-            return true;
+/// Alcance de la consulta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetScope {
+    Symbol,
+    File,
+    Folder,
+}
+
+impl TargetScope {
+    fn as_str(self) -> &'static str {
+        match self {
+            TargetScope::Symbol => "symbol",
+            TargetScope::File => "file",
+            TargetScope::Folder => "folder",
         }
     }
-    if packet.relevant_code.take().is_some() {
-        return true;
-    }
-    packet.known_risks.pop().is_some()
 }
 
 /// Entrada del Context Compiler. `operation_id` y `target` enlazan el packet
@@ -631,6 +730,294 @@ pub struct PacketInput<'a> {
     /// Estado de vida de todo el canon (`lifecycle`): la única fuente de
     /// «¿sigue vigente?».
     pub status: &'a StatusIndex,
+    pub scope: TargetScope,
+    /// Raíz del árbol de trabajo, para señalar bindings a rutas borradas.
+    pub repo_path: Option<&'a std::path::Path>,
+    /// La ruta pedida no existe: Records activos todavía atados a ella.
+    pub missing_target: Option<Vec<String>>,
+}
+
+/// Prioridad de recorte de un Record de carpeta: más bajo sale primero.
+fn folder_priority(record: &Record) -> u8 {
+    let pinned =
+        crate::storage::record_authority(record) == crate::storage::RecordAuthority::Pinned;
+    let severity = crate::storage::severity_of(record).map_or(0, |s| s as u8);
+    let kind = match record.kind.as_str() {
+        "constraint" | "exception" => 2,
+        "risk" => 1,
+        _ => 0,
+    };
+    (pinned as u8) * 100 + kind * 10 + severity
+}
+
+/// Un Record de carpeta que nunca se recorta: lo fijado por una persona, las
+/// constraints `critical`/`high` y las excepciones vigentes.
+fn folder_protected(record: &Record) -> bool {
+    crate::storage::record_authority(record) == crate::storage::RecordAuthority::Pinned
+        || record.kind == "exception"
+        || (record.kind == "constraint" && matches!(record.severity.as_str(), "critical" | "high"))
+}
+
+fn inherited_protected(record: &Record) -> bool {
+    crate::storage::record_authority(record) == crate::storage::RecordAuthority::Pinned
+        || record.severity == "critical"
+}
+
+pub(crate) fn caveats_for(
+    record: &Record,
+    status: &StatusIndex,
+    tree: &mut Option<crate::symbols::WorkingTree>,
+) -> Caveats {
+    let mut caveats = Caveats::default();
+    if let Some(tree) = tree.as_mut() {
+        for binding in &record.binding_declarations {
+            if let Some(path) = &binding.path_hint {
+                let path = path.trim_end_matches('/');
+                if !path.is_empty()
+                    && !tree.exists(path)
+                    && !caveats.stale_bindings.iter().any(|p| p == path)
+                {
+                    caveats.stale_bindings.push(path.to_string());
+                }
+            }
+        }
+    }
+    if let Some(note) = crate::lifecycle::orphaned_exception(record, status) {
+        caveats.flags.push("orphaned_exception".to_string());
+        caveats.note = Some(note);
+    } else if !caveats.stale_bindings.is_empty() {
+        caveats.note = Some(format!(
+            "{} of its bindings point at paths that no longer exist: it may describe retired \
+             code; prefer the Records bound only to current code",
+            caveats.stale_bindings.len()
+        ));
+    }
+    caveats
+}
+
+/// Aristas observadas que justifican heredar una constraint entre módulos.
+const INHERITING_KINDS: [&str; 7] = [
+    "calls",
+    "uses",
+    "writes",
+    "imports",
+    "depends_on",
+    "http_calls",
+    "implements",
+];
+
+/// Constraints `critical`/`high` (o fijadas) que gobiernan el código al otro
+/// lado de una arista observada del target. Ni similitud ni aristas
+/// inferidas: solo dependencias que el proveedor vio y el árbol de trabajo
+/// confirma.
+fn inherited_constraints(
+    context: &StructuralContext,
+    records: &[Record],
+    governing: &HashMap<String, MatchKind>,
+    status: &StatusIndex,
+) -> Vec<(InheritedConstraint, bool)> {
+    let Some(target) = context.target_node.as_ref() else {
+        return Vec::new();
+    };
+    let target_key = context
+        .nodes
+        .iter()
+        .find(|n| n.qualified_name == target.binding.qualified_name)
+        .map(|n| n.key.clone());
+    let Some(target_key) = target_key else {
+        return Vec::new();
+    };
+    let candidates: Vec<&Record> = records
+        .iter()
+        .filter(|r| {
+            r.kind == "constraint"
+                && !governing.contains_key(&r.id)
+                && status.is_active(r)
+                && (matches!(r.severity.as_str(), "critical" | "high")
+                    || crate::storage::record_authority(r)
+                        == crate::storage::RecordAuthority::Pinned)
+        })
+        .collect();
+    let mut found: Vec<(InheritedConstraint, bool)> = Vec::new();
+    for edge in &context.edges {
+        if edge.state != "observed" || !INHERITING_KINDS.contains(&edge.kind.as_str()) {
+            continue;
+        }
+        // Lo que el target usa trae sus invariantes (`critical`/`high`/fijadas);
+        // lo que usa al target solo trae lo `critical` o fijado: una regla del
+        // llamador rara vez restringe al llamado.
+        let (neighbor_key, outbound) = if edge.source == target_key {
+            (&edge.target, true)
+        } else if edge.target == target_key {
+            (&edge.source, false)
+        } else {
+            continue;
+        };
+        let Some(neighbor) = context.nodes.iter().find(|n| &n.key == neighbor_key) else {
+            continue;
+        };
+        let key = crate::binding_match::TargetKey {
+            rel_path: Some(neighbor.file_path.clone()),
+            symbol: Some(neighbor.name.clone()),
+            is_dir: false,
+        };
+        for record in &candidates {
+            if found.iter().any(|(c, _)| c.id == record.id) {
+                continue;
+            }
+            if !outbound && !inherited_protected(record) {
+                continue;
+            }
+            let Some(kind) = crate::binding_match::match_record(&key, record) else {
+                continue;
+            };
+            let via = if edge.source == target_key {
+                format!(
+                    "{} {} {}",
+                    target.binding.short_name(),
+                    edge.kind,
+                    neighbor.name
+                )
+            } else {
+                format!(
+                    "{} {} {}",
+                    neighbor.name,
+                    edge.kind,
+                    target.binding.short_name()
+                )
+            };
+            found.push((
+                InheritedConstraint {
+                    id: record.id.clone(),
+                    statement: record.statement.clone(),
+                    rationale: record.rationale.clone(),
+                    authority: authority_label(record).to_string(),
+                    provenance: provenance_label(record),
+                    severity: record.severity.clone(),
+                    via,
+                    why: format!(
+                        "governs {} ({}); observed {} edge",
+                        neighbor.qualified_name,
+                        kind.as_str(),
+                        edge.kind
+                    ),
+                    caveats: Caveats::default(),
+                },
+                inherited_protected(record),
+            ));
+        }
+    }
+    found
+}
+
+/// Lo que se recortó, por sección, para `omitted`.
+#[derive(Default)]
+struct Trimmed {
+    sections: Vec<(String, Vec<String>, usize, String)>,
+}
+
+impl Trimmed {
+    fn add(&mut self, section: &str, id: Option<String>, expand: &str) {
+        match self.sections.iter_mut().find(|(s, ..)| s == section) {
+            Some((_, ids, count, _)) => {
+                *count += 1;
+                if let Some(id) = id {
+                    ids.push(id);
+                }
+            }
+            None => self.sections.push((
+                section.to_string(),
+                id.into_iter().collect(),
+                1,
+                expand.to_string(),
+            )),
+        }
+    }
+
+    fn into_omissions(self) -> Vec<Omission> {
+        self.sections
+            .into_iter()
+            .map(|(section, mut ids, count, expand)| {
+                ids.truncate(12);
+                Omission {
+                    section,
+                    count,
+                    ids,
+                    expand,
+                }
+            })
+            .collect()
+    }
+}
+
+/// Recorta un elemento regenerable o de menor prioridad, en este orden:
+/// targets afectados, historia, nodos estructurales de menor rol (nunca el
+/// target ni los extremos explicados), el código relevante (el agente puede
+/// leer el archivo), constraints heredadas no protegidas, Records de carpeta
+/// no protegidos (de menor prioridad primero), riesgos y la razón principal
+/// repetida. Devuelve `false` cuando solo queda contenido protegido.
+fn trim_one(
+    packet: &mut ContextPacket,
+    structure: Option<&mut StructuralContext>,
+    trimmable_inherited: &mut Vec<String>,
+    trimmable_members: &mut Vec<String>,
+    trimmed: &mut Trimmed,
+) -> bool {
+    // `affected_targets` son las rutas de los Records servidos: recortarlas
+    // no pierde nada que el agente no pueda leer en esos Records.
+    if packet.affected_targets.pop().is_some() {
+        return true;
+    }
+    if let Some(entry) = packet.history.pop() {
+        trimmed.add(
+            "history",
+            Some(entry.id),
+            "explain_target include_history=true",
+        );
+        return true;
+    }
+    if let Some(context) = structure {
+        if context.drop_lowest_priority_node() {
+            packet.structure = Some(packet_structure(context));
+            trimmed.add("structure", None, "raise max_tokens");
+            return true;
+        }
+        // Solo quedan el target y los extremos explicados, que ya viajan en
+        // `target` y `relationships`.
+        if packet.structure.take().is_some() {
+            trimmed.add("structure", None, "raise max_tokens");
+            return true;
+        }
+    }
+    if let Some(code) = packet.relevant_code.take() {
+        let read = match (code.start_line, code.end_line) {
+            (Some(start), Some(end)) => format!("read {}:{start}-{end}", code.file_path),
+            _ => format!("read {}", code.file_path),
+        };
+        trimmed.add("relevant_code", None, &read);
+        return true;
+    }
+    if let Some(id) = trimmable_inherited.pop() {
+        packet.inherited_constraints.retain(|c| c.id != id);
+        trimmed.add("inherited_constraints", Some(id), "raise max_tokens");
+        return true;
+    }
+    if let Some(id) = trimmable_members.pop() {
+        packet.critical_constraints.retain(|c| c.id != id);
+        packet.decisions.retain(|d| d.id != id);
+        packet.intent_conflicts.retain(|c| c.record_id != id);
+        trimmed.add(
+            "folder_records",
+            Some(id),
+            "prepare_change on a subfolder or file",
+        );
+        return true;
+    }
+    if packet.known_risks.pop().is_some() {
+        trimmed.add("known_risks", None, "explain_target");
+        return true;
+    }
+    packet.primary_reason.take().is_some()
 }
 
 /// Compila el packet. Con `structure`, superpone el subgrafo seleccionado y
@@ -652,6 +1039,9 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         operation_id,
         target,
         status,
+        scope,
+        repo_path,
+        missing_target,
     } = input;
     let provider_status_str = match provider_status {
         ProviderStatus::Successful => "successful",
@@ -663,6 +1053,8 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         Coverage::Partial => "partial",
         Coverage::Unknown => "unknown",
     };
+    let mut tree = repo_path.map(crate::symbols::WorkingTree::new);
+    let by_id: HashMap<&str, &Record> = records.iter().map(|r| (r.id.as_str(), r)).collect();
 
     let selection = select_constraints(records, governing, intent, budget, status);
     let selected = selection.constraints;
@@ -690,18 +1082,39 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         .keys()
         .filter(|id| status.status_of(id).is_some_and(|s| s.is_active()))
         .count();
+    // Excepciones vigentes por regla que exceptúan.
+    let mut exceptions_of: HashMap<String, Vec<String>> = HashMap::new();
+    for record in records
+        .iter()
+        .filter(|r| r.kind == "exception" && status.is_active(r))
+    {
+        for target_id in crate::lifecycle::exception_targets(record).0 {
+            exceptions_of
+                .entry(target_id)
+                .or_default()
+                .push(record.id.clone());
+        }
+    }
 
     let critical_constraints: Vec<CriticalConstraint> = selected
         .iter()
         .map(|r| CriticalConstraint {
             id: r.id.clone(),
             statement: r.statement.clone(),
+            rationale: r.rationale.clone(),
             authority: authority_label(r).to_string(),
             provenance: provenance_label(r),
             severity: r.severity.clone(),
             governs_target: governing.contains_key(&r.id),
             match_kind: governing.get(&r.id).map(|k| k.as_str().to_string()),
+            why: match governing.get(&r.id) {
+                Some(kind) => kind.reason().to_string(),
+                None => "shares terms with the declared intent (lexical signal, not a verdict)"
+                    .to_string(),
+            },
             replaces: replaces(r),
+            exceptions: exceptions_of.get(&r.id).cloned().unwrap_or_default(),
+            caveats: caveats_for(r, status, &mut tree),
         })
         .collect();
 
@@ -718,14 +1131,20 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
                 .get(&r.id)
                 .map(|k| k.as_str().to_string())
                 .unwrap_or_default(),
+            why: governing
+                .get(&r.id)
+                .map(|k| k.reason().to_string())
+                .unwrap_or_default(),
             replaces: replaces(r),
+            caveats: caveats_for(r, status, &mut tree),
         })
         .collect();
 
     // `detection: governs-target` es un hecho verificable (el Record
     // declara un binding hacia el target), no una inferencia semántica —
     // se emite para TODO Record gobernante con intención declarada (también
-    // decisiones), sin importar solapamiento léxico.
+    // decisiones), sin importar solapamiento léxico. El texto del Record ya
+    // está en `critical_constraints`/`decisions`: no se repite.
     let intent_conflicts: Vec<IntentConflict> = match intent {
         Some(text) => selected
             .iter()
@@ -742,18 +1161,16 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
                 };
                 let epistemic_note: &'static str = match detection {
                     ConflictDetection::GovernsTarget => {
-                        "hecho verificable: este Record declara un binding hacia el target. \
-                         Rationale no evaluó si tu intención lo contradice — pronúnciate \
-                         explícitamente antes de continuar."
+                        "binding fact, not a verdict: state whether your intent respects, \
+                         contradicts, or leaves this Record undetermined"
                     }
                     ConflictDetection::LexicalOverlap => {
-                        "solapamiento léxico, no verificado semánticamente — puede ser una \
-                         paráfrasis o una falsa alarma, no una contradicción confirmada."
+                        "lexical overlap only: may be a paraphrase or a false alarm"
                     }
                 };
                 Some(IntentConflict {
                     record_id: r.id.clone(),
-                    statement: r.statement.clone(),
+                    statement: None,
                     authority: authority_label(r).to_string(),
                     severity: r.severity.clone(),
                     governs_target: governs,
@@ -775,11 +1192,63 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         .map(|context| explained_relationships(context, records))
         .unwrap_or_default();
 
-    let primary_reason = selected
+    let mut inherited: Vec<(InheritedConstraint, bool)> = structure
+        .as_deref()
+        .map(|context| inherited_constraints(context, records, governing, status))
+        .unwrap_or_default();
+    for (constraint, _) in &mut inherited {
+        if let Some(record) = by_id.get(constraint.id.as_str()) {
+            constraint.caveats = caveats_for(record, status, &mut tree);
+        }
+    }
+    // Las protegidas primero; las demás, de menor severidad al final para que
+    // el recorte (`pop`) las saque primero.
+    inherited.sort_by(|(a, a_protected), (b, b_protected)| {
+        b_protected
+            .cmp(a_protected)
+            .then_with(|| a.severity.cmp(&b.severity))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let mut trimmable_inherited: Vec<String> = inherited
+        .iter()
+        .filter(|(_, protected)| !protected)
+        .map(|(c, _)| c.id.clone())
+        .collect();
+    let inherited_constraints: Vec<InheritedConstraint> =
+        inherited.into_iter().map(|(c, _)| c).collect();
+
+    // Consulta de carpeta: los Records de menor prioridad pueden recortarse
+    // (se listan en `omitted`); lo fijado, las constraints graves y las
+    // excepciones nunca.
+    let mut trimmable_members: Vec<String> = if scope == TargetScope::Folder {
+        let mut members: Vec<&Record> = selected
+            .iter()
+            .chain(decision_records.iter())
+            .copied()
+            .filter(|r| !folder_protected(r))
+            .collect();
+        members.sort_by(|a, b| {
+            folder_priority(b)
+                .cmp(&folder_priority(a))
+                .then_with(|| b.id.cmp(&a.id))
+        });
+        members.into_iter().map(|r| r.id.clone()).collect()
+    } else {
+        Vec::new()
+    };
+
+    // La razón principal solo cuando no está ya en un elemento servido.
+    let first_reason = selected
         .first()
         .and_then(|r| r.rationale.clone())
         .or_else(|| decision_records.first().and_then(|r| r.rationale.clone()))
         .or_else(|| relationships.first().and_then(|r| r.rationale.clone()));
+    let primary_reason = first_reason.filter(|reason| {
+        !selected
+            .iter()
+            .chain(decision_records.iter())
+            .any(|r| r.rationale.as_deref() == Some(reason.as_str()))
+    });
 
     let mut known_risks: Vec<String> = selected
         .iter()
@@ -794,11 +1263,13 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
     if let Some(t) = &resolved_target {
         affected_targets.push(t.clone());
     }
-    for r in selected.iter().chain(decision_records.iter()) {
-        for binding in &r.binding_declarations {
-            if let Some(path) = &binding.path_hint {
-                if !affected_targets.contains(path) {
-                    affected_targets.push(path.clone());
+    if scope != TargetScope::Folder {
+        for r in selected.iter().chain(decision_records.iter()) {
+            for binding in &r.binding_declarations {
+                if let Some(path) = &binding.path_hint {
+                    if !affected_targets.contains(path) {
+                        affected_targets.push(path.clone());
+                    }
                 }
             }
         }
@@ -807,10 +1278,14 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
 
     let mut warnings = provider_warnings;
     let mut known_unknowns = Vec::new();
+    let mut target_unindexed = false;
+    let mut stale_index = false;
     let (structure_section, relevant_code) = match structure.as_deref() {
         Some(context) => {
             warnings.extend(context.warnings.iter().cloned());
             known_unknowns.extend(context.known_unknowns.iter().cloned());
+            target_unindexed = context.target_unindexed;
+            stale_index = !context.stale_nodes.is_empty();
             let code = context.snippet.as_ref().map(|snippet| RelevantCode {
                 file_path: snippet.binding.file_path.clone(),
                 qualified_name: snippet.binding.qualified_name.clone(),
@@ -830,6 +1305,72 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
     let mut seen = HashSet::new();
     warnings.retain(|warning| seen.insert(warning.clone()));
 
+    let served = critical_constraints
+        .iter()
+        .filter(|c| c.governs_target)
+        .count()
+        + decisions.len()
+        + relationships.len()
+        + inherited_constraints.len();
+    let retrieval = match &missing_target {
+        Some(bound) => RetrievalSummary {
+            status: "target_missing".to_string(),
+            scope: scope.as_str().to_string(),
+            detail: if bound.is_empty() {
+                "the path does not exist in the working tree and no active Record is bound to it"
+                    .to_string()
+            } else {
+                format!(
+                    "the path does not exist in the working tree, but {} active Record(s) are \
+                     still bound to it ({}{}); if the code was removed, a person can run \
+                     `rationale retire <path>` to plan their retirement",
+                    bound.len(),
+                    bound.iter().take(5).cloned().collect::<Vec<_>>().join(", "),
+                    if bound.len() > 5 { ", …" } else { "" }
+                )
+            },
+            records_bound_to_missing_path: bound.len(),
+        },
+        None if target_unindexed => RetrievalSummary {
+            status: "index_incomplete".to_string(),
+            scope: scope.as_str().to_string(),
+            detail: format!(
+                "the file defines the symbol but the structural index does not know it yet; {} \
+                 Record(s) found by binding; callers, callees and inherited constraints are not \
+                 verified",
+                served
+            ),
+            records_bound_to_missing_path: 0,
+        },
+        None if served > 0 => RetrievalSummary {
+            status: "found".to_string(),
+            scope: scope.as_str().to_string(),
+            detail: format!(
+                "{served} active Record(s) apply{}",
+                if stale_index {
+                    "; the structural index is behind the working tree (see warnings)"
+                } else {
+                    ""
+                }
+            ),
+            records_bound_to_missing_path: 0,
+        },
+        None => RetrievalSummary {
+            status: "none_found".to_string(),
+            scope: scope.as_str().to_string(),
+            detail: if matches!(provider_status, ProviderStatus::Successful) {
+                "no active Record governs this target; that is an absence in the canon, not \
+                 proof that nothing matters here"
+                    .to_string()
+            } else {
+                "no active Record governs this target; the structural provider was unavailable, \
+                 so inherited constraints were not checked"
+                    .to_string()
+            },
+            records_bound_to_missing_path: 0,
+        },
+    };
+
     let mut packet = ContextPacket {
         snapshot: Snapshot {
             git_revision: git_head,
@@ -837,6 +1378,7 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
             provider_status: provider_status_str.to_string(),
             provider_coverage: coverage_str.to_string(),
         },
+        retrieval,
         operation_id,
         target,
         intent: intent.map(str::to_string),
@@ -844,6 +1386,7 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         intent_conflicts,
         governance_verdict_required,
         decisions,
+        inherited_constraints,
         history,
         relationships,
         primary_reason,
@@ -856,15 +1399,30 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         resolved_target,
         warnings,
         budget_overflow: None,
+        omitted: Vec::new(),
+        budget: BudgetReport {
+            max_tokens: budget.max_tokens,
+            estimated_tokens: 0,
+            estimator: crate::tokens::ESTIMATOR,
+        },
         token_estimate: 0,
     };
 
     // El contenido protegido (salud, target, constraints, conflictos,
-    // decisiones y relaciones que gobiernan, razón principal, desconocidos)
-    // nunca se recorta — v0.5 §30.1.7: omitir conocimiento gobernante
-    // invalida el paquete aunque parezca "eficiente".
-    while estimate_tokens(&packet) > budget.max_tokens
-        && trim_one(&mut packet, structure.as_deref_mut())
+    // decisiones y relaciones que gobiernan, desconocidos) nunca se recorta —
+    // v0.5 §30.1.7: omitir conocimiento gobernante invalida el paquete
+    // aunque parezca "eficiente". El techo es de la respuesta completa: el
+    // resto de la respuesta (`overhead_tokens`) se descuenta.
+    let packet_ceiling = budget.max_tokens.saturating_sub(budget.overhead_tokens);
+    let mut trimmed = Trimmed::default();
+    while estimate_tokens(&packet) > packet_ceiling
+        && trim_one(
+            &mut packet,
+            structure.as_deref_mut(),
+            &mut trimmable_inherited,
+            &mut trimmable_members,
+            &mut trimmed,
+        )
     {}
 
     // Historia expandible = lo relevante que no se sirvió: relacionadas que
@@ -880,9 +1438,18 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
         + risks_dropped_by_max_risks
         + risks_dropped_by_token_budget
         + targets_dropped_by_token_budget;
+    packet.omitted = trimmed.into_omissions();
+    if selection.related_dropped_by_budget > 0 {
+        packet.omitted.push(Omission {
+            section: "related_constraints".to_string(),
+            count: selection.related_dropped_by_budget,
+            ids: Vec::new(),
+            expand: "raise max_critical_constraints".to_string(),
+        });
+    }
 
     // E7 hallazgo C: nunca servir un packet sobre-presupuesto en silencio.
-    let estimate = estimate_tokens(&packet);
+    let estimate = estimate_tokens(&packet) + budget.overhead_tokens;
     if estimate > budget.max_tokens {
         let authoritative = packet.critical_constraints.iter().any(|c| c.governs_target)
             || !packet.decisions.is_empty()
@@ -896,11 +1463,15 @@ pub fn compile(input: PacketInput, mut structure: Option<&mut StructuralContext>
             .to_string(),
         );
         packet.warnings.push(format!(
-            "budget de tokens excedido: {estimate} > {} — el contenido protegido (salud, constraints, conflictos, decisiones y relaciones que gobiernan el target, razón principal) nunca se recorta",
+            "budget exceeded (~{estimate} > {}): governing knowledge is never cut",
             budget.max_tokens
         ));
     }
-    packet.token_estimate = estimate_tokens(&packet);
+    // Dos pasadas: el número escrito cambia el tamaño en unos pocos tokens.
+    packet.token_estimate = estimate_tokens(&packet) + budget.overhead_tokens;
+    packet.budget.estimated_tokens = packet.token_estimate;
+    packet.token_estimate = estimate_tokens(&packet) + budget.overhead_tokens;
+    packet.budget.estimated_tokens = packet.token_estimate;
     packet
 }
 
@@ -939,6 +1510,9 @@ mod tests {
                 operation_id: None,
                 target: None,
                 status: &StatusIndex::build(records),
+                scope: TargetScope::Symbol,
+                repo_path: None,
+                missing_target: None,
             },
             None,
         )
@@ -980,6 +1554,7 @@ mod tests {
                 structural_id: Some("function:typescript:golden".to_string()),
                 path_hint: Some("src/golden.ts".to_string()),
                 provisional: false,
+                symbol: None,
                 extra: yaml_serde::Mapping::new(),
             }],
             bound_revision: Some("abc123fixed".to_string()),
@@ -1014,7 +1589,7 @@ mod tests {
         );
 
         let json = serde_json::to_string(&packet).unwrap();
-        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","authority":"normal","provenance":"migrated","severity":"critical","governs_target":true,"match_kind":"structural"}],"intent_conflicts":[],"governance_verdict_required":false,"primary_reason":"Because golden reasons.","known_risks":["Golden risk statement."],"affected_targets":["golden.qualifiedName","src/golden.ts"],"additional_history_available":0,"resolved_target":"golden.qualifiedName","warnings":[],"token_estimate":162}"#;
+        let expected = r#"{"snapshot":{"git_revision":"abc123fixed","consistency":"exact","provider_status":"successful","provider_coverage":"complete"},"retrieval":{"status":"found","scope":"symbol","detail":"1 active Record(s) apply"},"critical_constraints":[{"id":"constraint.golden-test","statement":"Golden packet statement.","rationale":"Because golden reasons.","authority":"normal","provenance":"migrated","severity":"critical","governs_target":true,"match_kind":"structural","why":"bound to this symbol"}],"intent_conflicts":[],"governance_verdict_required":false,"primary_reason":null,"known_risks":["Golden risk statement."],"affected_targets":["golden.qualifiedName","src/golden.ts"],"additional_history_available":0,"resolved_target":"golden.qualifiedName","warnings":[],"budget":{"max_tokens":2400,"estimated_tokens":318,"estimator":"upper-bound"},"token_estimate":318}"#;
         assert_eq!(json, expected);
     }
 
@@ -1294,6 +1869,7 @@ mod tests {
             max_tokens: 1,
             max_critical_constraints: 5,
             max_risks: 3,
+            overhead_tokens: 0,
         };
         let packet = compile_packet(
             None,
@@ -1342,6 +1918,7 @@ mod tests {
                 structural_id: Some(format!("function:typescript:{id}")),
                 path_hint: Some(path_hint.to_string()),
                 provisional: false,
+                symbol: None,
                 extra: yaml_serde::Mapping::new(),
             }],
             bound_revision: Some("abc123fixed".to_string()),
@@ -1700,6 +2277,7 @@ mod tests {
                 target_symbol: Some("create_link"),
                 records,
                 budget: &crate::context::StructuralBudget::default(),
+                target_is_dir: false,
             },
         )
     }
@@ -1730,6 +2308,9 @@ mod tests {
                     qualified_name: Some("src.payments.create_link".to_string()),
                 }),
                 status: &StatusIndex::build(records),
+                scope: TargetScope::Symbol,
+                repo_path: None,
+                missing_target: None,
             },
             Some(context),
         )
@@ -1762,10 +2343,12 @@ mod tests {
         let ids: Vec<&str> = packet.decisions.iter().map(|d| d.id.as_str()).collect();
         assert_eq!(ids, vec!["decision.expiry-per-entity"]);
         assert_eq!(packet.decisions[0].provenance, "migrated");
+        // El porqué viaja con la decisión; `primary_reason` ya no lo repite.
         assert_eq!(
-            packet.primary_reason.as_deref(),
+            packet.decisions[0].rationale.as_deref(),
             Some("Each tenant defines its own payment policy.")
         );
+        assert!(packet.primary_reason.is_none());
         assert_eq!(
             packet.intent_conflicts[0].detection,
             ConflictDetection::GovernsTarget
@@ -1820,15 +2403,13 @@ mod tests {
         assert_eq!(packet.decisions.len(), 1);
         assert_eq!(packet.relationships.len(), 1);
         assert!(packet.relevant_code.is_none());
-        let names: Vec<&str> = packet
-            .structure
-            .as_ref()
-            .unwrap()
-            .nodes
-            .iter()
-            .map(|n| n.name.as_str())
-            .collect();
-        assert_eq!(names, vec!["create_link", "payment_expiration"]);
+        // Con solo el target y los extremos explicados, la sección de
+        // estructura se omite: esos extremos ya viajan en `relationships`.
+        assert!(packet.structure.is_none());
+        let relationship = &packet.relationships[0];
+        assert!(relationship.source.ends_with("create_link"));
+        assert!(relationship.target.ends_with("payment_expiration"));
+        assert!(packet.omitted.iter().any(|o| o.section == "structure"));
         assert_eq!(
             packet.budget_overflow.as_deref(),
             Some("authoritative_context")

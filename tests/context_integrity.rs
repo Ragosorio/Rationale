@@ -269,3 +269,206 @@ fn superseded_records_are_history_never_authority() {
         json!(["constraint.rotate-secrets-90d"])
     );
 }
+
+#[test]
+fn a_symbol_query_sees_only_records_of_that_symbol_and_folders_see_their_contents() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+
+    let (cancel, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping/service.ts::cancelShipment", "intent": "Cancel locally when the carrier is down"}),
+    );
+    assert_eq!(
+        authority("prepare_change", &cancel),
+        ["decision.cancel-requires-carrier-ack"],
+        "Records bound to other symbols of service.ts do not govern cancelShipment"
+    );
+
+    let (folder, _) = client.call("prepare_change", json!({"target": "src/shipping"}));
+    let served = authority("prepare_change", &folder);
+    for id in [
+        "constraint.money-in-integer-cents",
+        "decision.rate-cache-ttl-60s",
+        "decision.label-retry-exponential-backoff",
+        "decision.cancel-requires-carrier-ack",
+        "constraint.shipment-idempotency-key",
+        "decision.dhl-sandbox-env-flag",
+        "decision.remote-zone-flat-surcharge",
+    ] {
+        assert!(
+            served.contains(&id.to_string()),
+            "{id} missing from {served:?}"
+        );
+    }
+    assert!(!served.contains(&"decision.rate-cache-ttl-5m".to_string()));
+}
+
+#[test]
+fn a_record_for_a_symbol_the_index_does_not_know_governs_that_symbol_only() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+    let (finalize, _) = client.call(
+        "finalize_change",
+        json!({
+            "summary": "Add splitShipment",
+            "candidates": [{
+                "kind": "decision",
+                "severity": "medium",
+                "statement": "A split shipment keeps the parent shipment id as the prefix of every part.",
+                "rationale": "Carriers reject multi-parcel labels whose parts do not share the parent reference.",
+                "durability": "durable",
+                "bindings": ["src/shipping/service.ts::splitShipment"]
+            }]
+        }),
+    );
+    let id = finalize["committed"][0]["id"].as_str().unwrap().to_string();
+    let record = std::fs::read_to_string(
+        fixture
+            .project()
+            .join(".rationale/records")
+            .join(format!("{id}.yaml")),
+    )
+    .unwrap();
+    assert!(record.contains("symbol: splitShipment"), "{record}");
+    assert!(
+        !record.contains("type: file"),
+        "no companion file binding: {record}"
+    );
+
+    let (own, _) = client.call(
+        "explain_target",
+        json!({"target": "src/shipping/service.ts::splitShipment"}),
+    );
+    assert_eq!(authority("explain_target", &own), std::slice::from_ref(&id));
+    assert_eq!(
+        own["governing_records"][0]["match_kind"],
+        "unconfirmed-symbol"
+    );
+    let (other, _) = client.call(
+        "explain_target",
+        json!({"target": "src/shipping/service.ts::createShipment"}),
+    );
+    assert!(!authority("explain_target", &other).contains(&id));
+}
+
+fn estimate(text: &str) -> usize {
+    // Misma fórmula que `src/tokens.rs` (cota superior); el código del
+    // target se recuenta aparte.
+    let ascii = text.chars().filter(char::is_ascii).count();
+    (ascii as f64 / 2.7).ceil() as usize + (text.chars().count() - ascii)
+}
+
+#[test]
+fn the_packet_says_why_it_is_incomplete_and_never_serves_deleted_code() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+
+    // Símbolo nuevo en la rama: el índice no lo conoce.
+    let (split, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping/service.ts::splitShipment"}),
+    );
+    assert_eq!(split["packet"]["retrieval"]["status"], "index_incomplete");
+    assert!(authority("prepare_change", &split).is_empty());
+
+    // El índice todavía lista `legacy.ts` (borrado) y `comunicaciones/`.
+    let (email, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/notifications/email.ts::sendEmail"}),
+    );
+    let nodes = email["packet"]["structure"]["nodes"].as_array().unwrap();
+    assert!(nodes.iter().all(|n| fixture
+        .project()
+        .join(n["file_path"].as_str().unwrap())
+        .exists()));
+    let outbox = email["packet"]["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == "decision.comunicaciones-email-via-outbox")
+        .expect("still bound to current code, so still served");
+    assert_eq!(
+        outbox["stale_bindings"],
+        json!(["src/comunicaciones/outbox.ts"])
+    );
+
+    // La ruta del módulo retirado.
+    let (retired, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/comunicaciones/outbox.ts"}),
+    );
+    assert_eq!(retired["packet"]["retrieval"]["status"], "target_missing");
+    assert!(
+        retired["packet"]["retrieval"]["records_bound_to_missing_path"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
+
+    // Nada lo gobierna, y lo dice.
+    let (cache, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/shared/cache.ts::cacheGet"}),
+    );
+    assert_eq!(cache["packet"]["retrieval"]["status"], "none_found");
+}
+
+#[test]
+fn invariants_cross_modules_and_orphaned_exceptions_are_flagged() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+
+    let (invoice, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/billing/invoice.ts::issueInvoice", "intent": "Sum invoice lines as floats"}),
+    );
+    let inherited = invoice["packet"]["inherited_constraints"]
+        .as_array()
+        .unwrap();
+    let money = inherited
+        .iter()
+        .find(|c| c["id"] == "constraint.money-in-integer-cents")
+        .expect("the shipping invariant reaches billing through the observed call");
+    assert_eq!(money["via"], "issueInvoice calls toCents");
+
+    let (rotation, _) = client.call(
+        "prepare_change",
+        json!({"target": "src/secrets/rotation.ts::rotateKeys"}),
+    );
+    let exception = rotation["packet"]["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == "exception.legacy-kms-skips-rotation")
+        .unwrap();
+    assert_eq!(exception["flags"], json!(["orphaned_exception"]));
+    assert!(exception["note"]
+        .as_str()
+        .unwrap()
+        .contains("constraint.rotate-secrets-90d (superseded, now constraint.rotate-secrets-30d)"));
+}
+
+#[test]
+fn the_budget_covers_the_whole_response() {
+    let fixture = fixture();
+    let mut client = Client::start(&fixture);
+    let (response, text) = client.call(
+        "prepare_change",
+        json!({"target": "src/shipping/service.ts::cancelShipment", "max_tokens": 800}),
+    );
+    assert!(estimate(&text) <= 800, "{} > 800", estimate(&text));
+    assert!(
+        response.get("diagnostics").is_none(),
+        "diagnostics only with verbose"
+    );
+    let omitted = response["packet"]["omitted"].as_array().unwrap();
+    assert!(
+        !omitted.is_empty(),
+        "what was cut is listed with how to get it"
+    );
+    assert_eq!(
+        authority("prepare_change", &response),
+        ["decision.cancel-requires-carrier-ack"]
+    );
+}

@@ -637,6 +637,7 @@ pub fn mutate_record(
                     structural_id: symbol.clone(),
                     path_hint: Some(path_hint.clone()),
                     provisional: false,
+                    symbol: None,
                     extra,
                 });
             let mut event_extra = vec![("path_hint", path_hint), ("binding_id", binding_id)];
@@ -775,6 +776,7 @@ mod tests {
                 structural_id: None,
                 path_hint: Some("src/foo.rs".to_string()),
                 provisional: false,
+                symbol: None,
                 extra: yaml_serde::Mapping::new(),
             }],
             evidence: vec![],

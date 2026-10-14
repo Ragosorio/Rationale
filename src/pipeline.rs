@@ -32,6 +32,8 @@ pub struct PrepareRequest {
     pub structural_budget: context::StructuralBudget,
     /// Quién pide el contexto — queda registrado en la operación.
     pub actor: canon::ActorContext,
+    /// Assessment completo (resolución por binding) en vez del compacto.
+    pub verbose: bool,
 }
 
 pub struct PrepareOutcome {
@@ -39,7 +41,8 @@ pub struct PrepareOutcome {
     /// `None` es válido para un proyecto recién inicializado sin Records:
     /// el packet puede informar salud/target/proveedor sin inventar una
     /// decisión ni panicar por un canon vacío.
-    pub assessment: Option<assessment::Assessment>,
+    /// Lo que el agente recibe del assessment: compacto salvo `verbose`.
+    pub assessment_view: Option<serde_json::Value>,
     /// Lo que antes eran `eprintln!` sueltos — cada caller decide destino.
     pub diagnostics: Vec<String>,
     pub latency_ms: u128,
@@ -88,6 +91,25 @@ pub fn prepare(
         .unwrap_or_default();
     let governing_matches = binding_match::governing(&target_key, &records);
     let status = lifecycle::StatusIndex::build(&records);
+    let target_scope = match &target {
+        Ok(t) if t.path.is_dir() => retrieval::TargetScope::Folder,
+        Ok(t) if t.symbol.as_deref().is_some_and(|s| !s.is_empty()) => {
+            retrieval::TargetScope::Symbol
+        }
+        Ok(_) => retrieval::TargetScope::File,
+        Err(_) => match project::parse_target_spec(&req.target_spec).1 {
+            Some(_) => retrieval::TargetScope::Symbol,
+            None => retrieval::TargetScope::File,
+        },
+    };
+    let missing_target = match &target {
+        Err(project::TargetError::NotFound) => Some(records_bound_to_missing_path(
+            &req.target_spec,
+            &records,
+            &status,
+        )),
+        _ => None,
+    };
     // El assessment habla del Record vigente más específico: uno reemplazado
     // o revocado es historia, nunca la decisión que gobierna.
     let record = governing_matches
@@ -292,7 +314,7 @@ pub fn prepare(
     // Assessment (Rationale_v0.5.md §5.6): lo que Rationale puede afirmar
     // HOY sobre la vigencia del Record, separado del Record mismo. Nunca
     // se autoaprueba autoridad ni se sirve una revisión no verificada.
-    let computed_assessment = record.map(|record| {
+    let computed_assessment: Option<assessment::Assessment> = record.map(|record| {
         let assessment = assessment::compute(
             record,
             &snap,
@@ -344,6 +366,7 @@ pub fn prepare(
             target_symbol: symbol.as_deref(),
             records: &active,
             budget: &req.structural_budget,
+            target_is_dir: target.as_ref().is_ok_and(|t| t.path.is_dir()),
         },
     );
     provider_elapsed += gather_clock.elapsed();
@@ -376,6 +399,22 @@ pub fn prepare(
             provider_elapsed.as_millis(),
         ),
     );
+    let assessment_view = computed_assessment
+        .as_ref()
+        .map(|a| assessment_view(a, req.verbose));
+    // El techo cubre la respuesta MCP completa: se descuenta lo que viaja
+    // fuera del packet.
+    let mut budget = req.budget.clone();
+    budget.overhead_tokens = crate::tokens::estimate(
+        &serde_json::json!({
+            "operation_id": operation.operation_id,
+            "packet": null,
+            "assessment": assessment_view,
+            "latency_ms": 99999,
+        })
+        .to_string(),
+        "",
+    );
     let packet = retrieval::compile(
         retrieval::PacketInput {
             git_head: snap.head.clone(),
@@ -386,7 +425,7 @@ pub fn prepare(
             intent: req.intent.as_deref(),
             resolved_target,
             provider_warnings,
-            budget: &req.budget,
+            budget: &budget,
             governing: &governing_by_kind,
             operation_id: Some(operation.operation_id.clone()),
             target: Some(retrieval::PacketTarget {
@@ -396,6 +435,9 @@ pub fn prepare(
                 qualified_name: operation.target.qualified_name.clone(),
             }),
             status: &status,
+            scope: target_scope,
+            repo_path: Some(&req.repo_path),
+            missing_target,
         },
         Some(&mut structural),
     );
@@ -443,12 +485,64 @@ pub fn prepare(
 
     Ok(PrepareOutcome {
         packet,
-        assessment: computed_assessment,
+        assessment_view,
         diagnostics,
         latency_ms: t0.elapsed().as_millis(),
         operation,
         activity: scope,
     })
+}
+
+/// Lo que el agente necesita del assessment: el Record, su estado y el
+/// motivo. La resolución por binding solo con `verbose` (depuración).
+fn assessment_view(assessment: &assessment::Assessment, verbose: bool) -> serde_json::Value {
+    if verbose {
+        return serde_json::to_value(assessment).unwrap_or_default();
+    }
+    serde_json::json!({
+        "record_id": assessment.record_id,
+        "state": assessment.state,
+        "assessment_reason": assessment.assessment_reason,
+    })
+}
+
+/// Records vigentes atados a una ruta que ya no existe (o a algo debajo de
+/// ella): la huella de un módulo retirado cuyos Records siguen activos.
+pub fn records_bound_to_missing_path(
+    spec: &str,
+    records: &[Record],
+    status: &lifecycle::StatusIndex,
+) -> Vec<String> {
+    let (path, _) = project::parse_target_spec(spec);
+    let path = path.replace('\\', "/");
+    let path = path
+        .trim_start_matches("./")
+        .trim_end_matches('/')
+        .to_string();
+    if path.is_empty() {
+        return Vec::new();
+    }
+    let as_file = binding_match::TargetKey {
+        rel_path: Some(path.clone()),
+        symbol: None,
+        is_dir: false,
+    };
+    let as_folder = binding_match::TargetKey {
+        rel_path: Some(path),
+        symbol: None,
+        is_dir: true,
+    };
+    let mut ids: Vec<String> = records
+        .iter()
+        .filter(|r| status.is_active(r))
+        .filter(|r| {
+            binding_match::match_record(&as_file, r).is_some()
+                || binding_match::match_record(&as_folder, r).is_some()
+        })
+        .map(|r| r.id.clone())
+        .collect();
+    ids.sort();
+    ids
 }
 
 /// Salida de `health` — Rationale_v0.5.md §24: revisión, working tree,
@@ -510,9 +604,12 @@ pub struct GoverningRecord {
     /// `explain` sean auditablemente consistentes entre sí, nunca solo
     /// "confía en que coinciden".
     pub match_kind: String,
+    pub why: String,
     /// Records que este reemplazó.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub replaces: Vec<String>,
+    #[serde(flatten)]
+    pub caveats: retrieval::Caveats,
 }
 
 /// Un Record atado al target que ya no gobierna. Sin `include_history` se
@@ -613,9 +710,11 @@ pub fn explain(
         ));
     }
 
+    let mut tree = Some(crate::symbols::WorkingTree::new(repo_path));
     let governing_records: Vec<GoverningRecord> = governing_matches
         .iter()
         .map(|m| GoverningRecord {
+            caveats: retrieval::caveats_for(m.record, &status, &mut tree),
             id: m.record.id.clone(),
             kind: m.record.kind.clone(),
             statement: m.record.statement.clone(),
@@ -624,6 +723,7 @@ pub fn explain(
             provenance: storage::provenance_kind(m.record).as_str().to_string(),
             epistemic_status: m.record.epistemic_status.to_string(),
             match_kind: m.kind.as_str().to_string(),
+            why: m.kind.reason().to_string(),
             replaces: m
                 .record
                 .supersedes
