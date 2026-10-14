@@ -635,6 +635,7 @@ fn resolve_bindings(
 ) -> Vec<PreparedBinding> {
     let mut resolved: Vec<PreparedBinding> = Vec::new();
     let mut tree = crate::symbols::WorkingTree::new(ctx.repo_path);
+    let mut lexical: Vec<String> = Vec::new();
     for binding in bindings {
         let spec = binding.spec();
         let target = match project::resolve_target(ctx.repo_path, &spec) {
@@ -729,12 +730,7 @@ fn resolve_bindings(
                 }
             }
             None if tree.find_definition(&rel_path, symbol).is_some() => {
-                warnings.push(format!(
-                    "the structural index does not know '{symbol}' in '{rel_path}' yet (stale \
-                     index or a symbol new on this branch): bound to the symbol after checking \
-                     that the file defines it, without a structural identity; `rationale doctor` \
-                     confirms it once the index catches up"
-                ));
+                lexical.push(format!("{rel_path}::{symbol}"));
                 if !resolved
                     .iter()
                     .any(|b| b.path_hint == rel_path && b.symbol.as_deref() == Some(symbol))
@@ -763,6 +759,19 @@ fn resolve_bindings(
                 }
             }
         }
+    }
+    if !lexical.is_empty() {
+        let why = if provider.as_provider().is_some() {
+            "the structural index does not know them yet (stale index or symbols new on this \
+             branch)"
+        } else {
+            "no structural provider is available"
+        };
+        warnings.push(format!(
+            "bound lexically, after checking each file defines the symbol, because {why}: {}. \
+             They govern only those symbols and carry no structural identity.",
+            lexical.join(", ")
+        ));
     }
     resolved
 }

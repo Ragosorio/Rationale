@@ -805,7 +805,7 @@ fn finalize_change_commits_durable_candidates_without_approval() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|w| w.as_str().unwrap().contains("does not know")),
+            .any(|w| w.as_str().unwrap().contains("bound lexically")),
         "sin proveedor, el símbolo nunca recibe identidad estructural: {outcome}"
     );
     assert!(content.contains("symbol: resolveEntityRole"), "{content}");
